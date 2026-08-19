@@ -1,0 +1,1069 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`compileDocument — golden request snapshot > emits a stable, reviewable Request[] for every phase 1`] = `
+{
+  "bulletRequests": [
+    {
+      "createParagraphBullets": {
+        "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE",
+        "range": {
+          "endIndex": 123,
+          "startIndex": 90,
+        },
+      },
+    },
+  ],
+  "contentRequests": [
+    {
+      "insertText": {
+        "location": {
+          "index": 1,
+        },
+        "text": "Chapter One
+Overview
+A paragraph with bold, italic, inline code, and a link.
+Nested list
+top item
+	nested item
+back to top
+A rule follows
+ 
+Fenced code
+def f(x):    return x + 1
+A small table
+Name   Kind
+a   one
+b   two
+A quoted note
+A single-level blockquote with bold inside it.
+A nested quote, one level deeper.
+An unlabeled fence
+INITIALIZE → VALIDATE → END",
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "named_style_type",
+        "paragraphStyle": {
+          "namedStyleType": "HEADING_1",
+        },
+        "range": {
+          "endIndex": 12,
+          "startIndex": 1,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "named_style_type",
+        "paragraphStyle": {
+          "namedStyleType": "HEADING_2",
+        },
+        "range": {
+          "endIndex": 21,
+          "startIndex": 13,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "named_style_type",
+        "paragraphStyle": {
+          "namedStyleType": "NORMAL_TEXT",
+        },
+        "range": {
+          "endIndex": 77,
+          "startIndex": 22,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "named_style_type",
+        "paragraphStyle": {
+          "namedStyleType": "HEADING_3",
+        },
+        "range": {
+          "endIndex": 89,
+          "startIndex": 78,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "named_style_type",
+        "paragraphStyle": {
+          "namedStyleType": "NORMAL_TEXT",
+        },
+        "range": {
+          "endIndex": 98,
+          "startIndex": 90,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "named_style_type",
+        "paragraphStyle": {
+          "namedStyleType": "NORMAL_TEXT",
+        },
+        "range": {
+          "endIndex": 111,
+          "startIndex": 99,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "named_style_type",
+        "paragraphStyle": {
+          "namedStyleType": "NORMAL_TEXT",
+        },
+        "range": {
+          "endIndex": 123,
+          "startIndex": 112,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "named_style_type",
+        "paragraphStyle": {
+          "namedStyleType": "HEADING_2",
+        },
+        "range": {
+          "endIndex": 138,
+          "startIndex": 124,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "named_style_type",
+        "paragraphStyle": {
+          "namedStyleType": "NORMAL_TEXT",
+        },
+        "range": {
+          "endIndex": 140,
+          "startIndex": 139,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "named_style_type",
+        "paragraphStyle": {
+          "namedStyleType": "HEADING_2",
+        },
+        "range": {
+          "endIndex": 152,
+          "startIndex": 141,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "named_style_type",
+        "paragraphStyle": {
+          "namedStyleType": "NORMAL_TEXT",
+        },
+        "range": {
+          "endIndex": 179,
+          "startIndex": 153,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "named_style_type",
+        "paragraphStyle": {
+          "namedStyleType": "HEADING_2",
+        },
+        "range": {
+          "endIndex": 193,
+          "startIndex": 180,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "named_style_type",
+        "paragraphStyle": {
+          "namedStyleType": "NORMAL_TEXT",
+        },
+        "range": {
+          "endIndex": 205,
+          "startIndex": 194,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "named_style_type",
+        "paragraphStyle": {
+          "namedStyleType": "NORMAL_TEXT",
+        },
+        "range": {
+          "endIndex": 213,
+          "startIndex": 206,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "named_style_type",
+        "paragraphStyle": {
+          "namedStyleType": "NORMAL_TEXT",
+        },
+        "range": {
+          "endIndex": 221,
+          "startIndex": 214,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "named_style_type",
+        "paragraphStyle": {
+          "namedStyleType": "HEADING_2",
+        },
+        "range": {
+          "endIndex": 235,
+          "startIndex": 222,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "named_style_type",
+        "paragraphStyle": {
+          "namedStyleType": "NORMAL_TEXT",
+        },
+        "range": {
+          "endIndex": 282,
+          "startIndex": 236,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "named_style_type",
+        "paragraphStyle": {
+          "namedStyleType": "NORMAL_TEXT",
+        },
+        "range": {
+          "endIndex": 316,
+          "startIndex": 283,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "named_style_type",
+        "paragraphStyle": {
+          "namedStyleType": "HEADING_2",
+        },
+        "range": {
+          "endIndex": 335,
+          "startIndex": 317,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "named_style_type",
+        "paragraphStyle": {
+          "namedStyleType": "NORMAL_TEXT",
+        },
+        "range": {
+          "endIndex": 363,
+          "startIndex": 336,
+        },
+      },
+    },
+    {
+      "updateTextStyle": {
+        "fields": "bold",
+        "range": {
+          "endIndex": 43,
+          "startIndex": 39,
+        },
+        "textStyle": {
+          "bold": true,
+        },
+      },
+    },
+    {
+      "updateTextStyle": {
+        "fields": "italic",
+        "range": {
+          "endIndex": 51,
+          "startIndex": 45,
+        },
+        "textStyle": {
+          "italic": true,
+        },
+      },
+    },
+    {
+      "updateTextStyle": {
+        "fields": "weighted_font_family,font_size,bold,italic,foreground_color,background_color",
+        "range": {
+          "endIndex": 64,
+          "startIndex": 53,
+        },
+        "textStyle": {
+          "backgroundColor": {
+            "color": {
+              "rgbColor": {
+                "blue": 0.9569,
+                "green": 0.9529,
+                "red": 0.9451,
+              },
+            },
+          },
+          "bold": false,
+          "fontSize": {
+            "magnitude": 10,
+            "unit": "PT",
+          },
+          "foregroundColor": {
+            "color": {
+              "rgbColor": {
+                "blue": 0.2627,
+                "green": 0.251,
+                "red": 0.2353,
+              },
+            },
+          },
+          "italic": false,
+          "weightedFontFamily": {
+            "fontFamily": "Roboto Mono",
+            "weight": 400,
+          },
+        },
+      },
+    },
+    {
+      "updateTextStyle": {
+        "fields": "link",
+        "range": {
+          "endIndex": 76,
+          "startIndex": 72,
+        },
+        "textStyle": {
+          "link": {
+            "url": "https://example.com/x",
+          },
+        },
+      },
+    },
+    {
+      "updateTextStyle": {
+        "fields": "bold",
+        "range": {
+          "endIndex": 271,
+          "startIndex": 267,
+        },
+        "textStyle": {
+          "bold": true,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "border_bottom,space_above,space_below",
+        "paragraphStyle": {
+          "borderBottom": {
+            "color": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.8784,
+                  "green": 0.8627,
+                  "red": 0.8549,
+                },
+              },
+            },
+            "dashStyle": "SOLID",
+            "padding": {
+              "magnitude": 2,
+              "unit": "PT",
+            },
+            "width": {
+              "magnitude": 1,
+              "unit": "PT",
+            },
+          },
+          "spaceAbove": {
+            "magnitude": 12,
+            "unit": "PT",
+          },
+          "spaceBelow": {
+            "magnitude": 12,
+            "unit": "PT",
+          },
+        },
+        "range": {
+          "endIndex": 140,
+          "startIndex": 139,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "shading,border_top,border_bottom,border_left,border_right,indent_start,indent_end,space_above,space_below,keep_lines_together",
+        "paragraphStyle": {
+          "borderBottom": {
+            "color": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.8784,
+                  "green": 0.8627,
+                  "red": 0.8549,
+                },
+              },
+            },
+            "dashStyle": "SOLID",
+            "padding": {
+              "magnitude": 6,
+              "unit": "PT",
+            },
+            "width": {
+              "magnitude": 1,
+              "unit": "PT",
+            },
+          },
+          "borderLeft": {
+            "color": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.8784,
+                  "green": 0.8627,
+                  "red": 0.8549,
+                },
+              },
+            },
+            "dashStyle": "SOLID",
+            "padding": {
+              "magnitude": 6,
+              "unit": "PT",
+            },
+            "width": {
+              "magnitude": 1,
+              "unit": "PT",
+            },
+          },
+          "borderRight": {
+            "color": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.8784,
+                  "green": 0.8627,
+                  "red": 0.8549,
+                },
+              },
+            },
+            "dashStyle": "SOLID",
+            "padding": {
+              "magnitude": 6,
+              "unit": "PT",
+            },
+            "width": {
+              "magnitude": 1,
+              "unit": "PT",
+            },
+          },
+          "borderTop": {
+            "color": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.8784,
+                  "green": 0.8627,
+                  "red": 0.8549,
+                },
+              },
+            },
+            "dashStyle": "SOLID",
+            "padding": {
+              "magnitude": 6,
+              "unit": "PT",
+            },
+            "width": {
+              "magnitude": 1,
+              "unit": "PT",
+            },
+          },
+          "indentEnd": {
+            "magnitude": 0,
+            "unit": "PT",
+          },
+          "indentStart": {
+            "magnitude": 0,
+            "unit": "PT",
+          },
+          "keepLinesTogether": true,
+          "shading": {
+            "backgroundColor": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.9804,
+                  "green": 0.9765,
+                  "red": 0.9725,
+                },
+              },
+            },
+          },
+          "spaceAbove": {
+            "magnitude": 12,
+            "unit": "PT",
+          },
+          "spaceBelow": {
+            "magnitude": 12,
+            "unit": "PT",
+          },
+        },
+        "range": {
+          "endIndex": 179,
+          "startIndex": 153,
+        },
+      },
+    },
+    {
+      "updateTextStyle": {
+        "fields": "weighted_font_family,font_size,bold,italic,foreground_color",
+        "range": {
+          "endIndex": 179,
+          "startIndex": 153,
+        },
+        "textStyle": {
+          "bold": false,
+          "fontSize": {
+            "magnitude": 10,
+            "unit": "PT",
+          },
+          "foregroundColor": {
+            "color": {
+              "rgbColor": {
+                "blue": 0.1412,
+                "green": 0.1294,
+                "red": 0.1255,
+              },
+            },
+          },
+          "italic": false,
+          "weightedFontFamily": {
+            "fontFamily": "Roboto Mono",
+            "weight": 400,
+          },
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "shading,border_top,border_bottom,border_left,border_right,indent_start,indent_end,space_above,space_below,keep_lines_together",
+        "paragraphStyle": {
+          "borderBottom": {
+            "color": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.8784,
+                  "green": 0.8627,
+                  "red": 0.8549,
+                },
+              },
+            },
+            "dashStyle": "SOLID",
+            "padding": {
+              "magnitude": 6,
+              "unit": "PT",
+            },
+            "width": {
+              "magnitude": 1,
+              "unit": "PT",
+            },
+          },
+          "borderLeft": {
+            "color": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.8784,
+                  "green": 0.8627,
+                  "red": 0.8549,
+                },
+              },
+            },
+            "dashStyle": "SOLID",
+            "padding": {
+              "magnitude": 6,
+              "unit": "PT",
+            },
+            "width": {
+              "magnitude": 1,
+              "unit": "PT",
+            },
+          },
+          "borderRight": {
+            "color": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.8784,
+                  "green": 0.8627,
+                  "red": 0.8549,
+                },
+              },
+            },
+            "dashStyle": "SOLID",
+            "padding": {
+              "magnitude": 6,
+              "unit": "PT",
+            },
+            "width": {
+              "magnitude": 1,
+              "unit": "PT",
+            },
+          },
+          "borderTop": {
+            "color": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.8784,
+                  "green": 0.8627,
+                  "red": 0.8549,
+                },
+              },
+            },
+            "dashStyle": "SOLID",
+            "padding": {
+              "magnitude": 6,
+              "unit": "PT",
+            },
+            "width": {
+              "magnitude": 1,
+              "unit": "PT",
+            },
+          },
+          "indentEnd": {
+            "magnitude": 0,
+            "unit": "PT",
+          },
+          "indentStart": {
+            "magnitude": 0,
+            "unit": "PT",
+          },
+          "keepLinesTogether": true,
+          "shading": {
+            "backgroundColor": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.9804,
+                  "green": 0.9765,
+                  "red": 0.9725,
+                },
+              },
+            },
+          },
+          "spaceAbove": {
+            "magnitude": 12,
+            "unit": "PT",
+          },
+          "spaceBelow": {
+            "magnitude": 12,
+            "unit": "PT",
+          },
+        },
+        "range": {
+          "endIndex": 363,
+          "startIndex": 336,
+        },
+      },
+    },
+    {
+      "updateTextStyle": {
+        "fields": "weighted_font_family,font_size,bold,italic,foreground_color",
+        "range": {
+          "endIndex": 363,
+          "startIndex": 336,
+        },
+        "textStyle": {
+          "bold": false,
+          "fontSize": {
+            "magnitude": 10,
+            "unit": "PT",
+          },
+          "foregroundColor": {
+            "color": {
+              "rgbColor": {
+                "blue": 0.1412,
+                "green": 0.1294,
+                "red": 0.1255,
+              },
+            },
+          },
+          "italic": false,
+          "weightedFontFamily": {
+            "fontFamily": "Roboto Mono",
+            "weight": 400,
+          },
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "border_left",
+        "paragraphStyle": {
+          "borderLeft": {
+            "color": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.5451,
+                  "green": 0.5255,
+                  "red": 0.502,
+                },
+              },
+            },
+            "dashStyle": "SOLID",
+            "padding": {
+              "magnitude": 6,
+              "unit": "PT",
+            },
+            "width": {
+              "magnitude": 2,
+              "unit": "PT",
+            },
+          },
+        },
+        "range": {
+          "endIndex": 316,
+          "startIndex": 236,
+        },
+      },
+    },
+    {
+      "updateParagraphStyle": {
+        "fields": "border_left",
+        "paragraphStyle": {
+          "borderLeft": {
+            "color": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.5451,
+                  "green": 0.5255,
+                  "red": 0.502,
+                },
+              },
+            },
+            "dashStyle": "SOLID",
+            "padding": {
+              "magnitude": 10,
+              "unit": "PT",
+            },
+            "width": {
+              "magnitude": 3,
+              "unit": "PT",
+            },
+          },
+        },
+        "range": {
+          "endIndex": 316,
+          "startIndex": 283,
+        },
+      },
+    },
+  ],
+  "themeRequests": [
+    {
+      "updateDocumentStyle": {
+        "documentStyle": {
+          "marginBottom": {
+            "magnitude": 60,
+            "unit": "PT",
+          },
+          "marginLeft": {
+            "magnitude": 54,
+            "unit": "PT",
+          },
+          "marginRight": {
+            "magnitude": 54,
+            "unit": "PT",
+          },
+          "marginTop": {
+            "magnitude": 60,
+            "unit": "PT",
+          },
+        },
+        "fields": "margin_top,margin_bottom,margin_left,margin_right",
+      },
+    },
+    {
+      "updateNamedStyle": {
+        "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.alignment,paragraph_style.indent_end",
+        "namedStyle": {
+          "namedStyleType": "TITLE",
+          "paragraphStyle": {
+            "alignment": "START",
+            "indentEnd": {
+              "magnitude": 72,
+              "unit": "PT",
+            },
+            "lineSpacing": 100,
+            "spaceAbove": {
+              "magnitude": 0,
+              "unit": "PT",
+            },
+            "spaceBelow": {
+              "magnitude": 6,
+              "unit": "PT",
+            },
+          },
+          "textStyle": {
+            "bold": true,
+            "fontSize": {
+              "magnitude": 26,
+              "unit": "PT",
+            },
+            "foregroundColor": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.102,
+                  "green": 0.102,
+                  "red": 0.102,
+                },
+              },
+            },
+            "italic": false,
+            "weightedFontFamily": {
+              "fontFamily": "Inter",
+              "weight": 400,
+            },
+          },
+        },
+      },
+    },
+    {
+      "updateNamedStyle": {
+        "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.alignment,paragraph_style.indent_end",
+        "namedStyle": {
+          "namedStyleType": "SUBTITLE",
+          "paragraphStyle": {
+            "alignment": "START",
+            "indentEnd": {
+              "magnitude": 72,
+              "unit": "PT",
+            },
+            "lineSpacing": 100,
+            "spaceAbove": {
+              "magnitude": 0,
+              "unit": "PT",
+            },
+            "spaceBelow": {
+              "magnitude": 24,
+              "unit": "PT",
+            },
+          },
+          "textStyle": {
+            "bold": false,
+            "fontSize": {
+              "magnitude": 14,
+              "unit": "PT",
+            },
+            "foregroundColor": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.4078,
+                  "green": 0.3882,
+                  "red": 0.3725,
+                },
+              },
+            },
+            "italic": true,
+            "weightedFontFamily": {
+              "fontFamily": "Source Serif Pro",
+              "weight": 400,
+            },
+          },
+        },
+      },
+    },
+    {
+      "updateNamedStyle": {
+        "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.keep_with_next,paragraph_style.indent_end",
+        "namedStyle": {
+          "namedStyleType": "HEADING_1",
+          "paragraphStyle": {
+            "indentEnd": {
+              "magnitude": 72,
+              "unit": "PT",
+            },
+            "keepWithNext": true,
+            "lineSpacing": 100,
+            "spaceAbove": {
+              "magnitude": 24,
+              "unit": "PT",
+            },
+            "spaceBelow": {
+              "magnitude": 8,
+              "unit": "PT",
+            },
+          },
+          "textStyle": {
+            "bold": true,
+            "fontSize": {
+              "magnitude": 19,
+              "unit": "PT",
+            },
+            "foregroundColor": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.102,
+                  "green": 0.102,
+                  "red": 0.102,
+                },
+              },
+            },
+            "italic": false,
+            "weightedFontFamily": {
+              "fontFamily": "Inter",
+              "weight": 400,
+            },
+          },
+        },
+      },
+    },
+    {
+      "updateNamedStyle": {
+        "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.keep_with_next,paragraph_style.indent_end",
+        "namedStyle": {
+          "namedStyleType": "HEADING_2",
+          "paragraphStyle": {
+            "indentEnd": {
+              "magnitude": 72,
+              "unit": "PT",
+            },
+            "keepWithNext": true,
+            "lineSpacing": 100,
+            "spaceAbove": {
+              "magnitude": 18,
+              "unit": "PT",
+            },
+            "spaceBelow": {
+              "magnitude": 6,
+              "unit": "PT",
+            },
+          },
+          "textStyle": {
+            "bold": true,
+            "fontSize": {
+              "magnitude": 15,
+              "unit": "PT",
+            },
+            "foregroundColor": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.102,
+                  "green": 0.102,
+                  "red": 0.102,
+                },
+              },
+            },
+            "italic": false,
+            "weightedFontFamily": {
+              "fontFamily": "Inter",
+              "weight": 400,
+            },
+          },
+        },
+      },
+    },
+    {
+      "updateNamedStyle": {
+        "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.keep_with_next,paragraph_style.indent_end",
+        "namedStyle": {
+          "namedStyleType": "HEADING_3",
+          "paragraphStyle": {
+            "indentEnd": {
+              "magnitude": 72,
+              "unit": "PT",
+            },
+            "keepWithNext": true,
+            "lineSpacing": 100,
+            "spaceAbove": {
+              "magnitude": 14,
+              "unit": "PT",
+            },
+            "spaceBelow": {
+              "magnitude": 4,
+              "unit": "PT",
+            },
+          },
+          "textStyle": {
+            "bold": true,
+            "fontSize": {
+              "magnitude": 12.5,
+              "unit": "PT",
+            },
+            "foregroundColor": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.2627,
+                  "green": 0.251,
+                  "red": 0.2353,
+                },
+              },
+            },
+            "italic": false,
+            "weightedFontFamily": {
+              "fontFamily": "Inter",
+              "weight": 400,
+            },
+          },
+        },
+      },
+    },
+    {
+      "updateNamedStyle": {
+        "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.alignment,paragraph_style.indent_end",
+        "namedStyle": {
+          "namedStyleType": "NORMAL_TEXT",
+          "paragraphStyle": {
+            "alignment": "START",
+            "indentEnd": {
+              "magnitude": 72,
+              "unit": "PT",
+            },
+            "lineSpacing": 115,
+            "spaceAbove": {
+              "magnitude": 0,
+              "unit": "PT",
+            },
+            "spaceBelow": {
+              "magnitude": 10,
+              "unit": "PT",
+            },
+          },
+          "textStyle": {
+            "bold": false,
+            "fontSize": {
+              "magnitude": 11,
+              "unit": "PT",
+            },
+            "foregroundColor": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.1412,
+                  "green": 0.1294,
+                  "red": 0.1255,
+                },
+              },
+            },
+            "italic": false,
+            "weightedFontFamily": {
+              "fontFamily": "Source Serif Pro",
+              "weight": 400,
+            },
+          },
+        },
+      },
+    },
+  ],
+}
+`;

@@ -1,0 +1,31 @@
+{
+  "name": "docu-ai",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "auth": "tsx src/cli.ts auth",
+    "probe": "tsx src/cli.ts probe",
+    "m0": "tsx src/cli.ts m0",
+    "start": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "googleapis": "^176.0.0",
+    "mdast-util-to-string": "^4.0.0",
+    "remark": "^15.0.1",
+    "remark-gfm": "^4.0.1",
+    "unist-util-visit": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/mdast": "^4.0.4",
+    "@types/node": "^22.7.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -1,0 +1,276 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`namedStyleRequests > emits a stable request shape 1`] = `
+[
+  {
+    "updateNamedStyle": {
+      "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.alignment,paragraph_style.indent_end",
+      "namedStyle": {
+        "namedStyleType": "TITLE",
+        "paragraphStyle": {
+          "alignment": "START",
+          "indentEnd": {
+            "magnitude": 72,
+            "unit": "PT",
+          },
+          "lineSpacing": 100,
+          "spaceAbove": {
+            "magnitude": 0,
+            "unit": "PT",
+          },
+          "spaceBelow": {
+            "magnitude": 6,
+            "unit": "PT",
+          },
+        },
+        "textStyle": {
+          "bold": true,
+          "fontSize": {
+            "magnitude": 26,
+            "unit": "PT",
+          },
+          "foregroundColor": {
+            "color": {
+              "rgbColor": {
+                "blue": 0.102,
+                "green": 0.102,
+                "red": 0.102,
+              },
+            },
+          },
+          "italic": false,
+          "weightedFontFamily": {
+            "fontFamily": "Inter",
+            "weight": 400,
+          },
+        },
+      },
+    },
+  },
+  {
+    "updateNamedStyle": {
+      "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.alignment,paragraph_style.indent_end",
+      "namedStyle": {
+        "namedStyleType": "SUBTITLE",
+        "paragraphStyle": {
+          "alignment": "START",
+          "indentEnd": {
+            "magnitude": 72,
+            "unit": "PT",
+          },
+          "lineSpacing": 100,
+          "spaceAbove": {
+            "magnitude": 0,
+            "unit": "PT",
+          },
+          "spaceBelow": {
+            "magnitude": 24,
+            "unit": "PT",
+          },
+        },
+        "textStyle": {
+          "bold": false,
+          "fontSize": {
+            "magnitude": 14,
+            "unit": "PT",
+          },
+          "foregroundColor": {
+            "color": {
+              "rgbColor": {
+                "blue": 0.4078,
+                "green": 0.3882,
+                "red": 0.3725,
+              },
+            },
+          },
+          "italic": true,
+          "weightedFontFamily": {
+            "fontFamily": "Source Serif Pro",
+            "weight": 400,
+          },
+        },
+      },
+    },
+  },
+  {
+    "updateNamedStyle": {
+      "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.keep_with_next,paragraph_style.indent_end",
+      "namedStyle": {
+        "namedStyleType": "HEADING_1",
+        "paragraphStyle": {
+          "indentEnd": {
+            "magnitude": 72,
+            "unit": "PT",
+          },
+          "keepWithNext": true,
+          "lineSpacing": 100,
+          "spaceAbove": {
+            "magnitude": 24,
+            "unit": "PT",
+          },
+          "spaceBelow": {
+            "magnitude": 8,
+            "unit": "PT",
+          },
+        },
+        "textStyle": {
+          "bold": true,
+          "fontSize": {
+            "magnitude": 19,
+            "unit": "PT",
+          },
+          "foregroundColor": {
+            "color": {
+              "rgbColor": {
+                "blue": 0.102,
+                "green": 0.102,
+                "red": 0.102,
+              },
+            },
+          },
+          "italic": false,
+          "weightedFontFamily": {
+            "fontFamily": "Inter",
+            "weight": 400,
+          },
+        },
+      },
+    },
+  },
+  {
+    "updateNamedStyle": {
+      "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.keep_with_next,paragraph_style.indent_end",
+      "namedStyle": {
+        "namedStyleType": "HEADING_2",
+        "paragraphStyle": {
+          "indentEnd": {
+            "magnitude": 72,
+            "unit": "PT",
+          },
+          "keepWithNext": true,
+          "lineSpacing": 100,
+          "spaceAbove": {
+            "magnitude": 18,
+            "unit": "PT",
+          },
+          "spaceBelow": {
+            "magnitude": 6,
+            "unit": "PT",
+          },
+        },
+        "textStyle": {
+          "bold": true,
+          "fontSize": {
+            "magnitude": 15,
+            "unit": "PT",
+          },
+          "foregroundColor": {
+            "color": {
+              "rgbColor": {
+                "blue": 0.102,
+                "green": 0.102,
+                "red": 0.102,
+              },
+            },
+          },
+          "italic": false,
+          "weightedFontFamily": {
+            "fontFamily": "Inter",
+            "weight": 400,
+          },
+        },
+      },
+    },
+  },
+  {
+    "updateNamedStyle": {
+      "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.keep_with_next,paragraph_style.indent_end",
+      "namedStyle": {
+        "namedStyleType": "HEADING_3",
+        "paragraphStyle": {
+          "indentEnd": {
+            "magnitude": 72,
+            "unit": "PT",
+          },
+          "keepWithNext": true,
+          "lineSpacing": 100,
+          "spaceAbove": {
+            "magnitude": 14,
+            "unit": "PT",
+          },
+          "spaceBelow": {
+            "magnitude": 4,
+            "unit": "PT",
+          },
+        },
+        "textStyle": {
+          "bold": true,
+          "fontSize": {
+            "magnitude": 12.5,
+            "unit": "PT",
+          },
+          "foregroundColor": {
+            "color": {
+              "rgbColor": {
+                "blue": 0.2627,
+                "green": 0.251,
+                "red": 0.2353,
+              },
+            },
+          },
+          "italic": false,
+          "weightedFontFamily": {
+            "fontFamily": "Inter",
+            "weight": 400,
+          },
+        },
+      },
+    },
+  },
+  {
+    "updateNamedStyle": {
+      "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.alignment,paragraph_style.indent_end",
+      "namedStyle": {
+        "namedStyleType": "NORMAL_TEXT",
+        "paragraphStyle": {
+          "alignment": "START",
+          "indentEnd": {
+            "magnitude": 72,
+            "unit": "PT",
+          },
+          "lineSpacing": 115,
+          "spaceAbove": {
+            "magnitude": 0,
+            "unit": "PT",
+          },
+          "spaceBelow": {
+            "magnitude": 10,
+            "unit": "PT",
+          },
+        },
+        "textStyle": {
+          "bold": false,
+          "fontSize": {
+            "magnitude": 11,
+            "unit": "PT",
+          },
+          "foregroundColor": {
+            "color": {
+              "rgbColor": {
+                "blue": 0.1412,
+                "green": 0.1294,
+                "red": 0.1255,
+              },
+            },
+          },
+          "italic": false,
+          "weightedFontFamily": {
+            "fontFamily": "Source Serif Pro",
+            "weight": 400,
+          },
+        },
+      },
+    },
+  },
+]
+`;
