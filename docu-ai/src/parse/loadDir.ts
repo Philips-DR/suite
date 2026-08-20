@@ -45,7 +45,8 @@ async function readManifest(dir: string): Promise<string[] | undefined> {
   const names: string[] = []
   const linkPattern = /\[[^\]]*\]\(([^)]+\.md)\)/gi
   for (const match of text.matchAll(linkPattern)) {
-    names.push(match[1])
+    // Group 1 is required by the pattern itself, so it's always populated for a successful match.
+    names.push(match[1]!)
   }
   return names.length > 0 ? names : undefined
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { bulletRequest, bulletRequestsDescending } from '../src/emit/lists.js'
+import { bulletRequest } from '../src/emit/lists.js'
 import type { docs_v1 } from 'googleapis'
 
 const ranges: docs_v1.Schema$Range[] = [
@@ -25,16 +25,5 @@ describe('bulletRequest', () => {
 
   it('throws rather than silently styling the wrong paragraphs when the run is out of range', () => {
     expect(() => bulletRequest(ranges, { ordered: false, start: 5, end: 6 })).toThrow(/out of range/)
-  })
-})
-
-describe('bulletRequestsDescending', () => {
-  it('orders requests by descending start index, so applying them in sequence stays valid', () => {
-    const reqs = bulletRequestsDescending(ranges, [
-      { ordered: false, start: 0, end: 1 },
-      { ordered: false, start: 2, end: 3 },
-    ])
-    const starts = reqs.map((r) => r.createParagraphBullets?.range?.startIndex)
-    expect(starts).toEqual([11, 1])
   })
 })

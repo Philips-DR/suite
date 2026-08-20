@@ -6,7 +6,7 @@ import { technical } from '../src/theme/presets/technical.js'
 describe('renderTextBlocks', () => {
   it('starts at index 1, because index 0 is not a valid location', () => {
     const { requests } = renderTextBlocks([{ runs: plain('Hello'), style: 'TITLE' }], technical)
-    expect(requests[0].insertText?.location?.index).toBe(BODY_START)
+    expect(requests[0]!.insertText?.location?.index).toBe(BODY_START)
     expect(BODY_START).toBe(1)
   })
 
@@ -20,7 +20,7 @@ describe('renderTextBlocks', () => {
       ],
       technical,
     )
-    expect(requests[0].insertText?.text).toBe('One\nTwo')
+    expect(requests[0]!.insertText?.text).toBe('One\nTwo')
   })
 
   it('accounts for the paragraph newline when advancing the cursor', () => {
@@ -56,7 +56,7 @@ describe('renderTextBlocks', () => {
   it('never styles a range that reaches the final newline', () => {
     const { requests, ranges } = renderTextBlocks([{ runs: plain('Solo'), style: 'TITLE' }], technical)
     expect(ranges[0]).toEqual({ startIndex: 1, endIndex: 5 })
-    expect(requests[1].updateParagraphStyle?.fields).toBe('named_style_type')
+    expect(requests[1]!.updateParagraphStyle?.fields).toBe('named_style_type')
   })
 
   it('rejects a block whose flattened text contains a newline', () => {
@@ -75,7 +75,7 @@ describe('renderTextBlocks', () => {
     const { requests, ranges } = renderTextBlocks([{ runs: plain('Hi'), style: 'TITLE' }], technical, {
       tabId: 't1',
     })
-    expect(requests[0].insertText?.location?.tabId).toBe('t1')
+    expect(requests[0]!.insertText?.location?.tabId).toBe('t1')
     expect(ranges[0]?.tabId).toBe('t1')
   })
 

@@ -114,9 +114,100 @@ column), and treat inline code as the dominant construct rather than an aftertho
     nested-blockquote design (indent-per-depth); fixed by scaling border width/padding by depth
     instead, which *is* provably rendered. See CLAUDE.md's style-and-inheritance rules — this is
     the font-fallback lesson generalised past fonts: a stored value is not proof of a rendered one.
-- **M3 — tables.** Readback strategy, pinned headers, column widths, alignment.
-- **M4 — tabs.** Folder → chapters → tabs, manifest ordering, cover page, clickable hand-built TOC.
-- **M5 — gates.** No-markdown-residue lint, golden request-JSON snapshots, CLI polish.
+- **M3 — DONE (2026-08-20).** Real tables: `insertTable` + readback-driven cell fills, pinned header
+  rows (verified live across a real 3-page-spanning 15-row table — header repeats correctly on every
+  page), a shaded bold header row, per-column alignment from `:---:`/`:---`/`---:` (unit-tested;
+  the real corpus uses none, so unverified live — same honest caveat as M2's blockquote nesting).
+  Column widths left at Docs' own default (EVENLY_DISTRIBUTED): the real corpus's tables are narrow
+  (2–4 columns) and it looked fine live, so a width heuristic wasn't worth inventing speculatively.
+
+  This is the milestone that forced the real four-phase sequence for the first time — a table's cell
+  indices don't exist until the (empty) table has actually been inserted, so `compileDocument` split
+  into `compileInserts` (theme + chained `endOfSegmentLocation` inserts, text and tables alike, no
+  cursor arithmetic) and `compileStyleRequests` (given one readback, reconstructs every real index
+  and builds the rest). A table cell's own inline styling (bold/code/links) can only be requested
+  once its text exists, and that fill is itself length-changing — unlike every other block, a cell's
+  `[fill, then style]` has to travel together as one unit through the same global descending-index
+  sort as bullets, or an intervening fill elsewhere could invalidate one half without the other.
+
+  Two real bugs the live build caught, both fixed with regression tests: (1) a fresh document body
+  opens with an implicit `sectionBreak` before any content — invisible in a small hand-built probe,
+  but it threw a lockstep paragraph-count reconstruction off by one at real-corpus scale. (2) a table
+  cell's own `startIndex` isn't a valid insertion point (verified via a live 400 error) — the fix is
+  `cell.content[0].startIndex`, one past the cell's own bound. Both are recorded in CLAUDE.md.
+
+- **M4 — DONE (2026-08-20).** One tab per chapter (manifest ordering was already done, in M1's
+  `loadDir.ts`). A cover tab: document title + a hand-built, genuinely clickable table of contents —
+  each entry jumps to its own chapter's first heading via `Link.heading`, verified live end to end
+  (created, read back, clicked-equivalent styling confirmed — Docs applies its own default link
+  colour/underline automatically). `plan.title` used to default to chapter 1's own title, a fine
+  stand-in when there was no cover to put it on; fixed to the source folder's name (or an explicit CLI
+  arg), since a multi-chapter document needs its own title distinct from any single chapter's.
+
+  This is the milestone that turned the "one readback" four-phase sequence into "two": a paragraph's
+  `headingId` doesn't exist until it's actually been styled `HEADING_1` by *this same build*, so the
+  cover's links can't be built until a readback taken *after* that styling has landed. Tab creation
+  itself, by contrast, needed *zero* extra readbacks — `documents.create`'s response already includes
+  the initial tab's id, and `batchUpdate`'s `replies[]` returns every new tab's id directly from the
+  same call that creates it, so N chapters cost one batch, not N round trips.
+
+  Genuinely new find from building at real-tab scale, not from any earlier probe: **PDF export
+  auto-inserts a title page per tab**, showing the tab's title in Docs' own default style before that
+  tab's real content. It's a PDF-export artifact — not part of the Docs UI reading experience — and
+  it's now a permanent fixture of how a multi-tab build's PDF has to be read during verification (skip
+  past it rather than mistake it for real content). Recorded in CLAUDE.md alongside the rest of the
+  verified-facts list, the same way the M0-era tab and font gotchas were.
+
+  Scope call, not silently dropped: **tab emoji were skipped.** `plan.md`'s own architecture section
+  names "tab titles and emoji" as an LLM-planner task for a reason — a good emoji choice needs the
+  same judgment a good chapter title does, and this project is still on the deterministic track by
+  explicit earlier choice. Revisit alongside the planner, not before it.
+- **M5 — DONE (2026-08-20).** Gates: the project-level checks CLAUDE.md and this file had been promising
+  since M0 but never actually finished.
+
+  **Tier-3 live integration test**, closing a gap that existed since the testing tiers were first
+  documented: `test/live.build.test.ts` (`npm run test:live`), gated behind `DOCU_AI_LIVE_TESTS=1` so it
+  never runs as part of `npm test` and never needs credentials to exist. Builds a real two-chapter tabbed
+  doc, reads it back, and asserts tab titles, table cell contents, and — the part worth calling out — that
+  the cover's TOC links actually resolve: each link's `heading.tabId`/`heading.id` is checked against the
+  target chapter's own readback-derived `headingId`, not just "a link exists." Trashes the doc it creates
+  on teardown via `afterAll`. Passed live end to end (~13s).
+
+  **`preview` and `lint` CLI subcommands**, matching the CLI surface `plan.md`'s own layout section had
+  documented since M0 but that never got built until now. `preview <dir>` runs parse+plan only — zero
+  network calls, zero quota spent — and prints per-chapter block-kind counts, useful for sanity-checking a
+  folder before spending a build. `lint <documentId>` re-runs the residue lint against a document that's
+  already been built, without rebuilding it. Both share a `reportResidue()` helper with `build` so the
+  three commands can't drift on what "clean" means.
+
+  **ESLint**, the actual `npm run lint` gate. Configured with typescript-eslint's `recommendedTypeChecked`,
+  not `strictTypeChecked` — strict flagged the codebase's own established idiom (a `!` non-null assertion
+  once an index has already been bounds-checked, load-bearing throughout `emit/`'s index arithmetic) as if
+  it were a bug; recommended keeps every type-aware rule that catches real mistakes (floating promises,
+  unsafe `any` flow) without re-litigating a style choice already made on purpose. `no-explicit-any` is
+  bumped to `error` explicitly, matching this file's own "no `any`" rule. One real tooling snag:
+  `eslint.config.js` itself sits outside `tsconfig.json`'s `include` (deliberately — it's a tooling file,
+  not project source), which broke typescript-eslint's `projectService`; fixed via
+  `projectService: { allowDefaultProject: ['eslint.config.js'] }` rather than pulling a config file into
+  the project's own compile.
+
+  **`noUncheckedIndexedAccess` enabled** in `tsconfig.json` — it wasn't on, meaning `array[i]` typed as
+  always-defined regardless of bounds, which is exactly the unsound default this project's own "index
+  arithmetic is unforgiving" culture argues against. Turning it on surfaced two genuine gaps in production
+  code, both regex capture-group accesses that are structurally guaranteed non-`undefined` by the pattern
+  itself but that TypeScript can't see that far: `src/emit/units.ts`'s `rgb()` and
+  `src/parse/loadDir.ts`'s SUMMARY.md link parser. Both fixed with a justified `!` plus a comment
+  explaining *why* the group can't be missing, not a blanket suppression. A handful of test files needed
+  the same treatment for array-destructured request assertions.
+
+  End state, all three gates clean: `npx tsc --noEmit` clean, `npm test` 174/174 (1 correctly skipped —
+  the live tier), `npm run lint` zero findings.
+
+  Scope call, not silently dropped: this pass fixed real ESLint findings (an unused type import, two
+  `Error` throws that dropped the original cause instead of chaining it, one genuinely dead assignment,
+  several now-redundant type assertions once `noUncheckedIndexedAccess` was on) but did not do a second,
+  independent pass looking for *new* categories of bug the way M0–M4 each did against the live API — M5 is
+  about the gates existing and being honest, not about discovering new Docs API behaviour.
 
 Deferred: syntax highlighting (Shiki → per-token `foregroundColor`), PDF-render vision QA loop, images, LLM planner.
 

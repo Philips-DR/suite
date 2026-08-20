@@ -20,7 +20,9 @@ export async function exportPdf(
     { fileId: documentId, mimeType: 'application/pdf' },
     { responseType: 'arraybuffer' },
   )
-  await writeFile(outPath, Buffer.from(res.data as unknown as ArrayBuffer))
+  // res.data is typed `unknown` (the googleapis client can't know responseType narrows it), so a
+  // single assertion suffices — no need to round-trip through `as unknown` first.
+  await writeFile(outPath, Buffer.from(res.data as ArrayBuffer))
   return outPath
 }
 
@@ -33,6 +35,7 @@ export async function pdfFontNames(pdfPath: string): Promise<string[]> {
   } catch (err) {
     throw new Error(
       `could not run pdffonts (poppler-utils). Font verification needs it: ${String(err)}`,
+      { cause: err },
     )
   }
 

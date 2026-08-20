@@ -4,7 +4,6 @@ import type {
   Content,
   Heading,
   List as MdastList,
-  ListItem as MdastListItem,
   Paragraph,
   PhrasingContent,
   Root,
@@ -66,7 +65,7 @@ function paragraphChildren(node: { children: Content[] }): Inline[] {
  */
 function flattenList(list: MdastList, depth: number): ListItem[] {
   const items: ListItem[] = []
-  for (const item of list.children as MdastListItem[]) {
+  for (const item of list.children) {
     items.push({ depth, ordered: list.ordered ?? false, children: paragraphChildren(item) })
     for (const child of item.children) {
       if (child.type === 'list') items.push(...flattenList(child, depth + 1))
@@ -90,7 +89,7 @@ function planBlockquote(node: Blockquote): Block {
 function planBlock(node: Content): Block | undefined {
   switch (node.type) {
     case 'heading':
-      return { kind: 'heading', level: (node as Heading).depth, children: planInline(node.children) }
+      return { kind: 'heading', level: node.depth, children: planInline(node.children) }
     case 'paragraph':
       return { kind: 'paragraph', children: planInline(node.children) }
     case 'list':

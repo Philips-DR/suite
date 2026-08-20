@@ -1,23 +1,12 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`compileDocument — golden request snapshot > emits a stable, reviewable Request[] for every phase 1`] = `
+exports[`compileChapterInserts — golden request snapshot > emits a stable, reviewable Request[] for theme + insert phases 1`] = `
 {
-  "bulletRequests": [
-    {
-      "createParagraphBullets": {
-        "bulletPreset": "BULLET_DISC_CIRCLE_SQUARE",
-        "range": {
-          "endIndex": 123,
-          "startIndex": 90,
-        },
-      },
-    },
-  ],
-  "contentRequests": [
+  "insertRequests": [
     {
       "insertText": {
-        "location": {
-          "index": 1,
+        "endOfSegmentLocation": {
+          "tabId": "t.golden",
         },
         "text": "Chapter One
 Overview
@@ -30,744 +19,351 @@ A rule follows
  
 Fenced code
 def f(x):    return x + 1
-A small table
-Name   Kind
-a   one
-b   two
-A quoted note
+A small table",
+      },
+    },
+    {
+      "insertTable": {
+        "columns": 2,
+        "endOfSegmentLocation": {
+          "tabId": "t.golden",
+        },
+        "rows": 3,
+      },
+    },
+    {
+      "insertText": {
+        "endOfSegmentLocation": {
+          "tabId": "t.golden",
+        },
+        "text": "A quoted note
 A single-level blockquote with bold inside it.
 A nested quote, one level deeper.
 An unlabeled fence
 INITIALIZE → VALIDATE → END",
       },
     },
+  ],
+  "segments": [
     {
-      "updateParagraphStyle": {
-        "fields": "named_style_type",
-        "paragraphStyle": {
-          "namedStyleType": "HEADING_1",
+      "codeBlockIndices": [
+        10,
+      ],
+      "kind": "text",
+      "listRuns": [
+        {
+          "end": 7,
+          "ordered": false,
+          "start": 4,
         },
-        "range": {
-          "endIndex": 12,
-          "startIndex": 1,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "named_style_type",
-        "paragraphStyle": {
-          "namedStyleType": "HEADING_2",
-        },
-        "range": {
-          "endIndex": 21,
-          "startIndex": 13,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "named_style_type",
-        "paragraphStyle": {
-          "namedStyleType": "NORMAL_TEXT",
-        },
-        "range": {
-          "endIndex": 77,
-          "startIndex": 22,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "named_style_type",
-        "paragraphStyle": {
-          "namedStyleType": "HEADING_3",
-        },
-        "range": {
-          "endIndex": 89,
-          "startIndex": 78,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "named_style_type",
-        "paragraphStyle": {
-          "namedStyleType": "NORMAL_TEXT",
-        },
-        "range": {
-          "endIndex": 98,
-          "startIndex": 90,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "named_style_type",
-        "paragraphStyle": {
-          "namedStyleType": "NORMAL_TEXT",
-        },
-        "range": {
-          "endIndex": 111,
-          "startIndex": 99,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "named_style_type",
-        "paragraphStyle": {
-          "namedStyleType": "NORMAL_TEXT",
-        },
-        "range": {
-          "endIndex": 123,
-          "startIndex": 112,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "named_style_type",
-        "paragraphStyle": {
-          "namedStyleType": "HEADING_2",
-        },
-        "range": {
-          "endIndex": 138,
-          "startIndex": 124,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "named_style_type",
-        "paragraphStyle": {
-          "namedStyleType": "NORMAL_TEXT",
-        },
-        "range": {
-          "endIndex": 140,
-          "startIndex": 139,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "named_style_type",
-        "paragraphStyle": {
-          "namedStyleType": "HEADING_2",
-        },
-        "range": {
-          "endIndex": 152,
-          "startIndex": 141,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "named_style_type",
-        "paragraphStyle": {
-          "namedStyleType": "NORMAL_TEXT",
-        },
-        "range": {
-          "endIndex": 179,
-          "startIndex": 153,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "named_style_type",
-        "paragraphStyle": {
-          "namedStyleType": "HEADING_2",
-        },
-        "range": {
-          "endIndex": 193,
-          "startIndex": 180,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "named_style_type",
-        "paragraphStyle": {
-          "namedStyleType": "NORMAL_TEXT",
-        },
-        "range": {
-          "endIndex": 205,
-          "startIndex": 194,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "named_style_type",
-        "paragraphStyle": {
-          "namedStyleType": "NORMAL_TEXT",
-        },
-        "range": {
-          "endIndex": 213,
-          "startIndex": 206,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "named_style_type",
-        "paragraphStyle": {
-          "namedStyleType": "NORMAL_TEXT",
-        },
-        "range": {
-          "endIndex": 221,
-          "startIndex": 214,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "named_style_type",
-        "paragraphStyle": {
-          "namedStyleType": "HEADING_2",
-        },
-        "range": {
-          "endIndex": 235,
-          "startIndex": 222,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "named_style_type",
-        "paragraphStyle": {
-          "namedStyleType": "NORMAL_TEXT",
-        },
-        "range": {
-          "endIndex": 282,
-          "startIndex": 236,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "named_style_type",
-        "paragraphStyle": {
-          "namedStyleType": "NORMAL_TEXT",
-        },
-        "range": {
-          "endIndex": 316,
-          "startIndex": 283,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "named_style_type",
-        "paragraphStyle": {
-          "namedStyleType": "HEADING_2",
-        },
-        "range": {
-          "endIndex": 335,
-          "startIndex": 317,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "named_style_type",
-        "paragraphStyle": {
-          "namedStyleType": "NORMAL_TEXT",
-        },
-        "range": {
-          "endIndex": 363,
-          "startIndex": 336,
-        },
-      },
-    },
-    {
-      "updateTextStyle": {
-        "fields": "bold",
-        "range": {
-          "endIndex": 43,
-          "startIndex": 39,
-        },
-        "textStyle": {
-          "bold": true,
-        },
-      },
-    },
-    {
-      "updateTextStyle": {
-        "fields": "italic",
-        "range": {
-          "endIndex": 51,
-          "startIndex": 45,
-        },
-        "textStyle": {
-          "italic": true,
-        },
-      },
-    },
-    {
-      "updateTextStyle": {
-        "fields": "weighted_font_family,font_size,bold,italic,foreground_color,background_color",
-        "range": {
-          "endIndex": 64,
-          "startIndex": 53,
-        },
-        "textStyle": {
-          "backgroundColor": {
-            "color": {
-              "rgbColor": {
-                "blue": 0.9569,
-                "green": 0.9529,
-                "red": 0.9451,
-              },
+      ],
+      "quoteRuns": [],
+      "ruleIndices": [
+        8,
+      ],
+      "textBlocks": [
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "Chapter One",
             },
-          },
-          "bold": false,
-          "fontSize": {
-            "magnitude": 10,
-            "unit": "PT",
-          },
-          "foregroundColor": {
-            "color": {
-              "rgbColor": {
-                "blue": 0.2627,
-                "green": 0.251,
-                "red": 0.2353,
-              },
+          ],
+          "style": "HEADING_1",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "Overview",
             },
-          },
-          "italic": false,
-          "weightedFontFamily": {
-            "fontFamily": "Roboto Mono",
-            "weight": 400,
-          },
+          ],
+          "style": "HEADING_2",
         },
-      },
-    },
-    {
-      "updateTextStyle": {
-        "fields": "link",
-        "range": {
-          "endIndex": 76,
-          "startIndex": 72,
-        },
-        "textStyle": {
-          "link": {
-            "url": "https://example.com/x",
-          },
-        },
-      },
-    },
-    {
-      "updateTextStyle": {
-        "fields": "bold",
-        "range": {
-          "endIndex": 271,
-          "startIndex": 267,
-        },
-        "textStyle": {
-          "bold": true,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "border_bottom,space_above,space_below",
-        "paragraphStyle": {
-          "borderBottom": {
-            "color": {
-              "color": {
-                "rgbColor": {
-                  "blue": 0.8784,
-                  "green": 0.8627,
-                  "red": 0.8549,
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "A paragraph with ",
+            },
+            {
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "bold",
                 },
+              ],
+              "kind": "bold",
+            },
+            {
+              "kind": "text",
+              "text": ", ",
+            },
+            {
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "italic",
+                },
+              ],
+              "kind": "italic",
+            },
+            {
+              "kind": "text",
+              "text": ", ",
+            },
+            {
+              "kind": "code",
+              "text": "inline code",
+            },
+            {
+              "kind": "text",
+              "text": ", and a ",
+            },
+            {
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "link",
+                },
+              ],
+              "href": "https://example.com/x",
+              "kind": "link",
+            },
+            {
+              "kind": "text",
+              "text": ".",
+            },
+          ],
+          "style": "NORMAL_TEXT",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "Nested list",
+            },
+          ],
+          "style": "HEADING_3",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "top item",
+            },
+          ],
+          "style": "NORMAL_TEXT",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "	",
+            },
+            {
+              "kind": "text",
+              "text": "nested item",
+            },
+          ],
+          "style": "NORMAL_TEXT",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "back to top",
+            },
+          ],
+          "style": "NORMAL_TEXT",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "A rule follows",
+            },
+          ],
+          "style": "HEADING_2",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": " ",
+            },
+          ],
+          "style": "NORMAL_TEXT",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "Fenced code",
+            },
+          ],
+          "style": "HEADING_2",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "def f(x):",
+            },
+            {
+              "kind": "break",
+            },
+            {
+              "kind": "text",
+              "text": "    return x + 1",
+            },
+          ],
+          "style": "NORMAL_TEXT",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "A small table",
+            },
+          ],
+          "style": "HEADING_2",
+        },
+      ],
+    },
+    {
+      "kind": "table",
+      "table": {
+        "align": [
+          undefined,
+          undefined,
+        ],
+        "kind": "table",
+        "rows": [
+          [
+            [
+              {
+                "kind": "text",
+                "text": "Name",
               },
-            },
-            "dashStyle": "SOLID",
-            "padding": {
-              "magnitude": 2,
-              "unit": "PT",
-            },
-            "width": {
-              "magnitude": 1,
-              "unit": "PT",
-            },
-          },
-          "spaceAbove": {
-            "magnitude": 12,
-            "unit": "PT",
-          },
-          "spaceBelow": {
-            "magnitude": 12,
-            "unit": "PT",
-          },
-        },
-        "range": {
-          "endIndex": 140,
-          "startIndex": 139,
-        },
+            ],
+            [
+              {
+                "kind": "text",
+                "text": "Kind",
+              },
+            ],
+          ],
+          [
+            [
+              {
+                "kind": "text",
+                "text": "a",
+              },
+            ],
+            [
+              {
+                "kind": "text",
+                "text": "one",
+              },
+            ],
+          ],
+          [
+            [
+              {
+                "kind": "text",
+                "text": "b",
+              },
+            ],
+            [
+              {
+                "kind": "text",
+                "text": "two",
+              },
+            ],
+          ],
+        ],
       },
     },
     {
-      "updateParagraphStyle": {
-        "fields": "shading,border_top,border_bottom,border_left,border_right,indent_start,indent_end,space_above,space_below,keep_lines_together",
-        "paragraphStyle": {
-          "borderBottom": {
-            "color": {
-              "color": {
-                "rgbColor": {
-                  "blue": 0.8784,
-                  "green": 0.8627,
-                  "red": 0.8549,
-                },
-              },
-            },
-            "dashStyle": "SOLID",
-            "padding": {
-              "magnitude": 6,
-              "unit": "PT",
-            },
-            "width": {
-              "magnitude": 1,
-              "unit": "PT",
-            },
-          },
-          "borderLeft": {
-            "color": {
-              "color": {
-                "rgbColor": {
-                  "blue": 0.8784,
-                  "green": 0.8627,
-                  "red": 0.8549,
-                },
-              },
-            },
-            "dashStyle": "SOLID",
-            "padding": {
-              "magnitude": 6,
-              "unit": "PT",
-            },
-            "width": {
-              "magnitude": 1,
-              "unit": "PT",
-            },
-          },
-          "borderRight": {
-            "color": {
-              "color": {
-                "rgbColor": {
-                  "blue": 0.8784,
-                  "green": 0.8627,
-                  "red": 0.8549,
-                },
-              },
-            },
-            "dashStyle": "SOLID",
-            "padding": {
-              "magnitude": 6,
-              "unit": "PT",
-            },
-            "width": {
-              "magnitude": 1,
-              "unit": "PT",
-            },
-          },
-          "borderTop": {
-            "color": {
-              "color": {
-                "rgbColor": {
-                  "blue": 0.8784,
-                  "green": 0.8627,
-                  "red": 0.8549,
-                },
-              },
-            },
-            "dashStyle": "SOLID",
-            "padding": {
-              "magnitude": 6,
-              "unit": "PT",
-            },
-            "width": {
-              "magnitude": 1,
-              "unit": "PT",
-            },
-          },
-          "indentEnd": {
-            "magnitude": 0,
-            "unit": "PT",
-          },
-          "indentStart": {
-            "magnitude": 0,
-            "unit": "PT",
-          },
-          "keepLinesTogether": true,
-          "shading": {
-            "backgroundColor": {
-              "color": {
-                "rgbColor": {
-                  "blue": 0.9804,
-                  "green": 0.9765,
-                  "red": 0.9725,
-                },
-              },
-            },
-          },
-          "spaceAbove": {
-            "magnitude": 12,
-            "unit": "PT",
-          },
-          "spaceBelow": {
-            "magnitude": 12,
-            "unit": "PT",
-          },
+      "codeBlockIndices": [
+        4,
+      ],
+      "kind": "text",
+      "listRuns": [],
+      "quoteRuns": [
+        {
+          "depth": 2,
+          "end": 3,
+          "start": 2,
         },
-        "range": {
-          "endIndex": 179,
-          "startIndex": 153,
+        {
+          "depth": 1,
+          "end": 3,
+          "start": 1,
         },
-      },
-    },
-    {
-      "updateTextStyle": {
-        "fields": "weighted_font_family,font_size,bold,italic,foreground_color",
-        "range": {
-          "endIndex": 179,
-          "startIndex": 153,
-        },
-        "textStyle": {
-          "bold": false,
-          "fontSize": {
-            "magnitude": 10,
-            "unit": "PT",
-          },
-          "foregroundColor": {
-            "color": {
-              "rgbColor": {
-                "blue": 0.1412,
-                "green": 0.1294,
-                "red": 0.1255,
-              },
+      ],
+      "ruleIndices": [],
+      "textBlocks": [
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "A quoted note",
             },
-          },
-          "italic": false,
-          "weightedFontFamily": {
-            "fontFamily": "Roboto Mono",
-            "weight": 400,
-          },
+          ],
+          "style": "HEADING_2",
         },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "shading,border_top,border_bottom,border_left,border_right,indent_start,indent_end,space_above,space_below,keep_lines_together",
-        "paragraphStyle": {
-          "borderBottom": {
-            "color": {
-              "color": {
-                "rgbColor": {
-                  "blue": 0.8784,
-                  "green": 0.8627,
-                  "red": 0.8549,
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "A single-level blockquote with ",
+            },
+            {
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "bold",
                 },
-              },
+              ],
+              "kind": "bold",
             },
-            "dashStyle": "SOLID",
-            "padding": {
-              "magnitude": 6,
-              "unit": "PT",
+            {
+              "kind": "text",
+              "text": " inside it.",
             },
-            "width": {
-              "magnitude": 1,
-              "unit": "PT",
-            },
-          },
-          "borderLeft": {
-            "color": {
-              "color": {
-                "rgbColor": {
-                  "blue": 0.8784,
-                  "green": 0.8627,
-                  "red": 0.8549,
-                },
-              },
-            },
-            "dashStyle": "SOLID",
-            "padding": {
-              "magnitude": 6,
-              "unit": "PT",
-            },
-            "width": {
-              "magnitude": 1,
-              "unit": "PT",
-            },
-          },
-          "borderRight": {
-            "color": {
-              "color": {
-                "rgbColor": {
-                  "blue": 0.8784,
-                  "green": 0.8627,
-                  "red": 0.8549,
-                },
-              },
-            },
-            "dashStyle": "SOLID",
-            "padding": {
-              "magnitude": 6,
-              "unit": "PT",
-            },
-            "width": {
-              "magnitude": 1,
-              "unit": "PT",
-            },
-          },
-          "borderTop": {
-            "color": {
-              "color": {
-                "rgbColor": {
-                  "blue": 0.8784,
-                  "green": 0.8627,
-                  "red": 0.8549,
-                },
-              },
-            },
-            "dashStyle": "SOLID",
-            "padding": {
-              "magnitude": 6,
-              "unit": "PT",
-            },
-            "width": {
-              "magnitude": 1,
-              "unit": "PT",
-            },
-          },
-          "indentEnd": {
-            "magnitude": 0,
-            "unit": "PT",
-          },
-          "indentStart": {
-            "magnitude": 0,
-            "unit": "PT",
-          },
-          "keepLinesTogether": true,
-          "shading": {
-            "backgroundColor": {
-              "color": {
-                "rgbColor": {
-                  "blue": 0.9804,
-                  "green": 0.9765,
-                  "red": 0.9725,
-                },
-              },
-            },
-          },
-          "spaceAbove": {
-            "magnitude": 12,
-            "unit": "PT",
-          },
-          "spaceBelow": {
-            "magnitude": 12,
-            "unit": "PT",
-          },
+          ],
+          "style": "NORMAL_TEXT",
         },
-        "range": {
-          "endIndex": 363,
-          "startIndex": 336,
-        },
-      },
-    },
-    {
-      "updateTextStyle": {
-        "fields": "weighted_font_family,font_size,bold,italic,foreground_color",
-        "range": {
-          "endIndex": 363,
-          "startIndex": 336,
-        },
-        "textStyle": {
-          "bold": false,
-          "fontSize": {
-            "magnitude": 10,
-            "unit": "PT",
-          },
-          "foregroundColor": {
-            "color": {
-              "rgbColor": {
-                "blue": 0.1412,
-                "green": 0.1294,
-                "red": 0.1255,
-              },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "A nested quote, one level deeper.",
             },
-          },
-          "italic": false,
-          "weightedFontFamily": {
-            "fontFamily": "Roboto Mono",
-            "weight": 400,
-          },
+          ],
+          "style": "NORMAL_TEXT",
         },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "border_left",
-        "paragraphStyle": {
-          "borderLeft": {
-            "color": {
-              "color": {
-                "rgbColor": {
-                  "blue": 0.5451,
-                  "green": 0.5255,
-                  "red": 0.502,
-                },
-              },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "An unlabeled fence",
             },
-            "dashStyle": "SOLID",
-            "padding": {
-              "magnitude": 6,
-              "unit": "PT",
-            },
-            "width": {
-              "magnitude": 2,
-              "unit": "PT",
-            },
-          },
+          ],
+          "style": "HEADING_2",
         },
-        "range": {
-          "endIndex": 316,
-          "startIndex": 236,
-        },
-      },
-    },
-    {
-      "updateParagraphStyle": {
-        "fields": "border_left",
-        "paragraphStyle": {
-          "borderLeft": {
-            "color": {
-              "color": {
-                "rgbColor": {
-                  "blue": 0.5451,
-                  "green": 0.5255,
-                  "red": 0.502,
-                },
-              },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "INITIALIZE → VALIDATE → END",
             },
-            "dashStyle": "SOLID",
-            "padding": {
-              "magnitude": 10,
-              "unit": "PT",
-            },
-            "width": {
-              "magnitude": 3,
-              "unit": "PT",
-            },
-          },
+          ],
+          "style": "NORMAL_TEXT",
         },
-        "range": {
-          "endIndex": 316,
-          "startIndex": 283,
-        },
-      },
+      ],
     },
   ],
   "themeRequests": [
@@ -792,6 +388,7 @@ INITIALIZE → VALIDATE → END",
           },
         },
         "fields": "margin_top,margin_bottom,margin_left,margin_right",
+        "tabId": "t.golden",
       },
     },
     {
@@ -837,6 +434,7 @@ INITIALIZE → VALIDATE → END",
             },
           },
         },
+        "tabId": "t.golden",
       },
     },
     {
@@ -882,6 +480,7 @@ INITIALIZE → VALIDATE → END",
             },
           },
         },
+        "tabId": "t.golden",
       },
     },
     {
@@ -927,6 +526,7 @@ INITIALIZE → VALIDATE → END",
             },
           },
         },
+        "tabId": "t.golden",
       },
     },
     {
@@ -972,6 +572,7 @@ INITIALIZE → VALIDATE → END",
             },
           },
         },
+        "tabId": "t.golden",
       },
     },
     {
@@ -1017,6 +618,7 @@ INITIALIZE → VALIDATE → END",
             },
           },
         },
+        "tabId": "t.golden",
       },
     },
     {
@@ -1062,6 +664,7 @@ INITIALIZE → VALIDATE → END",
             },
           },
         },
+        "tabId": "t.golden",
       },
     },
   ],

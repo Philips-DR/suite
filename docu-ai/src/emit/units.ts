@@ -14,7 +14,9 @@ function round(n: number): number {
 export function rgb(hex: Hex): docs_v1.Schema$RgbColor {
   const match = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim())
   if (!match) throw new Error(`invalid hex colour: ${JSON.stringify(hex)}`)
-  let digits = match[1]
+  // Group 1 is required by the pattern itself (not optional), so it's always populated once `match`
+  // is truthy — TypeScript's RegExpMatchArray typing can't see that from the pattern, only we can.
+  let digits = match[1]!
   if (digits.length === 3) {
     digits = digits
       .split('')

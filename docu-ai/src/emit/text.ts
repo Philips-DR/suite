@@ -1,7 +1,7 @@
 import type { docs_v1 } from 'googleapis'
 import type { Inline } from '../plan/types.js'
 import type { Theme } from '../theme/types.js'
-import { flattenInline, type FlatRun, type Mark } from './inline.js'
+import { flattenInline, type Mark } from './inline.js'
 import { textStyleFor, type NamedStyleType } from './namedStyles.js'
 
 /** The first index a document body will accept. Index 0 is not a valid location. */
@@ -21,7 +21,8 @@ export interface RenderedText {
 }
 
 /** No style at all: the common case for plain prose, and worth skipping a request over. */
-function textStyleForMarks(
+/** Exported for emit/table.ts: a cell's inline marks (code/bold/link/...) compose the same way. */
+export function textStyleForMarks(
   marks: Mark[],
   href: string | undefined,
   theme: Theme,

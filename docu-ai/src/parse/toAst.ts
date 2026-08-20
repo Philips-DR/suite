@@ -8,5 +8,5 @@ import type { Root } from 'mdast'
  */
 export function parseMarkdown(source: string): Root {
   const processor = remark().use(remarkGfm)
-  return processor.parse(source) as Root
+  return processor.parse(source)
 }

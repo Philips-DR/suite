@@ -31,7 +31,7 @@ describe('namedStyleRequests', () => {
   })
 
   it('masks exactly the leaves it sets, and no others', () => {
-    const title = requests[0].updateNamedStyle
+    const title = requests[0]!.updateNamedStyle
     expect(title?.fields).toBe(
       'named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,' +
         'text_style.italic,text_style.foreground_color,paragraph_style.space_above,' +
@@ -42,7 +42,7 @@ describe('namedStyleRequests', () => {
 
   // Inheritance is the main source of formatting bleed, so these are set rather than left unset.
   it('pins bold and italic explicitly instead of inheriting them', () => {
-    const body = requests[5].updateNamedStyle?.namedStyle?.textStyle
+    const body = requests[5]!.updateNamedStyle?.namedStyle?.textStyle
     expect(body?.bold).toBe(false)
     expect(body?.italic).toBe(false)
   })

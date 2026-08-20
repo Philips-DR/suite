@@ -52,7 +52,8 @@ export interface CodeBlockNode {
 export interface TableBlock {
   kind: 'table'
   align: Array<'left' | 'center' | 'right' | undefined>
-  rows: Inline[][][] // rows -> cells -> inline content
+  /** rows -> cells -> inline content. rows[0] is always the header — GFM tables require exactly one. */
+  rows: Inline[][][]
 }
 
 /** Real quote styling is M2. Content is preserved as ordinary blocks until then. */

@@ -61,4 +61,7 @@ export const technical: Theme = {
     spaceBelowPt: 12,
   },
   blockquote: { borderColor: '#80868b', borderWidthPt: 2, paddingPt: 6 },
+  // A step darker than the rule/code-block grays (#dadce0/#f8f9fa) so the header row reads as
+  // structurally distinct at a glance, not just another shaded block.
+  table: { headerShading: '#e8eaed' },
 }

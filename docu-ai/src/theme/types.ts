@@ -65,8 +65,9 @@ export interface CodeBlockSpec {
   spaceBelowPt: number
 }
 
-/** A left accent bar plus an inset, scaled by nesting depth for `>>` inside `>`. */
 /**
+ * A left accent bar plus an inset, scaled by nesting depth for `>>` inside `>`.
+ *
  * NOT indentStart: verified live (2026-08-19, five separate documents) that Docs' PDF export
  * completely ignores ParagraphStyle.indentStart — stored and read back correctly via documents.get,
  * at any magnitude up to 200pt, set via a named style or a per-paragraph override, with or without a
@@ -83,8 +84,19 @@ export interface BlockquoteSpec {
 }
 
 /**
- * Only the blocks M0 and M1 need. Code, quote, table, and list specs arrive with their milestones —
- * this type is expected to grow, and growing it is not a design failure.
+ * Docs' own default cell borders (confirmed live: a plain `insertTable` already renders clean, thin
+ * black grid lines with no styling request at all) are left alone — only what a careful human would
+ * actually add on top gets a spec here: a shaded, bold header row. Column widths are deliberately
+ * NOT themed: the real corpus's tables are narrow (2–4 columns) and Docs' own default
+ * (EVENLY_DISTRIBUTED) was judged fine after looking at the live render — see plan.md.
+ */
+export interface TableSpec {
+  headerShading: Hex
+}
+
+/**
+ * Only the blocks M0–M2 needed. The IR is expected to keep growing with each milestone — that's not
+ * a design failure.
  */
 export interface Theme {
   name: string
@@ -100,6 +112,7 @@ export interface Theme {
   rule: RuleSpec
   codeBlock: CodeBlockSpec
   blockquote: BlockquoteSpec
+  table: TableSpec
 }
 
 export function themeFonts(theme: Theme): string[] {

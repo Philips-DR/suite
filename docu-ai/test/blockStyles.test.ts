@@ -6,7 +6,11 @@ import { technical } from '../src/theme/presets/technical.js'
 const RANGE: docs_v1.Schema$Range = { startIndex: 10, endIndex: 40 }
 
 describe('codeBlockStyleRequests', () => {
-  const [paragraphReq, textReq] = codeBlockStyleRequests(RANGE, technical)
+  // Always exactly [paragraph style, text style] by design — see codeBlockStyleRequests's own doc
+  // comment — so asserting that shape once here is more honest than optional-chaining every use below.
+  const requests = codeBlockStyleRequests(RANGE, technical)
+  const paragraphReq = requests[0]!
+  const textReq = requests[1]!
 
   it('returns exactly a paragraph-style request and a text-style request, same range', () => {
     expect(paragraphReq.updateParagraphStyle?.range).toEqual(RANGE)

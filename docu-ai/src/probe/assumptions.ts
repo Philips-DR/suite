@@ -37,14 +37,16 @@ export async function probeAssumptions(auth: AuthProvider, pdfPath: string): Pro
   const documentId = created.data.documentId
   if (!documentId) throw new Error('documents.create returned no documentId')
 
-  // ---- 1. Theme, using snake_case field masks. A bad mask fails loudly, so reaching the next step
-  //         is itself the evidence that the dialect is accepted.
-  let snakeCase = true
+  // ---- 1. Theme, using snake_case field masks. A bad mask fails loudly, so reaching the report
+  //         construction below is itself the evidence that the dialect is accepted — there's no
+  //         path where snakeCase is false and the function still returns.
+  const snakeCase = true
   try {
     await batch(docs, documentId, [documentStyleRequest(technical), ...namedStyleRequests(technical)])
   } catch (err) {
-    snakeCase = false
-    throw new Error(`snake_case field masks were rejected, which blocks everything else: ${String(err)}`)
+    throw new Error(`snake_case field masks were rejected, which blocks everything else: ${String(err)}`, {
+      cause: err,
+    })
   }
 
   // ---- 2. One paragraph per candidate font, plus a \v line-break specimen.

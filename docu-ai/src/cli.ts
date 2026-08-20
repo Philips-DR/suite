@@ -1,20 +1,23 @@
+import { basename } from 'node:path'
 import { GoogleOAuthProvider, hasCachedToken, tokenPath } from './auth/google.js'
 import { buildFromPlan, createThemedDocument } from './emit/document.js'
 import type { TextBlock } from './emit/text.js'
 import { loadChapterFiles } from './parse/loadDir.js'
 import { parseMarkdown } from './parse/toAst.js'
 import { planChapter, planDocument } from './plan/fromAst.js'
-import { plain } from './plan/types.js'
+import { plain, type Block } from './plan/types.js'
 import { formatReport, probeAssumptions, writeReport } from './probe/assumptions.js'
 import { technical } from './theme/presets/technical.js'
 import { countParagraphs, fetchDocument, namedStyleSummary, residueFindings } from './verify/readback.js'
 
 const USAGE = `docu-ai — markdown to Google Docs
 
-  npm run auth              authorise against Google and cache the refresh token
-  npm run probe             verify assumptions against the live API (fonts, tabs, line breaks)
-  npm run m0                build the M0 proof document
-  npm start -- build <dir>  build a doc from a folder of markdown files (M1: single tab, no tables/code yet)
+  npm run auth                       authorise against Google and cache the refresh token
+  npm run probe                      verify assumptions against the live API (fonts, tabs, line breaks)
+  npm run m0                         build the M0 proof document
+  npm start -- preview <dir>         parse + plan a folder and print its structure — no network, no quota spent
+  npm start -- build <dir> [title]   build a doc: one tab per chapter, plus a cover with a clickable TOC
+  npm start -- lint <documentId>     re-run the residue lint against an already-built document
 
 See SETUP.md for the one-time Google Cloud setup.
 `
@@ -102,18 +105,67 @@ async function cmdM0(): Promise<void> {
 }
 
 /**
- * M1's build: one chapter per file, concatenated into a single tab (real per-chapter tabs are M4).
- * Fenced code and tables render as plain paragraphs until M2/M3 — see emit/blocks.ts.
+ * Prints the residue lint's verdict for an already-fetched document and sets the exit code — shared
+ * by `build` (checked right after creating a document) and `lint` (checked against an existing one),
+ * so the two commands can't quietly drift into reporting this differently.
  */
-async function cmdBuild(dir: string | undefined): Promise<void> {
-  if (!dir) throw new Error('usage: npm start -- build <markdown-folder>')
+function reportResidue(doc: Parameters<typeof residueFindings>[0]): void {
+  const residue = residueFindings(doc, { codeFont: technical.code.font })
+  process.stdout.write(`markdown residue: ${residue.length === 0 ? 'none' : residue.join('; ')}\n\n`)
+  if (residue.length > 0) process.exitCode = 1
+}
+
+/** Recursively tallies block kinds — blockquotes aren't a kind of their own here, their contents are. */
+function countBlockKinds(blocks: Block[], counts: Record<string, number> = {}): Record<string, number> {
+  for (const block of blocks) {
+    if (block.kind === 'blockquote') {
+      countBlockKinds(block.children, counts)
+      continue
+    }
+    counts[block.kind] = (counts[block.kind] ?? 0) + 1
+  }
+  return counts
+}
+
+/**
+ * Parse + plan only — no network, no API quota spent. The per-user write quota is tight enough
+ * (CLAUDE.md) that being able to sanity-check a folder's structure before committing it to a real
+ * build has real value: catches "that heading didn't parse as a heading" before it costs a build.
+ */
+async function cmdPreview(dir: string | undefined): Promise<void> {
+  if (!dir) throw new Error('usage: npm start -- preview <markdown-folder>')
+
+  const files = await loadChapterFiles(dir)
+  if (files.length === 0) throw new Error(`no .md files found in ${dir}`)
+
+  process.stdout.write(`${files.length} chapter(s) — plan only, no changes made:\n\n`)
+  files.forEach((file, i) => {
+    const chapter = planChapter(parseMarkdown(file.source), file.slug)
+    const counts = countBlockKinds(chapter.blocks)
+    const summary =
+      Object.entries(counts)
+        .map(([kind, n]) => `${n} ${kind}`)
+        .join(', ') || '(empty)'
+    process.stdout.write(`${i + 1}. ${chapter.title} (${basename(file.path)})\n   ${summary}\n\n`)
+  })
+}
+
+/**
+ * One chapter per file, one tab per chapter, plus a cover tab (document title + a clickable
+ * hand-built table of contents linking to each chapter's own first heading).
+ */
+async function cmdBuild(dir: string | undefined, title: string | undefined): Promise<void> {
+  if (!dir) throw new Error('usage: npm start -- build <markdown-folder> [title]')
   const auth = new GoogleOAuthProvider()
 
   const files = await loadChapterFiles(dir)
   if (files.length === 0) throw new Error(`no .md files found in ${dir}`)
 
   const chapters = files.map((file) => planChapter(parseMarkdown(file.source), file.slug))
-  const plan = planDocument(chapters, chapters[0]?.title ?? 'Untitled')
+  // The cover's own title, distinct from any chapter's — chapter 1's title was a reasonable stand-in
+  // before there was a cover to put it on, but it's the wrong default now. The folder name is a
+  // plain, unsurprising fallback; pass a title explicitly for anything better.
+  const plan = planDocument(chapters, title ?? basename(dir))
 
   process.stdout.write(`${files.length} chapter(s): ${chapters.map((c) => c.title).join(', ')}
 `)
@@ -125,14 +177,18 @@ ${built.url}
 `)
 
   const doc = await fetchDocument(auth, built.documentId)
-  process.stdout.write(`paragraphs: ${countParagraphs(doc)}
-`)
+  process.stdout.write(`paragraphs: ${countParagraphs(doc)}\n`)
+  reportResidue(doc)
+}
 
-  const residue = residueFindings(doc, { codeFont: technical.code.font })
-  process.stdout.write(`markdown residue: ${residue.length === 0 ? 'none' : residue.join('; ')}
+/** Re-checks an already-built document without rebuilding it — e.g. after a human has edited it. */
+async function cmdLint(documentId: string | undefined): Promise<void> {
+  if (!documentId) throw new Error('usage: npm start -- lint <documentId>')
+  const auth = new GoogleOAuthProvider()
 
-`)
-  if (residue.length > 0) process.exitCode = 1
+  const doc = await fetchDocument(auth, documentId)
+  process.stdout.write(`paragraphs: ${countParagraphs(doc)}\n`)
+  reportResidue(doc)
 }
 
 async function main(): Promise<void> {
@@ -147,8 +203,14 @@ async function main(): Promise<void> {
     case 'm0':
       await cmdM0()
       break
+    case 'preview':
+      await cmdPreview(process.argv[3])
+      break
     case 'build':
-      await cmdBuild(process.argv[3])
+      await cmdBuild(process.argv[3], process.argv[4])
+      break
+    case 'lint':
+      await cmdLint(process.argv[3])
       break
     case 'status':
       process.stdout.write(

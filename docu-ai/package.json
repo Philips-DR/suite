@@ -8,7 +8,9 @@
   },
   "scripts": {
     "build": "tsc",
+    "lint": "eslint .",
     "test": "vitest run",
+    "test:live": "DOCU_AI_LIVE_TESTS=1 vitest run test/live.build.test.ts",
     "auth": "tsx src/cli.ts auth",
     "probe": "tsx src/cli.ts probe",
     "m0": "tsx src/cli.ts m0",
@@ -22,10 +24,13 @@
     "unist-util-visit": "^5.1.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/mdast": "^4.0.4",
     "@types/node": "^22.7.0",
+    "eslint": "^10.8.1",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
+    "typescript-eslint": "^8.67.0",
     "vitest": "^2.1.0"
   }
 }

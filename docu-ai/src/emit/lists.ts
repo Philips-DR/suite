@@ -12,9 +12,9 @@ export interface ListRun {
  * reads each paragraph's own leading-tab count within that span to infer its nesting level, which is
  * why compileBlocks prefixes each item's text with `\t.repeat(depth)` rather than passing depth here.
  *
- * Consumes the leading tabs it reads, which shortens the text — the reason this is always the last
- * request touching these paragraphs. Callers must apply every ListRun in descending start-index order,
- * since this is the one length-changing request class in an otherwise single-pass M1 build.
+ * Consumes the leading tabs it reads, which shortens the text — the reason this belongs in the
+ * length-changing phase, applied in descending start-index order alongside every other request that
+ * changes document length (table cell fills included — see emit/compile.ts's global sort).
  */
 export function bulletRequest(ranges: docs_v1.Schema$Range[], run: ListRun): docs_v1.Schema$Request {
   const first = ranges[run.start]
@@ -30,14 +30,4 @@ export function bulletRequest(ranges: docs_v1.Schema$Range[], run: ListRun): doc
       bulletPreset: run.ordered ? 'NUMBERED_DECIMAL_ALPHA_ROMAN' : 'BULLET_DISC_CIRCLE_SQUARE',
     },
   }
-}
-
-/** Every ListRun in one call, ordered so applying them in sequence never invalidates a later one. */
-export function bulletRequestsDescending(
-  ranges: docs_v1.Schema$Range[],
-  runs: ListRun[],
-): docs_v1.Schema$Request[] {
-  return [...runs]
-    .sort((a, b) => b.start - a.start)
-    .map((run) => bulletRequest(ranges, run))
 }

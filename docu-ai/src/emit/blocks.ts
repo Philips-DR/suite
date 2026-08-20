@@ -1,11 +1,10 @@
 import type { docs_v1 } from 'googleapis'
-import type { Block, Inline } from '../plan/types.js'
+import type { Block, Inline, TableBlock } from '../plan/types.js'
 import type { Theme } from '../theme/types.js'
-import { flattenInline, plainText } from './inline.js'
-import { pt, optionalColor } from './units.js'
 import { textStyleFor, type NamedStyleType } from './namedStyles.js'
 import type { TextBlock } from './text.js'
 import type { ListRun } from './lists.js'
+import { pt, optionalColor } from './units.js'
 
 /** A contiguous run of TextBlocks produced from inside one `>` blockquote, however deeply nested. */
 export interface QuoteRun {
@@ -14,7 +13,14 @@ export interface QuoteRun {
   end: number
 }
 
-export interface CompiledBlocks {
+/**
+ * A run of ordinary blocks (headings, paragraphs, lists, rules, code, quotes) — everything that can
+ * still be inserted as one plain-text blob and styled from cursor arithmetic alone, with no readback
+ * needed. Bookkeeping here is LOCAL to this segment's own textBlocks/ranges, not the whole document:
+ * once a table splits the flow, a fresh segment starts numbering from 0 again.
+ */
+export interface TextSegment {
+  kind: 'text'
   textBlocks: TextBlock[]
   listRuns: ListRun[]
   /** Indices into textBlocks/ranges of a `{kind: 'rule'}` block's placeholder paragraph. */
@@ -24,16 +30,27 @@ export interface CompiledBlocks {
   quoteRuns: QuoteRun[]
 }
 
+/**
+ * A table can't be represented as inserted text with a length known ahead of time (see
+ * emit/table.ts), so it splits the document into segments: whatever came before it, the table
+ * itself, whatever comes after. This is why M3 is the milestone that finally needs a real readback
+ * between insert and style — every earlier milestone fit inside one insert pass.
+ */
+export interface TableSegment {
+  kind: 'table'
+  table: TableBlock
+}
+
+export type Segment = TextSegment | TableSegment
+
+function emptyTextSegment(): TextSegment {
+  return { kind: 'text', textBlocks: [], listRuns: [], ruleIndices: [], codeBlockIndices: [], quoteRuns: [] }
+}
+
 function headingStyle(level: 1 | 2 | 3 | 4 | 5 | 6): NamedStyleType {
   // Levels 4–6 are valid Docs styles but the technical preset only redefines 1–3 (the fixture corpus
   // never nests past H3); Docs' own default look applies to anything deeper rather than erroring.
   return `HEADING_${level}` as NamedStyleType
-}
-
-/** A table cell's rich content, degraded to plain text until M3 gives tables real cell styling. */
-function cellText(cell: Inline[]): string {
-  const text = plainText(flattenInline(cell))
-  return text.length > 0 ? text : ' '
 }
 
 /**
@@ -55,43 +72,43 @@ function codeBlockRuns(code: string): Inline[] {
 }
 
 /**
- * Walks one chapter's blocks into a flat TextBlock sequence, plus the bookkeeping compileBlocks needs
- * to style what a plain TextBlock can't express alone: list nesting, rule borders, fenced code, and
- * blockquote insets. Every text block gets non-empty text, since a zero-length paragraph has no valid
- * style range.
+ * Walks one chapter's blocks into an ordered sequence of segments — runs of plain TextBlocks split
+ * apart wherever a table appears — plus, within each text segment, the bookkeeping a plain TextBlock
+ * can't express alone: list nesting, rule borders, fenced code, and blockquote insets. Every text
+ * block gets non-empty text, since a zero-length paragraph has no valid style range.
  *
- * Tables are captured in the IR (see plan/types.ts) but M3 owns their real formatting; here they
- * degrade to plain paragraphs. Nothing about that degrade path reintroduces markdown syntax — mdast
- * never stores `|` characters in a node's text content, so the residue lint stays clean even for
- * content this milestone doesn't fully render yet.
+ * A table gets its own segment rather than degrading to text: see emit/table.ts and TableSegment's
+ * doc comment for why it needs a different insert/style path entirely.
  */
-export function compileBlocks(blocks: Block[]): CompiledBlocks {
-  const textBlocks: TextBlock[] = []
-  const listRuns: ListRun[] = []
-  const ruleIndices: number[] = []
-  const codeBlockIndices: number[] = []
-  const quoteRuns: QuoteRun[] = []
+export function compileBlocks(blocks: Block[]): Segment[] {
+  const segments: Segment[] = []
+  let current = emptyTextSegment()
+
+  function flush(): void {
+    if (current.textBlocks.length > 0) segments.push(current)
+    current = emptyTextSegment()
+  }
 
   function pushPlain(text: string, style: NamedStyleType): void {
-    textBlocks.push({ runs: [{ kind: 'text', text }], style })
+    current.textBlocks.push({ runs: [{ kind: 'text', text }], style })
   }
 
   function walk(list: Block[], quoteDepth: number): void {
     for (const block of list) {
       switch (block.kind) {
         case 'heading':
-          textBlocks.push({ runs: block.children, style: headingStyle(block.level) })
+          current.textBlocks.push({ runs: block.children, style: headingStyle(block.level) })
           break
 
         case 'paragraph':
-          textBlocks.push({ runs: block.children, style: 'NORMAL_TEXT' })
+          current.textBlocks.push({ runs: block.children, style: 'NORMAL_TEXT' })
           break
 
         case 'list': {
-          const start = textBlocks.length
+          const start = current.textBlocks.length
           for (const item of block.items) {
             const prefix = '\t'.repeat(item.depth)
-            textBlocks.push({
+            current.textBlocks.push({
               runs: prefix.length > 0 ? [{ kind: 'text', text: prefix }, ...item.children] : item.children,
               style: 'NORMAL_TEXT',
             })
@@ -106,7 +123,7 @@ export function compileBlocks(blocks: Block[]): CompiledBlocks {
             const atBoundary =
               i === block.items.length || block.items[i]!.ordered !== block.items[groupStart]!.ordered
             if (atBoundary) {
-              listRuns.push({
+              current.listRuns.push({
                 ordered: block.items[groupStart]!.ordered,
                 start: start + groupStart,
                 end: start + i,
@@ -118,28 +135,30 @@ export function compileBlocks(blocks: Block[]): CompiledBlocks {
         }
 
         case 'rule':
-          ruleIndices.push(textBlocks.length)
+          current.ruleIndices.push(current.textBlocks.length)
           // A single space: createParagraphBullets aside, every renderable block needs non-empty
           // text, and the border itself does the visual work — the character never shows.
           pushPlain(' ', 'NORMAL_TEXT')
           break
 
         case 'code-block':
-          codeBlockIndices.push(textBlocks.length)
-          textBlocks.push({ runs: codeBlockRuns(block.code), style: 'NORMAL_TEXT' })
+          current.codeBlockIndices.push(current.textBlocks.length)
+          current.textBlocks.push({ runs: codeBlockRuns(block.code), style: 'NORMAL_TEXT' })
           break
 
         case 'table':
-          for (const row of block.rows) {
-            pushPlain(row.map(cellText).join('   '), 'NORMAL_TEXT')
-          }
+          flush()
+          segments.push({ kind: 'table', table: block })
           break
 
         case 'blockquote': {
-          const start = textBlocks.length
+          const start = current.textBlocks.length
           walk(block.children, quoteDepth + 1)
-          if (textBlocks.length > start) {
-            quoteRuns.push({ depth: quoteDepth + 1, start, end: textBlocks.length })
+          // A table inside the quote already flushed `current`, ending this run early — rare (no
+          // GFM corpus does this) and visually reasonable anyway: a table can't carry a left border
+          // the way a paragraph can, so the bar breaking around it is the honest outcome.
+          if (current.textBlocks.length > start) {
+            current.quoteRuns.push({ depth: quoteDepth + 1, start, end: current.textBlocks.length })
           }
           break
         }
@@ -148,7 +167,8 @@ export function compileBlocks(blocks: Block[]): CompiledBlocks {
   }
 
   walk(blocks, 0)
-  return { textBlocks, listRuns, ruleIndices, codeBlockIndices, quoteRuns }
+  flush()
+  return segments
 }
 
 /**

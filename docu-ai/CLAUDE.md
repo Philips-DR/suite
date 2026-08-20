@@ -9,14 +9,22 @@ two disagree, this file wins and `plan.md` should be corrected.
 
 ## Commands
 
-    npm test                 # unit + golden snapshots. MUST pass with no Google credentials present.
-    npm run build            # tsc
-    npm run auth             # one-time browser consent; caches a refresh token
-    npm run probe            # verify assumptions against the live API (see below)
-    npm run m0               # build the M0 proof document
+    npm test                          # unit + golden snapshots. MUST pass with no Google credentials present.
+    npm run test:live                 # tier 3: real API, real readback, real residue lint. Needs DOCU_AI_LIVE_TESTS=1
+                                       # (the npm script sets it) and a cached token from `npm run auth`.
+    npm run build                     # tsc
+    npm run lint                      # ESLint — code-quality gate, typescript-eslint recommendedTypeChecked
+    npm run auth                      # one-time browser consent; caches a refresh token
+    npm run probe                     # verify assumptions against the live API (see below)
+    npm run m0                        # build the M0 proof document
+    npm start -- preview <dir>        # parse + plan a folder, print its structure — no network, no quota spent
+    npm start -- build <dir> [title]  # build a doc: one tab per chapter, plus a cover with a clickable TOC
+    npm start -- lint <documentId>    # re-run the residue lint against an already-built document
 
-One-time Google Cloud setup is in SETUP.md. `npm run lint` and the `build` command over a real
-markdown folder arrive with M1.
+Don't confuse the two "lint"s: `npm run lint` is ESLint checking source code quality; `npm start -- lint` is the
+CLI subcommand that reads a *built Google Doc* back and re-runs the markdown-residue lint against it.
+
+One-time Google Cloud setup is in SETUP.md.
 
 If `npm test` ever requires credentials to run, that is a bug. Nobody runs tests that need auth.
 
@@ -79,7 +87,10 @@ Rules that follow:
 - **The body's first insertable index is 1, not 0.** Index 0 is not a valid location.
 - **The document always ends in a newline you cannot delete.** To append, use `endOfSegmentLocation`, not a
   computed tail index.
-- **Never hand-compute table cell indices.** Read them back and fill cells in reverse order.
+- **Never hand-compute table cell indices.** Read them back and fill cells in reverse order. And when
+  you do: a cell's insertion point is its first paragraph's `startIndex`, never the cell's own
+  `startIndex` — a cell wraps a paragraph, it isn't one, and Docs rejects an insert at the cell bound
+  with a 400 ("must be inside the bounds of an existing paragraph").
 - **`createParagraphBullets` consumes the leading tabs that express nesting**, so it shortens the text. Bullets
   are applied *last*, after every other styling request.
 
@@ -125,14 +136,76 @@ Verified against the live discovery document on 2026-08-19:
 
 **Live-verified by `npm run probe` on 2026-08-19**, in a run whose controls both behaved:
 
-- `addDocumentTab` genuinely works. **A new document already has one tab, titled "Tab 1"** — so chapter 1
-  must *rename that tab* with `updateDocumentTabProperties`, not add a tab. Adding one leaves a stray empty
-  "Tab 1" as the first chapter.
+- `addDocumentTab` genuinely works. **A new document already has one tab, titled "Tab 1"** — so
+  whichever tab is meant to come first (the cover, in the current design) must *rename that tab* with
+  `updateDocumentTabProperties`, not add a tab. Adding one leaves a stray empty "Tab 1" ahead of it.
 - `\v` really is an in-paragraph line break: it survives readback inside a single text run rather than
   splitting the paragraph. Use it for markdown hard breaks.
 - Both `snake_case` and `camelCase` field masks are accepted. We use snake_case, matching the reference.
 - 24 fonts embed correctly, including every monospace candidate (Roboto Mono, IBM Plex Mono, JetBrains
   Mono, Source Code Pro, Fira Mono, Space Mono, Inconsolata). `VERIFIED_FONTS` holds the confirmed list.
+
+**Live-verified building M3 (tables) on 2026-08-20:**
+
+- **A fresh document body opens with an implicit `sectionBreak` before any content.** Invisible in a
+  small hand-inspected probe — neither `.paragraph` nor `.table` matches it, so a naive "if paragraph
+  ... else if table" walk silently skips it and never reveals it's there — but it throws off any
+  lockstep count-based reconstruction by exactly one at real-document scale. `compileStyleRequests`
+  filters `body.content` to `.paragraph`/`.table` elements before walking it, rather than assuming the
+  first element is always real content.
+- **A table cell's own `startIndex` is not a valid insertion point.** `insertText` at a raw
+  `cell.startIndex` fails: "the insertion index must be inside the bounds of an existing paragraph." A
+  cell wraps a paragraph, it isn't one — insert at `cell.content[0].startIndex` (one past the cell's
+  own bound) instead. See `emit/table.ts`'s `extractCellParagraphRanges`.
+- **`endOfSegmentLocation` chains correctly** across mixed `insertText`/`insertTable` requests within
+  one `batchUpdate`, applied in array order — confirmed live, which is what lets every block in a
+  build be appended in document order with no cursor arithmetic needed to position any of them.
+- `updateTableCellStyle`'s `tableStartLocation` and `tableRange` are **mutually exclusive** ("oneof
+  field 'cells' is already set") — pass only `tableRange` (it carries its own start location nested
+  inside `tableCellLocation`) when targeting a specific range, never both.
+- `updateTableColumnProperties` needs an explicit `fields` mask like every other update request —
+  omitting it isn't a silent no-op, it's a 400.
+- `TableCellStyle.contentAlignment` is **vertical** (`TOP`/`MIDDLE`/`BOTTOM`), not the horizontal
+  left/center/right markdown's `:---:`/`:---`/`---:` columns need. Horizontal alignment is a
+  **paragraph** property — apply `ParagraphStyle.alignment` to the cell's own paragraph instead.
+- Header shading, borders, and column widths all **render as stored** — unlike `indentStart`, PDF
+  export confirms these live, and `pinTableHeaderRows` genuinely repeats the header across a real
+  multi-page table (verified on a 15-row table split across 3 pages).
+
+**Live-verified building M4 (tabs, cover, TOC) on 2026-08-20:**
+
+- **`documents.create`'s own response already includes the initial tab's id** (`data.tabs[0].tabProperties.tabId`) — no readback needed just to learn it. And **`batchUpdate`'s `replies[]` maps 1:1 to the request array**, so `addDocumentTab`'s reply carries the new tab's id directly. Tab creation for an entire document — rename the initial tab, add every other chapter's tab — is one batch with zero readbacks, regardless of chapter count.
+- **`EndOfSegmentLocation` and `Location` both take a `tabId`**, and mixed `insertText`/`insertTable`/`addDocumentTab` requests **chain correctly across tabs within one `batchUpdate`**, applied in array order. No cursor arithmetic is needed to position anything in any tab — everything is appended in document order.
+- **A paragraph's `headingId` is not assigned until that paragraph has actually been styled with a `HEADING_*` namedStyleType** — it does not exist at the readback that follows the initial plain-text insert. Linking to a chapter's heading from elsewhere (a table of contents) needs a **second** readback, taken after the styling pass that applies `HEADING_1` has already landed. Two readbacks total, not one per chapter.
+- **Cross-tab heading links need `Link.heading = {id, tabId}`, not the legacy bare `Link.headingId`** — confirmed live: the legacy field's own docs say it's only unambiguous "in documents containing a single tab." `Link.heading` (like `Link.url`) auto-applies Docs' default link colour + underline; nothing extra to set.
+- **PDF export of a multi-tab document auto-inserts a title page for each tab**, showing its tab title in Docs' own default heading style — before that tab's actual first page. This is a PDF-export artifact, not something a reader sees in the Docs UI itself; don't mistake these extra pages for real body content when reviewing a multi-tab build's PDF, and don't assume the same page count maps 1:1 onto the web-view scrolling experience.
+
+**Live-verified building the full 9-chapter real corpus (~417KB source, 1301 paragraphs) on 2026-08-20:**
+
+- **`addDocumentTab` rejects a tab title over 50 characters with a 400** ("The tab title cannot be
+  longer than 50 characters"), invisible at every earlier test scale because no fixture chapter title
+  ran that long — a real chapter H1 did. Fixed in `emit/document.ts`'s `tabTitle()`: truncated at a
+  word boundary with a trailing ellipsis, applied only to the tab-strip label. The cover's TOC keeps
+  the chapter's full, untruncated title as its link text — the two are no longer the same string past
+  this point, on purpose.
+- **`Link.url` does not validate that the value is a real URL — it silently coerces a bare relative
+  string by prepending `http://`.** An inline markdown link between sibling chapter files (e.g.
+  `[01-api-layer.md](01-api-layer.md)`, a real pattern in this corpus's own overview table) round-trips
+  as `http://01-api-layer.md`: a syntactically valid but non-resolving URL. This is a genuine fidelity
+  gap, not a crash — nothing catches it at build time or in the residue lint, since the link text
+  itself contains no markdown syntax. Currently unresolved: `plan/`'s `Inline` link carries only the
+  raw markdown `href` (`emit/inline.ts`), with no knowledge that the href might name another chapter in
+  this same build. Fixing it means matching a link's href against the chapter list's source filenames
+  and rewriting matches to `Link.heading`, the same mechanism the cover TOC already uses — real feature
+  work, not a one-line fix, deliberately not done inline while investigating.
+- The residue lint correctly flagged exactly one real finding in the full corpus, and it was a genuine
+  source defect, not a converter bug: an unmatched triple-backtick (` ```json `) sitting mid-sentence in
+  `07-shared-infrastructure.md` with no closing fence. CommonMark has no valid pairing for it, so it
+  parses as literal text — verified by hand against the raw mdast output — and a correct converter has
+  no more business "fixing" that than a human transcriber would invent a closing fence the source never
+  had. Confirms the lint's code-font exemption is working as designed, too: the same corpus legitimately
+  contains 18 literal `|` characters and 14 `**` sequences (Python `**kwargs`, `int | None`-style type
+  unions, enum-like `"a"|"b"` strings) inside real inline-code runs, and none of them false-positived.
 
 Schema presence is not proof an endpoint behaves, and a stored value is not proof of a rendered one.
 `npm run probe` is the standing answer to both: it exercises `addDocumentTab`, checks whether `\v`
@@ -179,7 +252,11 @@ Three tiers, and the first two are where the real work happens:
    the code review for any change to `emit/`. An unexplained snapshot change is a bug until proven otherwise.
 2. **IR assertions.** Fixture `.md` → DocPlan, asserted structurally. Catches parse and planning errors without
    involving the API at all.
-3. **Live integration**, gated behind an env var. Builds a real doc, asserts via readback, runs the residue lint.
+3. **Live integration**, gated behind an env var (`npm run test:live` → `test/live.build.test.ts`). Builds a
+   real tabbed doc against the real API, asserts structure via readback (tab titles, table cells, cross-tab
+   TOC links resolving to the right `headingId`), and runs the residue lint. Requires a cached token
+   (`npm run auth`) and trashes the doc it creates when done — it is not part of `npm test` and never runs in
+   an environment without credentials.
 
 **Every gotcha that bites once becomes a fixture**, named for the bug it prevents (`nested-list-tab-eating.md`,
 `code-block-style-bleed.md`). This is how the gotcha list above stays true instead of becoming folklore. M1's

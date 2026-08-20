@@ -28,6 +28,26 @@ export function bodies(doc: docs_v1.Schema$Document): docs_v1.Schema$Body[] {
   return doc.body ? [doc.body] : []
 }
 
+/**
+ * One specific tab's own body, for when a caller needs to reconstruct indices within a single tab
+ * rather than treat the whole (multi-tab) document as one flattened sequence — `bodies()` merges
+ * every tab together, which is wrong once tabs mean separate, independently-indexed documents.
+ */
+export function tabBody(
+  doc: docs_v1.Schema$Document,
+  tabId: string,
+): docs_v1.Schema$Body | undefined {
+  function search(tabs: docs_v1.Schema$Tab[] | undefined): docs_v1.Schema$Body | undefined {
+    for (const tab of tabs ?? []) {
+      if (tab.tabProperties?.tabId === tabId) return tab.documentTab?.body
+      const found = search(tab.childTabs)
+      if (found) return found
+    }
+    return undefined
+  }
+  return search(doc.tabs)
+}
+
 export interface RunInfo {
   text: string
   font: string | undefined
