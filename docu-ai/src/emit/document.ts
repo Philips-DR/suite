@@ -3,10 +3,10 @@ import type { AuthProvider } from '../auth/types.js'
 import type { Chapter, DocPlan } from '../plan/types.js'
 import { assertVerifiedFonts } from '../theme/fonts.js'
 import type { Theme } from '../theme/types.js'
-import { compileChapterInserts, compileChapterStyleRequests } from './compile.js'
-import { coverContentStyleRequests, coverInsertRequest, coverLinkRequests } from './cover.js'
+import { compileChapterContentRequests, compileChapterInserts, compileChapterLengthChangingRequests } from './compile.js'
+import { coverContentStyleRequests, coverInsertRequest } from './cover.js'
 import { documentStyleRequest, namedStyleRequests } from './namedStyles.js'
-import { renderTextBlocks, type TextBlock } from './text.js'
+import { headingLinkRequests, renderTextBlocks, type TextBlock } from './text.js'
 import { fetchDocument, tabBody } from '../verify/readback.js'
 
 /**
@@ -129,15 +129,17 @@ async function createTabs(
  * The real build: a cover tab (title + a clickable, hand-built table of contents) plus one tab per
  * chapter, in document order.
  *
- * The full four-phase sequence, finally exercised for real (M3 forced it per-tab; this is the same
- * shape, just once per chapter instead of once for the whole plan) — PLUS a second readback the cover
- * specifically needs: a chapter's H1 doesn't get a Docs-assigned `headingId` until this build's own
- * phase-4 styling has actually applied HEADING_1 to it, so linking the cover to it can't happen
- * before that styling has landed and been read back again. Two readbacks, not a loop over N: this
- * scales with build phases, not with chapter count.
+ * The four-phase sequence, exercised for real (M3 forced it per-tab; this is the same shape, just
+ * once per chapter instead of once for the whole plan) — PLUS a second readback taken between the
+ * non-length-changing style pass and the length-changing one, not after both: a chapter's H1 doesn't
+ * get a Docs-assigned `headingId` until HEADING_1 has actually been applied (that's the earlier,
+ * non-length-changing pass), and both the cover's TOC and a table cell's own in-body chapter link
+ * need that id before they can resolve — a table cell's link specifically can't wait any longer than
+ * that, since its own [fill, style] can never be split across two requests. Two readbacks total, not
+ * a loop over N: this scales with build phases, not with chapter count.
  *
- * Every chapter's (and the cover's) inserts land in ONE combined phase-2 batch, and the SAME single
- * readback (covering every tab at once, via includeTabsContent) feeds every chapter's style phase —
+ * Every chapter's (and the cover's) inserts land in ONE combined phase-2 batch, and each of the two
+ * readbacks (covering every tab at once, via includeTabsContent) feeds every chapter's next phase —
  * not one readback per chapter. Only tab creation (phase 0) is inherently sequential ahead of
  * everything else, since a chapter's own tabId has to exist before anything can be inserted into it.
  */
@@ -180,23 +182,23 @@ export async function buildFromPlan(
 
   // Phase 3: one readback covering every tab — the index source of truth for everything from here on.
   const doc1 = await fetchDocument(auth, documentId)
-  const styles = opts.plan.chapters.map((_, i) =>
-    compileChapterStyleRequests(doc1, chapterTabIds[i]!, inserts[i]!.segments, opts.theme),
+  const contents = opts.plan.chapters.map((_, i) =>
+    compileChapterContentRequests(doc1, chapterTabIds[i]!, inserts[i]!.segments, opts.theme),
   )
   const coverFirstParagraph = tabBody(doc1, coverTabId)?.content?.find((e) => e.paragraph)
   const coverRealStart = coverFirstParagraph?.startIndex
   if (coverRealStart == null) throw new Error('cover tab has no paragraph in the readback')
   const cover = coverContentStyleRequests(opts.plan.title, coverEntries, opts.theme, coverTabId, coverRealStart)
 
-  await batch(docs, documentId, [...styles.flatMap((s) => s.contentRequests), ...cover.requests])
-  // Phase 4: bullets and table cell fills, last and strictly descending WITHIN each tab — the only
-  // requests in this build that change document length, and therefore the only ones for which order
-  // matters. Different tabs never interact (a Range's index is only ever meaningful within its own
-  // tab), so concatenating tabs in any order here is safe.
-  await batch(docs, documentId, styles.flatMap((s) => s.lengthChangingRequests))
+  await batch(docs, documentId, [...contents.flatMap((c) => c.contentRequests), ...cover.requests])
 
-  // Phase 5: a second readback, now that every chapter's H1 has actually been styled HEADING_1 and
-  // Docs has assigned it a headingId — nothing before this point could have discovered it.
+  // Phase 4/5: a second readback, now that every chapter's H1 has actually been styled HEADING_1 and
+  // Docs has assigned it a headingId — nothing before phase 3's own batch landed could have
+  // discovered it. Taken BEFORE the length-changing pass, not after: a table cell's own chapter link
+  // can only resolve inside its own [fill, style] unit (see compileChapterLengthChangingRequests), so
+  // headings must already be known by the time that pass runs, not merely by the time it's over.
+  // Cell positions haven't moved since phase 3 touched nothing length-changing, so this same readback
+  // serves both purposes.
   const doc2 = await fetchDocument(auth, documentId)
   const headings = chapterTabIds.map((tabId) => {
     const h1 = tabBody(doc2, tabId)?.content?.find(
@@ -207,8 +209,22 @@ export async function buildFromPlan(
     return { tabId, headingId }
   })
 
-  // Phase 6: the table of contents' links, the one thing that had to wait for phase 5.
-  await batch(docs, documentId, coverLinkRequests(cover.entryRanges, headings))
+  // Phase 6: bullets and table cell fills (now heading-aware, so a cell's own chapter link resolves
+  // to Link.heading in the same request as its fill), strictly descending WITHIN each tab — the only
+  // requests in this build that change document length, and therefore the only ones for which order
+  // matters. Different tabs never interact (a Range's index is only ever meaningful within its own
+  // tab), so concatenating tabs in any order here is safe.
+  const lengthChanging = opts.plan.chapters.flatMap((_, i) =>
+    compileChapterLengthChangingRequests(doc2, chapterTabIds[i]!, inserts[i]!.segments, opts.theme, headings),
+  )
+  await batch(docs, documentId, lengthChanging)
+
+  // Phase 7: the links that were safe to defer — the table of contents' entries, plus any ordinary
+  // in-body (non-table-cell) link that plan/'s planDocument resolved to a sibling chapter. Their
+  // ranges came from phase 3's own readback and are still valid: nothing after phase 3 changes the
+  // length of already-inserted paragraph text, only phase 6's own table/bullet content.
+  const bodyChapterLinks = contents.flatMap((c) => c.chapterLinkRanges)
+  await batch(docs, documentId, headingLinkRequests([...cover.entryRanges, ...bodyChapterLinks], headings))
 
   return { documentId, url: docsUrl(documentId) }
 }

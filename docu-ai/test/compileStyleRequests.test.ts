@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import type { docs_v1 } from 'googleapis'
-import { compileChapterStyleRequests } from '../src/emit/compile.js'
+import { compileChapterContentRequests, compileChapterLengthChangingRequests } from '../src/emit/compile.js'
 import type { Segment } from '../src/emit/blocks.js'
 import { plain } from '../src/plan/types.js'
 import { technical } from '../src/theme/presets/technical.js'
+
+const NO_HEADINGS: Array<{ tabId: string; headingId: string }> = []
 
 const TAB_ID = 't.chapter1'
 
@@ -91,18 +93,20 @@ function fakeChapterContent(): docs_v1.Schema$StructuralElement[] {
   ]
 }
 
-describe('compileChapterStyleRequests — text and table segments in lockstep', () => {
-  const result = compileChapterStyleRequests(fakeDoc(fakeChapterContent()), TAB_ID, segments, technical)
+describe('compileChapterContentRequests / compileChapterLengthChangingRequests — text and table segments in lockstep', () => {
+  const doc = fakeDoc(fakeChapterContent())
+  const content = compileChapterContentRequests(doc, TAB_ID, segments, technical)
+  const lengthChangingRequests = compileChapterLengthChangingRequests(doc, TAB_ID, segments, technical, NO_HEADINGS)
 
   it('styles the heading using the real readback startIndex, not a placeholder', () => {
-    const headingReq = result.contentRequests.find(
+    const headingReq = content.contentRequests.find(
       (r) => r.updateParagraphStyle?.paragraphStyle?.namedStyleType === 'HEADING_1',
     )
     expect(headingReq?.updateParagraphStyle?.range).toEqual({ startIndex: 1, endIndex: 2, tabId: TAB_ID })
   })
 
   it('scopes every request it builds to this chapter’s own tab', () => {
-    for (const r of [...result.contentRequests, ...result.lengthChangingRequests]) {
+    for (const r of [...content.contentRequests, ...lengthChangingRequests]) {
       const tabId =
         r.updateParagraphStyle?.range?.tabId ??
         r.updateTextStyle?.range?.tabId ??
@@ -115,8 +119,8 @@ describe('compileChapterStyleRequests — text and table segments in lockstep', 
   })
 
   it('builds table structure requests (pin/shade/indent-reset) from the readback element', () => {
-    expect(result.contentRequests.some((r) => r.pinTableHeaderRows)).toBe(true)
-    expect(result.contentRequests.some((r) => r.updateTableCellStyle)).toBe(true)
+    expect(content.contentRequests.some((r) => r.pinTableHeaderRows)).toBe(true)
+    expect(content.contentRequests.some((r) => r.updateTableCellStyle)).toBe(true)
   })
 
   it('puts the list’s bullet request ahead of the table’s own cell fills in the global sort', () => {
@@ -124,52 +128,64 @@ describe('compileChapterStyleRequests — text and table segments in lockstep', 
     // table compiled first, the bullet must apply first: descending by ABSOLUTE position, not by
     // which segment produced the request. "bold" here is the header cell's own [fill, then style]
     // pair travelling together, immediately after its fill — see the next test for that in detail.
-    const kinds = result.lengthChangingRequests.map((r) =>
+    const kinds = lengthChangingRequests.map((r) =>
       r.createParagraphBullets ? 'bullet' : r.insertText ? `fill:${r.insertText.location?.index}` : 'bold',
     )
     expect(kinds).toEqual(['bullet', 'fill:15', 'fill:12', 'bold'])
   })
 
   it('bolds the header cell’s fill but not the data cell’s', () => {
-    const headFill = result.lengthChangingRequests.find((r) => r.insertText?.location?.index === 12)
-    const dataFill = result.lengthChangingRequests.find((r) => r.insertText?.location?.index === 15)
+    const headFill = lengthChangingRequests.find((r) => r.insertText?.location?.index === 12)
+    const dataFill = lengthChangingRequests.find((r) => r.insertText?.location?.index === 15)
     expect(headFill?.insertText?.text).toBe('Head')
     expect(dataFill?.insertText?.text).toBe('X')
     // The bold style request for the header cell immediately follows its own fill in the array.
-    const headFillIndex = result.lengthChangingRequests.indexOf(headFill!)
-    expect(result.lengthChangingRequests[headFillIndex + 1]?.updateTextStyle?.textStyle?.bold).toBe(true)
+    const headFillIndex = lengthChangingRequests.indexOf(headFill!)
+    expect(lengthChangingRequests[headFillIndex + 1]?.updateTextStyle?.textStyle?.bold).toBe(true)
   })
 })
 
-describe('compileChapterStyleRequests — ignores structural noise around real content', () => {
+describe('compileChapterContentRequests / compileChapterLengthChangingRequests — ignore structural noise around real content', () => {
   // Found live at real-corpus scale, not in any small hand-built probe: every fresh document's body
   // opens with an implicit sectionBreak before any content. It's easy to miss by hand (neither
   // .paragraph nor .table matches, so it silently vanishes from an "if paragraph ... else if table"
-  // walk) but throws a lockstep count off by exactly one once it's not filtered out.
-  it('skips a leading sectionBreak rather than miscounting it as the first paragraph', () => {
-    const withSectionBreak = fakeDoc([{ sectionBreak: {} }, ...fakeChapterContent()])
-    expect(() => compileChapterStyleRequests(withSectionBreak, TAB_ID, segments, technical)).not.toThrow()
-    const result = compileChapterStyleRequests(withSectionBreak, TAB_ID, segments, technical)
-    const headingReq = result.contentRequests.find(
+  // walk) but throws a lockstep count off by exactly one once it's not filtered out. Both functions
+  // share the same matching helper (compile.ts's matchSegmentsToElements), but each is tested here to
+  // confirm neither reimplements it divergently.
+  const withSectionBreak = fakeDoc([{ sectionBreak: {} }, ...fakeChapterContent()])
+
+  it('compileChapterContentRequests skips a leading sectionBreak rather than miscounting it', () => {
+    expect(() => compileChapterContentRequests(withSectionBreak, TAB_ID, segments, technical)).not.toThrow()
+    const content = compileChapterContentRequests(withSectionBreak, TAB_ID, segments, technical)
+    const headingReq = content.contentRequests.find(
       (r) => r.updateParagraphStyle?.paragraphStyle?.namedStyleType === 'HEADING_1',
     )
     expect(headingReq?.updateParagraphStyle?.range).toMatchObject({ startIndex: 1, endIndex: 2 })
   })
+
+  it('compileChapterLengthChangingRequests skips a leading sectionBreak rather than miscounting it', () => {
+    expect(() =>
+      compileChapterLengthChangingRequests(withSectionBreak, TAB_ID, segments, technical, NO_HEADINGS),
+    ).not.toThrow()
+  })
 })
 
-describe('compileChapterStyleRequests — defensive checks', () => {
+describe('compileChapterContentRequests / compileChapterLengthChangingRequests — defensive checks', () => {
   it('throws a clear error when the readback has fewer paragraphs than the segment expects', () => {
     const shortDoc = fakeDoc([fakeParagraph(1, 'H')])
-    expect(() => compileChapterStyleRequests(shortDoc, TAB_ID, segments, technical)).toThrow(/expected/)
+    expect(() => compileChapterContentRequests(shortDoc, TAB_ID, segments, technical)).toThrow(/expected/)
+    expect(() =>
+      compileChapterLengthChangingRequests(shortDoc, TAB_ID, segments, technical, NO_HEADINGS),
+    ).toThrow(/expected/)
   })
 
   it('throws when a table segment lines up against a non-table readback element', () => {
     const wrongDoc = fakeDoc([fakeParagraph(1, 'H'), fakeParagraph(5, 'not a table')])
-    expect(() => compileChapterStyleRequests(wrongDoc, TAB_ID, segments, technical)).toThrow(/expected a table/)
+    expect(() => compileChapterContentRequests(wrongDoc, TAB_ID, segments, technical)).toThrow(/expected a table/)
   })
 
   it('throws a clear error when the requested tabId isn’t in the readback at all', () => {
     const doc = fakeDoc(fakeChapterContent(), 't.other-chapter')
-    expect(() => compileChapterStyleRequests(doc, TAB_ID, segments, technical)).toThrow(/no body found for tab/)
+    expect(() => compileChapterContentRequests(doc, TAB_ID, segments, technical)).toThrow(/no body found for tab/)
   })
 })

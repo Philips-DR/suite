@@ -2,7 +2,7 @@ import type { docs_v1 } from 'googleapis'
 import type { TableBlock } from '../plan/types.js'
 import type { Theme } from '../theme/types.js'
 import { flattenInline } from './inline.js'
-import { textStyleForMarks } from './text.js'
+import { headingLinkRequests, textStyleForMarks } from './text.js'
 import { optionalColor, pt } from './units.js'
 
 export function tableInsertRequest(table: TableBlock, tabId?: string): docs_v1.Schema$Request {
@@ -107,12 +107,21 @@ export interface CellFill {
   requests: docs_v1.Schema$Request[]
 }
 
+export interface TableCellFillOptions {
+  tabId?: string
+  /** A cell's own chapter-crossing link is resolved to Link.heading immediately, right here, rather
+   * than deferred like an ordinary paragraph's — see compile.ts's compileChapterLengthChangingRequests
+   * for why a cell's text and its own styling can never be split into an earlier and later request. */
+  headings?: Array<{ tabId: string; headingId: string }>
+}
+
 export function tableCellFills(
   cellRanges: docs_v1.Schema$Range[][],
   table: TableBlock,
   theme: Theme,
-  tabId?: string,
+  opts: TableCellFillOptions = {},
 ): CellFill[] {
+  const { tabId, headings = [] } = opts
   const fills: CellFill[] = []
 
   table.rows.forEach((row, r) => {
@@ -134,13 +143,17 @@ export function tableCellFills(
 
       let cursor = insertionIndex
       for (const run of runs) {
+        const runRange: docs_v1.Schema$Range = { startIndex: cursor, endIndex: cursor + run.text.length }
+        if (tabId !== undefined) runRange.tabId = tabId
+
         const styled = textStyleForMarks(run.marks, run.href, theme)
         if (styled) {
-          const runRange: docs_v1.Schema$Range = { startIndex: cursor, endIndex: cursor + run.text.length }
-          if (tabId !== undefined) runRange.tabId = tabId
           requests.push({
             updateTextStyle: { range: runRange, textStyle: styled.style, fields: styled.fields.join(',') },
           })
+        }
+        if (run.chapterLink !== undefined) {
+          requests.push(...headingLinkRequests([{ chapterIndex: run.chapterLink, range: runRange }], headings))
         }
         cursor += run.text.length
       }

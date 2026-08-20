@@ -12,12 +12,50 @@ export interface TextBlock {
   style: NamedStyleType
 }
 
+/** A run whose link target is another chapter in this build, not yet resolvable to Link.heading —
+ * that needs a tabId and headingId, neither known until after tabs exist and HEADING_1 has been
+ * applied and read back. Collected here so a later phase (see emit/document.ts) can style it once
+ * those are known, the same way the cover's own TOC entries already do (see emit/cover.ts). */
+export interface ChapterLinkRange {
+  chapterIndex: number
+  range: docs_v1.Schema$Range
+}
+
+/**
+ * Turns a resolved chapter-link range — a cover TOC entry, an ordinary in-body markdown link that
+ * turned out to name a sibling chapter (see plan/fromAst.ts's planDocument), or a table cell's own
+ * link — into a clickable jump to that chapter's own first heading. All three resolve identically
+ * because a ChapterLinkRange doesn't distinguish where it came from.
+ *
+ * `Link.heading` (not the legacy bare `headingId`) is required once a document has more than one
+ * tab — verified live (2026-08-20) that Docs both accepts and correctly reads back
+ * `{heading: {id, tabId}}`, auto-applying its own default link colour + underline exactly like a
+ * plain URL link does.
+ */
+export function headingLinkRequests(
+  entries: ChapterLinkRange[],
+  headings: Array<{ tabId: string; headingId: string }>,
+): docs_v1.Schema$Request[] {
+  return entries.map(({ range, chapterIndex }) => {
+    const heading = headings[chapterIndex]
+    if (!heading) throw new Error(`no heading target for chapter index ${chapterIndex}`)
+    return {
+      updateTextStyle: {
+        range,
+        textStyle: { link: { heading: { id: heading.headingId, tabId: heading.tabId } } },
+        fields: 'link',
+      },
+    }
+  })
+}
+
 export interface RenderedText {
   requests: docs_v1.Schema$Request[]
   /** One range per block, in order — so callers can style runs without re-deriving the cursor. */
   ranges: docs_v1.Schema$Range[]
   /** One past the final paragraph mark — an accounting value, not necessarily a writable index. */
   endIndex: number
+  chapterLinkRanges: ChapterLinkRange[]
 }
 
 /** No style at all: the common case for plain prose, and worth skipping a request over. */
@@ -72,7 +110,7 @@ export function renderTextBlocks(
   opts: { startIndex?: number; tabId?: string } = {},
 ): RenderedText {
   const start = opts.startIndex ?? BODY_START
-  if (blocks.length === 0) return { requests: [], ranges: [], endIndex: start }
+  if (blocks.length === 0) return { requests: [], ranges: [], endIndex: start, chapterLinkRanges: [] }
 
   const flattened = blocks.map((block) => flattenInline(block.runs))
   const blockText = flattened.map((runs) => runs.map((r) => r.text).join(''))
@@ -104,6 +142,7 @@ export function renderTextBlocks(
   // [...s].length or count code points: that is correct-looking and wrong for emoji and astral chars.
   const ranges: docs_v1.Schema$Range[] = []
   const runStyleRequests: docs_v1.Schema$Request[] = []
+  const chapterLinkRanges: ChapterLinkRange[] = []
   let cursor = start
 
   blocks.forEach((block, i) => {
@@ -135,6 +174,9 @@ export function renderTextBlocks(
           },
         })
       }
+      if (run.chapterLink !== undefined) {
+        chapterLinkRanges.push({ chapterIndex: run.chapterLink, range: runRange })
+      }
       runCursor += run.text.length
     }
 
@@ -142,5 +184,5 @@ export function renderTextBlocks(
   })
 
   requests.push(...runStyleRequests)
-  return { requests, ranges, endIndex: cursor }
+  return { requests, ranges, endIndex: cursor, chapterLinkRanges }
 }

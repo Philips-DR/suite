@@ -193,11 +193,10 @@ Verified against the live discovery document on 2026-08-19:
   `[01-api-layer.md](01-api-layer.md)`, a real pattern in this corpus's own overview table) round-trips
   as `http://01-api-layer.md`: a syntactically valid but non-resolving URL. This is a genuine fidelity
   gap, not a crash — nothing catches it at build time or in the residue lint, since the link text
-  itself contains no markdown syntax. Currently unresolved: `plan/`'s `Inline` link carries only the
-  raw markdown `href` (`emit/inline.ts`), with no knowledge that the href might name another chapter in
-  this same build. Fixing it means matching a link's href against the chapter list's source filenames
-  and rewriting matches to `Link.heading`, the same mechanism the cover TOC already uses — real feature
-  work, not a one-line fix, deliberately not done inline while investigating.
+  itself contains no markdown syntax. **Fixed** (2026-08-20): `plan/fromAst.ts`'s `planDocument` now
+  resolves any link whose href matches a sibling chapter's own source filename into a `chapterLink`
+  Inline node, which `emit/` turns into a real `Link.heading` — the same mechanism the cover TOC
+  already used. See "Cross-chapter link resolution" below for the one non-obvious part of building it.
 - The residue lint correctly flagged exactly one real finding in the full corpus, and it was a genuine
   source defect, not a converter bug: an unmatched triple-backtick (` ```json `) sitting mid-sentence in
   `07-shared-infrastructure.md` with no closing fence. CommonMark has no valid pairing for it, so it
@@ -206,6 +205,30 @@ Verified against the live discovery document on 2026-08-19:
   had. Confirms the lint's code-font exemption is working as designed, too: the same corpus legitimately
   contains 18 literal `|` characters and 14 `**` sequences (Python `**kwargs`, `int | None`-style type
   unions, enum-like `"a"|"b"` strings) inside real inline-code runs, and none of them false-positived.
+
+**Cross-chapter link resolution (2026-08-20)**, and the one thing about it that isn't obvious: a
+table cell's own chapter-crossing link resolves at a genuinely different TIME than an ordinary
+paragraph's, not just different code.
+
+- A paragraph's text already exists by the time phase 3's readback happens, so a link found there has
+  a stable range — it's safe to resolve to `Link.heading` as late as phase 7, well after headingIds
+  are known, the same way the cover's TOC entries always have.
+- A table cell's text does **not** exist until phase 6 (`tableCellFills`) inserts it, and per
+  `tableCellFills`'s own long-standing rule, a cell's fill and its own styling can never be split into
+  separate requests — anything length-changing landing between them invalidates one half. That rule,
+  which already governed a cell's bold/code/URL styling, turned out to apply just as much to a cell's
+  chapter link: **first attempt at this feature deferred cell links to the same late phase as
+  paragraphs, and it silently failed live** — the range captured during the cell-fill phase had gone
+  stale by the time the deferred request tried to use it, because other cells/bullets filled between
+  them shifted it. Caught by the live integration test, not by any unit test, because the bug only
+  exists at the *timing* between two live API round trips — no snapshot test replays that.
+- The fix was reordering when the second readback happens: it now lands **between** the
+  non-length-changing style pass (phase 3, which is what applies `HEADING_1` and is what makes
+  headingIds discoverable at all) and the length-changing pass (phase 6, table fills + bullets),
+  rather than after both. That means `tableCellFills` can resolve a cell's chapter link to
+  `Link.heading` immediately, inside its own atomic fill unit — see `emit/compile.ts`'s
+  `compileChapterContentRequests` / `compileChapterLengthChangingRequests` split and
+  `emit/document.ts`'s phase comments for the full sequencing.
 
 Schema presence is not proof an endpoint behaves, and a stored value is not proof of a rendered one.
 `npm run probe` is the standing answer to both: it exercises `addDocumentTab`, checks whether `\v`

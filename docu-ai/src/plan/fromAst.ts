@@ -114,13 +114,79 @@ function chapterTitle(ast: Root, fallback: string): string {
   return firstHeading ? mdastToString(firstHeading).trim() || fallback : fallback
 }
 
-export function planChapter(ast: Root, fallbackTitle: string): Chapter {
+export function planChapter(ast: Root, fallbackTitle: string, sourceFile: string): Chapter {
   return {
     title: chapterTitle(ast, fallbackTitle),
+    sourceFile,
     blocks: ast.children.map(planBlock).filter((b): b is Block => b !== undefined),
   }
 }
 
+/** A markdown link's href as an author would write it when linking to a sibling chapter file:
+ * strips a leading "./" and a trailing "#fragment"/"?query", but nothing fancier — chapters are
+ * always siblings in one flat folder (see parse/loadDir.ts), never nested paths. */
+function normaliseChapterHref(href: string): string {
+  return href.replace(/^\.\//, '').replace(/[?#].*$/, '')
+}
+
+function resolveInline(node: Inline, chapterByFile: Map<string, number>): Inline {
+  switch (node.kind) {
+    case 'text':
+    case 'code':
+    case 'break':
+      return node
+    case 'bold':
+    case 'italic':
+    case 'strikethrough':
+      return { ...node, children: node.children.map((c) => resolveInline(c, chapterByFile)) }
+    case 'link': {
+      const children = node.children.map((c) => resolveInline(c, chapterByFile))
+      const chapterIndex = chapterByFile.get(normaliseChapterHref(node.href))
+      return chapterIndex === undefined ? { ...node, children } : { kind: 'chapterLink', chapterIndex, children }
+    }
+    case 'chapterLink':
+      // planInline() never produces this itself — only this resolution pass does, and it runs once
+      // over freshly-parsed chapters. Handled only so this switch stays exhaustive over Inline.
+      return node
+  }
+}
+
+function resolveBlockLinks(block: Block, chapterByFile: Map<string, number>): Block {
+  switch (block.kind) {
+    case 'heading':
+    case 'paragraph':
+      return { ...block, children: block.children.map((c) => resolveInline(c, chapterByFile)) }
+    case 'list':
+      return {
+        ...block,
+        items: block.items.map((item) => ({
+          ...item,
+          children: item.children.map((c) => resolveInline(c, chapterByFile)),
+        })),
+      }
+    case 'table':
+      return {
+        ...block,
+        rows: block.rows.map((row) => row.map((cell) => cell.map((c) => resolveInline(c, chapterByFile)))),
+      }
+    case 'blockquote':
+      return { ...block, children: block.children.map((c) => resolveBlockLinks(c, chapterByFile)) }
+    case 'rule':
+    case 'code-block':
+      return block
+  }
+}
+
+/**
+ * Assembles the final DocPlan and, in the same pass, resolves any inline link whose href names
+ * another chapter in this same build into a chapterLink — this can only happen here, once every
+ * chapter's sourceFile is known, never inside planChapter which only ever sees one file at a time.
+ */
 export function planDocument(chapters: Chapter[], title: string): DocPlan {
-  return { title, chapters }
+  const chapterByFile = new Map(chapters.map((c, i) => [c.sourceFile, i]))
+  const resolved = chapters.map((chapter) => ({
+    ...chapter,
+    blocks: chapter.blocks.map((block) => resolveBlockLinks(block, chapterByFile)),
+  }))
+  return { title, chapters: resolved }
 }

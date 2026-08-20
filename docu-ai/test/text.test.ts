@@ -80,7 +80,12 @@ describe('renderTextBlocks', () => {
   })
 
   it('returns nothing for no blocks', () => {
-    expect(renderTextBlocks([], technical)).toEqual({ requests: [], ranges: [], endIndex: 1 })
+    expect(renderTextBlocks([], technical)).toEqual({
+      requests: [],
+      ranges: [],
+      endIndex: 1,
+      chapterLinkRanges: [],
+    })
   })
 
   it('costs zero requests for plain prose beyond the paragraph style', () => {
@@ -121,6 +126,16 @@ describe('renderTextBlocks', () => {
     const req = requests.find((r) => r.updateTextStyle)?.updateTextStyle
     expect(req?.textStyle).toEqual({ link: { url: 'https://x.example' } })
     expect(req?.fields).toBe('link')
+  })
+
+  it('records a chapterLink run’s range instead of styling it immediately', () => {
+    const { requests, chapterLinkRanges } = renderTextBlocks(
+      [{ runs: [{ kind: 'chapterLink', chapterIndex: 3, children: [{ kind: 'text', text: 'ch3' }] }], style: 'NORMAL_TEXT' }],
+      technical,
+    )
+    // No Link.url — the target isn't known yet (see emit/text.ts's ChapterLinkRange doc comment).
+    expect(requests.some((r) => r.updateTextStyle)).toBe(false)
+    expect(chapterLinkRanges).toEqual([{ chapterIndex: 3, range: { startIndex: 1, endIndex: 4 } }])
   })
 
   it('keeps run-style requests after every paragraph-style request', () => {

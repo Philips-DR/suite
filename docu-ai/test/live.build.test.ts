@@ -25,14 +25,14 @@ const CHAPTER_A = `# Chapter A
 
 ## Section
 
-A paragraph with \`inline code\` and **bold**.
+A paragraph with \`inline code\` and **bold**. See [Chapter B](chapter-b.md) for more.
 
 - item one
 - item two
 
 | Col 1 | Col 2 |
 |---|---|
-| a | b |
+| a | [Chapter B](chapter-b.md) |
 `
 
 const CHAPTER_B = `# Chapter B
@@ -52,8 +52,8 @@ describe.skipIf(!LIVE)('live build — the real API, real readback, real residue
 
   it('builds a tabbed document end to end and passes every readback assertion', async () => {
     const chapters = [
-      planChapter(parseMarkdown(CHAPTER_A), 'chapter-a'),
-      planChapter(parseMarkdown(CHAPTER_B), 'chapter-b'),
+      planChapter(parseMarkdown(CHAPTER_A), 'chapter-a', 'chapter-a.md'),
+      planChapter(parseMarkdown(CHAPTER_B), 'chapter-b', 'chapter-b.md'),
     ]
     const plan = planDocument(chapters, 'Live Test Document')
 
@@ -81,7 +81,7 @@ describe.skipIf(!LIVE)('live build — the real API, real readback, real residue
     )
     expect(cellTexts).toEqual([
       ['Col 1', 'Col 2'],
-      ['a', 'b'],
+      ['a', 'Chapter B'],
     ])
 
     // The cover's table of contents genuinely points at each chapter's own heading.
@@ -101,6 +101,24 @@ describe.skipIf(!LIVE)('live build — the real API, real readback, real residue
       (e) => e.paragraph?.paragraphStyle?.namedStyleType === 'HEADING_1',
     )
     expect(links[0]?.link.heading?.id).toBe(chapterAH1?.paragraph?.paragraphStyle?.headingId)
+
+    // An ordinary in-body markdown link naming a sibling chapter's own file resolves to Link.heading
+    // too, in both prose and a table cell — not the http://chapter-b.md that Google's own Link.url
+    // silently produces from a bare relative string (see CLAUDE.md's real-corpus findings).
+    const chapterBH1 = tabBody(doc, chapterBTabId)!.content!.find(
+      (e) => e.paragraph?.paragraphStyle?.namedStyleType === 'HEADING_1',
+    )
+    const chapterBHeadingId = chapterBH1?.paragraph?.paragraphStyle?.headingId
+
+    const proseLink = chapterABody
+      .content!.flatMap((e) => e.paragraph?.elements ?? [])
+      .find((e) => e.textRun?.content === 'Chapter B')?.textRun?.textStyle?.link
+    expect(proseLink?.heading).toEqual({ id: chapterBHeadingId, tabId: chapterBTabId })
+
+    const cellLink = tableElement
+      .table!.tableRows![1]!.tableCells![1]!.content!.flatMap((p) => p.paragraph?.elements ?? [])
+      .find((e) => e.textRun?.content === 'Chapter B')?.textRun?.textStyle?.link
+    expect(cellLink?.heading).toEqual({ id: chapterBHeadingId, tabId: chapterBTabId })
 
     // The headline requirement, checked against the real, fully-built document.
     expect(residueFindings(doc, { codeFont: technical.code.font })).toEqual([])

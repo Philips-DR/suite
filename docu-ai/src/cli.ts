@@ -140,7 +140,7 @@ async function cmdPreview(dir: string | undefined): Promise<void> {
 
   process.stdout.write(`${files.length} chapter(s) — plan only, no changes made:\n\n`)
   files.forEach((file, i) => {
-    const chapter = planChapter(parseMarkdown(file.source), file.slug)
+    const chapter = planChapter(parseMarkdown(file.source), file.slug, basename(file.path))
     const counts = countBlockKinds(chapter.blocks)
     const summary =
       Object.entries(counts)
@@ -161,7 +161,7 @@ async function cmdBuild(dir: string | undefined, title: string | undefined): Pro
   const files = await loadChapterFiles(dir)
   if (files.length === 0) throw new Error(`no .md files found in ${dir}`)
 
-  const chapters = files.map((file) => planChapter(parseMarkdown(file.source), file.slug))
+  const chapters = files.map((file) => planChapter(parseMarkdown(file.source), file.slug, basename(file.path)))
   // The cover's own title, distinct from any chapter's — chapter 1's title was a reasonable stand-in
   // before there was a cover to put it on, but it's the wrong default now. The folder name is a
   // plain, unsurprising fallback; pass a title explicitly for anything better.

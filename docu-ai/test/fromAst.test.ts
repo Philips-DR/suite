@@ -1,11 +1,11 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { planChapter } from '../src/plan/fromAst.js'
+import { planChapter, planDocument } from '../src/plan/fromAst.js'
 import { parseMarkdown } from '../src/parse/toAst.js'
 import type { Block, Inline } from '../src/plan/types.js'
 
 function plan(markdown: string) {
-  return planChapter(parseMarkdown(markdown), 'fallback')
+  return planChapter(parseMarkdown(markdown), 'fallback', 'fallback.md')
 }
 
 describe('planChapter — structure', () => {
@@ -164,5 +164,58 @@ describe('planChapter — against the real corpus', () => {
       return []
     })
     expect(offenders).toEqual([])
+  })
+})
+
+// Found building the full 9-chapter real corpus (2026-08-20): 00-overview.md's own "how this doc is
+// organized" table links to sibling chapter files, e.g. [01-api-layer.md](01-api-layer.md). Those
+// came through as literal, non-resolving Link.url values (Google coerces a bare relative string into
+// "http://01-api-layer.md" rather than rejecting it) — see CLAUDE.md's real-corpus findings.
+describe('planDocument — cross-chapter link resolution', () => {
+  it('resolves a link to a sibling chapter’s own file into a chapterLink', () => {
+    const a = planChapter(parseMarkdown('# A\n\nSee [chapter 2](02-b.md) for more.'), 'a', '01-a.md')
+    const b = planChapter(parseMarkdown('# B\n\nbody'), 'b', '02-b.md')
+    const plan = planDocument([a, b], 'Book')
+    const paragraph = plan.chapters[0]!.blocks[1] as Extract<Block, { kind: 'paragraph' }>
+    expect(paragraph.children[1]).toMatchObject({ kind: 'chapterLink', chapterIndex: 1 })
+  })
+
+  it('leaves a genuine external link alone', () => {
+    const a = planChapter(parseMarkdown('[docs](https://example.com)'), 'a', '01-a.md')
+    const b = planChapter(parseMarkdown('# B'), 'b', '02-b.md')
+    const plan = planDocument([a, b], 'Book')
+    const paragraph = plan.chapters[0]!.blocks[0] as Extract<Block, { kind: 'paragraph' }>
+    expect(paragraph.children[0]).toMatchObject({ kind: 'link', href: 'https://example.com' })
+  })
+
+  it('strips a leading "./" and a trailing "#fragment" before matching', () => {
+    const a = planChapter(parseMarkdown('[b](./02-b.md#section-3)'), 'a', '01-a.md')
+    const b = planChapter(parseMarkdown('# B'), 'b', '02-b.md')
+    const plan = planDocument([a, b], 'Book')
+    const paragraph = plan.chapters[0]!.blocks[0] as Extract<Block, { kind: 'paragraph' }>
+    expect(paragraph.children[0]).toMatchObject({ kind: 'chapterLink', chapterIndex: 1 })
+  })
+
+  it('resolves a chapter link nested inside bold text and inside a table cell', () => {
+    const a = planChapter(
+      parseMarkdown('**[b](02-b.md)**\n\n| Chapter |\n|---|\n| [b](02-b.md) |'),
+      'a',
+      '01-a.md',
+    )
+    const b = planChapter(parseMarkdown('# B'), 'b', '02-b.md')
+    const plan = planDocument([a, b], 'Book')
+
+    const paragraph = plan.chapters[0]!.blocks[0] as Extract<Block, { kind: 'paragraph' }>
+    const bold = paragraph.children[0] as Extract<Inline, { kind: 'bold' }>
+    expect(bold.children[0]).toMatchObject({ kind: 'chapterLink', chapterIndex: 1 })
+
+    const table = plan.chapters[0]!.blocks[1] as Extract<Block, { kind: 'table' }>
+    expect(table.rows[1]![0]![0]).toMatchObject({ kind: 'chapterLink', chapterIndex: 1 })
+  })
+
+  it('does not rewrite chapters that contain no cross-chapter links', () => {
+    const a = planChapter(parseMarkdown('plain paragraph'), 'a', '01-a.md')
+    const plan = planDocument([a], 'Book')
+    expect(plan.chapters[0]).toEqual(a)
   })
 })

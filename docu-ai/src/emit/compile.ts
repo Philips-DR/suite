@@ -11,7 +11,7 @@ import {
 import { bulletRequest } from './lists.js'
 import { documentStyleRequest, namedStyleRequests } from './namedStyles.js'
 import { extractCellParagraphRanges, tableCellFills, tableEarlyStyleRequests, tableInsertRequest } from './table.js'
-import { renderTextBlocks } from './text.js'
+import { renderTextBlocks, type ChapterLinkRange } from './text.js'
 import { tabBody } from '../verify/readback.js'
 
 export interface CompiledInserts {
@@ -27,11 +27,14 @@ export interface CompiledInserts {
   segments: Segment[]
 }
 
-export interface CompiledStyles {
+export interface CompiledContent {
   /** Phase 3: every non-length-changing style — paragraph/run style, borders, table structure. */
   contentRequests: docs_v1.Schema$Request[]
-  /** Phase 4: bullets and table cell fills, already sorted descending — see the note below. */
-  lengthChangingRequests: docs_v1.Schema$Request[]
+  /** Cross-chapter links found in ordinary (non-table-cell) content. A paragraph's text already
+   * exists at this point, so its range is stable and safe to resolve later, once every chapter's
+   * headingId is known — carried up to emit/document.ts for exactly that. A table cell's own
+   * chapter links do NOT come through here; see compileChapterLengthChangingRequests for why. */
+  chapterLinkRanges: ChapterLinkRange[]
 }
 
 /**
@@ -64,13 +67,11 @@ export function compileChapterInserts(theme: Theme, chapter: Chapter, tabId: str
   }
 }
 
+type MatchedSegment =
+  | { kind: 'table'; segment: Extract<Segment, { kind: 'table' }>; tableStart: number; cellRanges: docs_v1.Schema$Range[][] }
+  | { kind: 'text'; segment: Extract<Segment, { kind: 'text' }>; realStart: number }
+
 /**
- * Pure, phase 3+4, for ONE chapter's tab: given the readback that followed phase 2's inserts,
- * reconstructs every real index within that tab and builds the rest of the tab's requests. Pure
- * despite taking a live API response as input — no I/O happens here, so it's just as
- * snapshot-testable as compileChapterInserts, against a hand-built fixture Document (see
- * test/compileStyleRequests.test.ts).
- *
  * Looks up `tabId`'s own body via `tabBody`, never `bodies()` (which flattens every tab together —
  * exactly wrong once tabs mean separate, independently-indexed documents), then walks that one tab's
  * structural elements and `segments` IN LOCKSTEP: segment i's expected element count (1 for a table,
@@ -79,26 +80,12 @@ export function compileChapterInserts(theme: Theme, chapter: Chapter, tabId: str
  * initial empty paragraph is absorbed by the very first insertText rather than surviving as an extra
  * element, confirmed live before relying on it.
  *
- * A text segment gets `renderTextBlocks` called on it a SECOND time here, now with the real
- * startIndex from the readback, rather than offsetting the placeholder-indexed requests from
- * compileChapterInserts. Both are O(segment size); calling it twice is simpler and cannot drift out
- * of sync with an offsetting transform maintained separately.
- *
- * Table cells are the one case that can't fit the same "compute now, apply later, any order" shape
- * every other block uses: a cell's inline styling (bold, code, links) can only be requested once that
- * text exists, and the fill that creates it is itself length-changing. So a cell's [fill, then style]
- * travels as one unit through the SAME global descending-index sort as bullets — see tableCellFills's
- * own comment. Splitting it into an "early" and "late" half like every other block would let some
- * other length-changing request land between a cell's fill and its own styling and invalidate it.
- * That sort is scoped to this one tab: a Range's index is only ever meaningful within its own tab, so
- * a different chapter's length-changing requests never need interleaving with this tab's.
+ * Shared between compileChapterContentRequests and compileChapterLengthChangingRequests, which call
+ * it against two different readbacks (see the latter's own comment for why two) but need the exact
+ * same matching/defensive-throw logic against each — extracting it once is what keeps the two from
+ * silently drifting apart if this matching logic ever changes.
  */
-export function compileChapterStyleRequests(
-  doc: docs_v1.Schema$Document,
-  tabId: string,
-  segments: Segment[],
-  theme: Theme,
-): CompiledStyles {
+function matchSegmentsToElements(doc: docs_v1.Schema$Document, tabId: string, segments: Segment[]): MatchedSegment[] {
   const body = tabBody(doc, tabId)
   if (!body) throw new Error(`no body found for tab ${tabId} in the readback`)
 
@@ -111,10 +98,7 @@ export function compileChapterStyleRequests(
   const elements = (body.content ?? []).filter((e) => Boolean(e.paragraph) || Boolean(e.table))
   let cursor = 0
 
-  const contentRequests: docs_v1.Schema$Request[] = []
-  const lengthChanging: Array<{ sortIndex: number; requests: docs_v1.Schema$Request[] }> = []
-
-  for (const segment of segments) {
+  return segments.map((segment): MatchedSegment => {
     if (segment.kind === 'table') {
       const element = elements[cursor]
       if (!element?.table) {
@@ -124,11 +108,7 @@ export function compileChapterStyleRequests(
 
       const tableStart = element.startIndex
       if (tableStart == null) throw new Error('table structural element has no startIndex')
-      const cellRanges = extractCellParagraphRanges(element)
-
-      contentRequests.push(...tableEarlyStyleRequests(tableStart, cellRanges, segment.table, theme, tabId))
-      lengthChanging.push(...tableCellFills(cellRanges, segment.table, theme, tabId))
-      continue
+      return { kind: 'table', segment, tableStart, cellRanges: extractCellParagraphRanges(element) }
     }
 
     const count = segment.textBlocks.length
@@ -143,22 +123,93 @@ export function compileChapterStyleRequests(
 
     const realStart = paragraphElements[0]!.startIndex
     if (realStart == null) throw new Error('paragraph structural element has no startIndex')
+    return { kind: 'text', segment, realStart }
+  })
+}
 
-    const rendered = renderTextBlocks(segment.textBlocks, theme, { startIndex: realStart, tabId })
+/**
+ * Pure, phase 3, for ONE chapter's tab: given the readback that followed phase 2's inserts,
+ * reconstructs every real index within that tab and builds every non-length-changing style request —
+ * paragraph/run style, borders, table structure. Pure despite taking a live API response as input —
+ * no I/O happens here, so it's just as snapshot-testable as compileChapterInserts, against a
+ * hand-built fixture Document (see test/compileStyleRequests.test.ts).
+ *
+ * A text segment gets `renderTextBlocks` called on it a SECOND time here, now with the real
+ * startIndex from the readback, rather than offsetting the placeholder-indexed requests from
+ * compileChapterInserts. Both are O(segment size); calling it twice is simpler and cannot drift out
+ * of sync with an offsetting transform maintained separately.
+ */
+export function compileChapterContentRequests(
+  doc: docs_v1.Schema$Document,
+  tabId: string,
+  segments: Segment[],
+  theme: Theme,
+): CompiledContent {
+  const matched = matchSegmentsToElements(doc, tabId, segments)
+  const contentRequests: docs_v1.Schema$Request[] = []
+  const chapterLinkRanges: ChapterLinkRange[] = []
+
+  for (const m of matched) {
+    if (m.kind === 'table') {
+      contentRequests.push(...tableEarlyStyleRequests(m.tableStart, m.cellRanges, m.segment.table, theme, tabId))
+      continue
+    }
+
+    const rendered = renderTextBlocks(m.segment.textBlocks, theme, { startIndex: m.realStart, tabId })
+    chapterLinkRanges.push(...rendered.chapterLinkRanges)
     contentRequests.push(...rendered.requests.filter((r) => !r.insertText))
-    contentRequests.push(...segment.ruleIndices.map((i) => ruleStyleRequest(rendered.ranges[i]!, theme)))
+    contentRequests.push(...m.segment.ruleIndices.map((i) => ruleStyleRequest(rendered.ranges[i]!, theme)))
     contentRequests.push(
-      ...segment.codeBlockIndices.flatMap((i) => codeBlockStyleRequests(rendered.ranges[i]!, theme)),
+      ...m.segment.codeBlockIndices.flatMap((i) => codeBlockStyleRequests(rendered.ranges[i]!, theme)),
     )
     // Shallowest first: a nested blockquote's own call is issued after its enclosing quote's, so its
     // deeper indent/border wins on the sub-range both calls touch.
     contentRequests.push(
-      ...[...segment.quoteRuns]
+      ...[...m.segment.quoteRuns]
         .sort((a, b) => a.depth - b.depth)
         .map((run) => quoteStyleRequest(rendered.ranges, run, theme)),
     )
+  }
 
-    for (const run of segment.listRuns) {
+  return { contentRequests, chapterLinkRanges }
+}
+
+/**
+ * Pure, phase 4, for ONE chapter's tab: table cell fills and bullets, the only requests in a build
+ * that change document length — sorted descending so an earlier fill/bullet in this tab is never
+ * invalidated by a later one that already landed.
+ *
+ * Needs a SECOND readback (taken after compileChapterContentRequests' own batch has landed) for two
+ * independent reasons that happen to be satisfied by the same readback: cell positions haven't moved
+ * since phase 3 touched nothing length-changing, but every chapter's headingId now exists too (phase
+ * 3's own batch is what applies HEADING_1) — and a cell's chapter-crossing link can only resolve to
+ * Link.heading using one.
+ *
+ * This is why a table cell's chapter link resolves at a different time than an ordinary paragraph's:
+ * a paragraph's own text already existed at phase 3's readback, so its link range is stable and can
+ * wait for a later phase (see emit/document.ts's own phase 6) — a cell's text doesn't exist until
+ * THIS phase fills it, so its link must resolve inside the same atomic [fill, style] unit as the fill
+ * itself, per tableCellFills's own long-standing rule that a cell's fill and style can never be split
+ * apart: some other length-changing request landing between them would invalidate one half.
+ */
+export function compileChapterLengthChangingRequests(
+  doc: docs_v1.Schema$Document,
+  tabId: string,
+  segments: Segment[],
+  theme: Theme,
+  headings: Array<{ tabId: string; headingId: string }>,
+): docs_v1.Schema$Request[] {
+  const matched = matchSegmentsToElements(doc, tabId, segments)
+  const lengthChanging: Array<{ sortIndex: number; requests: docs_v1.Schema$Request[] }> = []
+
+  for (const m of matched) {
+    if (m.kind === 'table') {
+      lengthChanging.push(...tableCellFills(m.cellRanges, m.segment.table, theme, { tabId, headings }))
+      continue
+    }
+
+    const rendered = renderTextBlocks(m.segment.textBlocks, theme, { startIndex: m.realStart, tabId })
+    for (const run of m.segment.listRuns) {
       lengthChanging.push({
         sortIndex: rendered.ranges[run.start]!.startIndex!,
         requests: [bulletRequest(rendered.ranges, run)],
@@ -166,9 +217,5 @@ export function compileChapterStyleRequests(
     }
   }
 
-  const lengthChangingRequests = lengthChanging
-    .sort((a, b) => b.sortIndex - a.sortIndex)
-    .flatMap((entry) => entry.requests)
-
-  return { contentRequests, lengthChangingRequests }
+  return lengthChanging.sort((a, b) => b.sortIndex - a.sortIndex).flatMap((entry) => entry.requests)
 }

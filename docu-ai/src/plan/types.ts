@@ -10,6 +10,11 @@ export type Inline =
   | { kind: 'italic'; children: Inline[] }
   | { kind: 'strikethrough'; children: Inline[] }
   | { kind: 'link'; href: string; children: Inline[] }
+  // A link whose href resolved (in planDocument, once every chapter's filename is known) to another
+  // chapter in this same build, rather than a real external URL. chapterIndex is a plain index into
+  // DocPlan.chapters — still semantic, not a Google concept; emit/ is what turns it into a real
+  // Link.heading once tab ids and heading ids exist.
+  | { kind: 'chapterLink'; chapterIndex: number; children: Inline[] }
   | { kind: 'break' } // an explicit hard line break, inside one paragraph
 
 export interface HeadingBlock {
@@ -73,6 +78,9 @@ export type Block =
 
 export interface Chapter {
   title: string
+  /** The source file's own name (e.g. "01-api-layer.md") — how a sibling chapter's markdown link
+   * refers to it. Used only to resolve cross-chapter links in planDocument; never shown to a reader. */
+  sourceFile: string
   blocks: Block[]
 }
 

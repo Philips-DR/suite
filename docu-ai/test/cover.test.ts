@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { coverContentStyleRequests, coverInsertRequest, coverLinkRequests } from '../src/emit/cover.js'
+import { coverContentStyleRequests, coverInsertRequest } from '../src/emit/cover.js'
+import { headingLinkRequests } from '../src/emit/text.js'
 import { technical } from '../src/theme/presets/technical.js'
 
 const ENTRIES = [
@@ -34,10 +35,11 @@ describe('coverContentStyleRequests', () => {
     for (const r of requests) expect(r.updateParagraphStyle?.range?.tabId).toBe('t.cover')
   })
 
-  it('returns one range per chapter entry, skipping the title and "Contents" heading', () => {
+  it('returns one range per chapter entry, tagged with its chapterIndex, skipping the title and "Contents" heading', () => {
     expect(entryRanges).toHaveLength(2)
     // "My Book" (7) + \n, "Contents" (8) + \n -> entry 1 starts at 1+8+9=18.
-    expect(entryRanges[0]?.startIndex).toBe(18)
+    expect(entryRanges[0]?.range.startIndex).toBe(18)
+    expect(entryRanges.map((e) => e.chapterIndex)).toEqual([0, 1])
   })
 
   it('never includes an insertText request — that already happened in phase 2', () => {
@@ -45,7 +47,7 @@ describe('coverContentStyleRequests', () => {
   })
 })
 
-describe('coverLinkRequests', () => {
+describe('headingLinkRequests', () => {
   const { entryRanges } = coverContentStyleRequests('My Book', ENTRIES, technical, 't.cover', 1)
   const headings = [
     { tabId: 't.ch1', headingId: 'h.one' },
@@ -53,7 +55,7 @@ describe('coverLinkRequests', () => {
   ]
 
   it('points each entry’s link at its own chapter’s heading, via Link.heading not the legacy field', () => {
-    const requests = coverLinkRequests(entryRanges, headings)
+    const requests = headingLinkRequests(entryRanges, headings)
     expect(requests[0]?.updateTextStyle?.textStyle?.link).toEqual({
       heading: { id: 'h.one', tabId: 't.ch1' },
     })
@@ -63,11 +65,19 @@ describe('coverLinkRequests', () => {
   })
 
   it('sets only the link field, letting Docs apply its own default colour and underline', () => {
-    const [req] = coverLinkRequests(entryRanges, headings)
+    const [req] = headingLinkRequests(entryRanges, headings)
     expect(req?.updateTextStyle?.fields).toBe('link')
   })
 
-  it('throws rather than silently mislinking when headings and entries are mismatched in length', () => {
-    expect(() => coverLinkRequests(entryRanges, [headings[0]!])).toThrow(/no heading target/)
+  it('throws rather than silently mislinking when a chapterIndex has no matching heading', () => {
+    expect(() => headingLinkRequests(entryRanges, [headings[0]!])).toThrow(/no heading target/)
+  })
+
+  it('resolves an arbitrary chapterIndex, not just positional order — an in-body link can point anywhere', () => {
+    const outOfOrder = [{ range: { startIndex: 5, endIndex: 6 }, chapterIndex: 1 }]
+    const requests = headingLinkRequests(outOfOrder, headings)
+    expect(requests[0]?.updateTextStyle?.textStyle?.link).toEqual({
+      heading: { id: 'h.two', tabId: 't.ch2' },
+    })
   })
 })

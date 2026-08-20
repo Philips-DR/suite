@@ -1,7 +1,7 @@
 import type { docs_v1 } from 'googleapis'
 import { plain } from '../plan/types.js'
 import type { Theme } from '../theme/types.js'
-import { renderTextBlocks, type TextBlock } from './text.js'
+import { renderTextBlocks, type ChapterLinkRange, type TextBlock } from './text.js'
 
 export interface CoverChapterEntry {
   title: string
@@ -36,8 +36,10 @@ export function coverInsertRequest(
 
 export interface CoverContentStyles {
   requests: docs_v1.Schema$Request[]
-  /** One range per chapter entry, in order — for coverLinkRequests once headingIds are known. */
-  entryRanges: docs_v1.Schema$Range[]
+  /** One entry per chapter, already tagged with its chapterIndex — for headingLinkRequests once
+   * headingIds are known. Same shape as a resolved in-body chapterLink, because it resolves the
+   * exact same way (see emit/document.ts's phase 6). */
+  entryRanges: ChapterLinkRange[]
 }
 
 /**
@@ -45,7 +47,7 @@ export interface CoverContentStyles {
  * chapter's own text-segment reconstruction. Link styling is deliberately NOT here: a chapter's H1
  * doesn't get its Docs-assigned `headingId` until this exact style pass has actually applied
  * HEADING_1 to it elsewhere in the same build, so linking to it needs a second readback after this
- * one — see coverLinkRequests.
+ * one — see emit/text.ts's headingLinkRequests.
  */
 export function coverContentStyleRequests(
   title: string,
@@ -57,30 +59,7 @@ export function coverContentStyleRequests(
   const rendered = renderTextBlocks(coverTextBlocks(title, entries), theme, { startIndex: realStart, tabId })
   return {
     requests: rendered.requests.filter((r) => !r.insertText),
-    entryRanges: rendered.ranges.slice(2), // skip the title and "Contents" heading
+    // Skip the title and "Contents" heading; the remaining ranges are one per chapter, in chapter order.
+    entryRanges: rendered.ranges.slice(2).map((range, i) => ({ range, chapterIndex: i })),
   }
-}
-
-/**
- * Phase 6, after a second readback: turn each entry into a clickable jump to that chapter's own
- * first heading. `Link.heading` (not the legacy bare `headingId`) is required once a document has
- * more than one tab — verified live (2026-08-20) that Docs both accepts and correctly reads back
- * `{heading: {id, tabId}}`, auto-applying its own default link colour + underline exactly like a
- * plain URL link does.
- */
-export function coverLinkRequests(
-  entryRanges: docs_v1.Schema$Range[],
-  headings: Array<{ tabId: string; headingId: string }>,
-): docs_v1.Schema$Request[] {
-  return entryRanges.map((range, i) => {
-    const heading = headings[i]
-    if (!heading) throw new Error(`no heading target for cover entry ${i}`)
-    return {
-      updateTextStyle: {
-        range,
-        textStyle: { link: { heading: { id: heading.headingId, tabId: heading.tabId } } },
-        fields: 'link',
-      },
-    }
-  })
 }

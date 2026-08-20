@@ -6,7 +6,7 @@ import { parseMarkdown } from '../src/parse/toAst.js'
 import { technical } from '../src/theme/presets/technical.js'
 
 const source = readFileSync(new URL('./fixtures/m1-sample.md', import.meta.url), 'utf8')
-const chapter = planChapter(parseMarkdown(source), 'fallback')
+const chapter = planChapter(parseMarkdown(source), 'fallback', 'm1-sample.md')
 const TAB_ID = 't.golden'
 
 /**

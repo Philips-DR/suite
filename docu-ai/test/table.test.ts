@@ -7,7 +7,7 @@ import {
   tableInsertRequest,
 } from '../src/emit/table.js'
 import { plain } from '../src/plan/types.js'
-import type { TableBlock } from '../src/plan/types.js'
+import type { Inline, TableBlock } from '../src/plan/types.js'
 import { technical } from '../src/theme/presets/technical.js'
 
 describe('tableInsertRequest', () => {
@@ -203,5 +203,31 @@ describe('tableCellFills', () => {
     const styleReq = dataFill.requests[1]
     expect(styleReq?.updateTextStyle?.range).toEqual({ startIndex: 30, endIndex: 31 }) // 26 + "see ".length
     expect(styleReq?.updateTextStyle?.textStyle?.weightedFontFamily?.fontFamily).toBe(technical.code.font)
+  })
+
+  // Found building the full real corpus (2026-08-20): a table cell linking to a sibling chapter file
+  // is a real pattern (00-overview.md's own "how this doc is organized" table), not a hypothetical.
+  // Unlike a paragraph's own chapter link, a cell's must resolve to Link.heading immediately, in the
+  // same [fill, style] unit as its own fill — see compile.ts's compileChapterLengthChangingRequests.
+  it('resolves a chapterLink run within a cell to Link.heading using the headings passed in', () => {
+    const linkCell: Inline[] = [{ kind: 'chapterLink', chapterIndex: 1, children: [{ kind: 'text', text: 'ch2' }] }]
+    const table: TableBlock = { kind: 'table', align: [undefined], rows: [plain('Head'), linkCell].map((p) => [p]) }
+    const headings = [
+      { tabId: 't.ch1', headingId: 'h.one' },
+      { tabId: 't.ch2', headingId: 'h.two' },
+    ]
+    const fills = tableCellFills(cellRanges, table, technical, { headings })
+    const dataFill = fills.find((f) => f.sortIndex === 26)!
+    expect(dataFill.requests).toHaveLength(2) // the insertText, plus the resolved link style
+    expect(dataFill.requests[1]?.updateTextStyle?.range).toEqual({ startIndex: 26, endIndex: 29 })
+    expect(dataFill.requests[1]?.updateTextStyle?.textStyle?.link).toEqual({
+      heading: { id: 'h.two', tabId: 't.ch2' },
+    })
+  })
+
+  it('throws rather than silently dropping a cell’s link when no heading was passed in for it', () => {
+    const linkCell: Inline[] = [{ kind: 'chapterLink', chapterIndex: 0, children: [{ kind: 'text', text: 'x' }] }]
+    const table: TableBlock = { kind: 'table', align: [undefined], rows: [plain('Head'), linkCell].map((p) => [p]) }
+    expect(() => tableCellFills(cellRanges, table, technical)).toThrow(/no heading target/)
   })
 })

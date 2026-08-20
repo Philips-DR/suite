@@ -42,6 +42,29 @@ describe('flattenInline', () => {
     ])
   })
 
+  it('carries chapterIndex across every run inside a chapterLink, leaving href unset', () => {
+    const nodes: Inline[] = [
+      {
+        kind: 'chapterLink',
+        chapterIndex: 2,
+        children: [{ kind: 'text', text: 'see ' }, { kind: 'bold', children: [{ kind: 'text', text: 'ch. 3' }] }],
+      },
+    ]
+    const runs = flattenInline(nodes)
+    expect(runs).toEqual([
+      { text: 'see ', marks: [], href: undefined, chapterLink: 2 },
+      { text: 'ch. 3', marks: ['bold'], href: undefined, chapterLink: 2 },
+    ])
+  })
+
+  it('does not merge a chapterLink run into an adjacent run with identical marks but no link', () => {
+    const nodes: Inline[] = [
+      { kind: 'chapterLink', chapterIndex: 0, children: [{ kind: 'text', text: 'x' }] },
+      { kind: 'text', text: 'x' },
+    ]
+    expect(flattenInline(nodes)).toHaveLength(2)
+  })
+
   it('turns a hard break into a literal \\v', () => {
     const nodes: Inline[] = [{ kind: 'text', text: 'a' }, { kind: 'break' }, { kind: 'text', text: 'b' }]
     expect(plainText(flattenInline(nodes))).toBe('a\vb')
@@ -82,6 +105,11 @@ describe('flattenInline', () => {
 
 describe('plainText', () => {
   it('concatenates run text with no separators', () => {
-    expect(plainText([{ text: 'a', marks: [], href: undefined }, { text: 'b', marks: ['code'], href: undefined }])).toBe('ab')
+    expect(
+      plainText([
+        { text: 'a', marks: [], href: undefined, chapterLink: undefined },
+        { text: 'b', marks: ['code'], href: undefined, chapterLink: undefined },
+      ]),
+    ).toBe('ab')
   })
 })

@@ -209,6 +209,37 @@ column), and treat inline code as the dominant construct rather than an aftertho
   independent pass looking for *new* categories of bug the way M0–M4 each did against the live API — M5 is
   about the gates existing and being honest, not about discovering new Docs API behaviour.
 
+- **M6 — DONE (2026-08-20).** Cross-chapter link resolution: an ordinary markdown link naming a
+  sibling chapter's own file (e.g. `[01-api-layer.md](01-api-layer.md)`, a real pattern found in the
+  full-corpus build) now becomes a working jump to that chapter's tab, the same as the cover's TOC —
+  instead of round-tripping as a dead `http://01-api-layer.md` link, which is what Google's own
+  `Link.url` silently does with a bare relative string rather than rejecting it.
+
+  `plan/fromAst.ts`'s `planDocument` resolves this: once every chapter's own source filename is known
+  (only possible once all chapters are assembled, never inside `planChapter`'s single-file view), any
+  link whose href matches one is rewritten into a new `chapterLink` Inline node carrying a plain index
+  into `DocPlan.chapters` — still semantic, no Google concept involved yet.
+
+  The real discovery was in `emit/`, not `plan/`: a table cell's own chapter link cannot resolve at
+  the same *time* as a paragraph's, even though both need the same `Link.heading`. A paragraph's text
+  already exists at the first readback, so its link range is stable and safe to resolve as late as the
+  final phase. A table cell's text doesn't exist until the length-changing phase fills it, and
+  `tableCellFills`'s own long-standing rule — a cell's fill and its styling can never be split into
+  separate requests — turned out to bind the cell's link too. The first attempt deferred cell links to
+  the same late phase as paragraphs and it silently failed live: the range captured during the fill
+  had gone stale by the time the deferred request used it, invalidated by other cells/bullets filling
+  in between. A unit test couldn't have caught this — the bug lived in the *timing* between two live
+  API round trips — the live integration test (M5's own new gate) is what caught it. Fixed by moving
+  the second readback earlier, to land between the non-length-changing style pass (which is what
+  applies `HEADING_1`, making headingIds discoverable) and the length-changing one, so a cell's link
+  now resolves immediately, inside its own atomic fill unit. See CLAUDE.md's "Cross-chapter link
+  resolution" note and `emit/compile.ts`'s `compileChapterContentRequests` /
+  `compileChapterLengthChangingRequests` split.
+
+  `test/live.build.test.ts` was extended (not left to a new fixture) to cover both cases — a link in
+  ordinary prose and a link inside a table cell — since a passing build over the small live fixture is
+  exactly what this feature needs proven, live, before trusting it against the real corpus again.
+
 Deferred: syntax highlighting (Shiki → per-token `foregroundColor`), PDF-render vision QA loop, images, LLM planner.
 
 ## Acceptance gates
