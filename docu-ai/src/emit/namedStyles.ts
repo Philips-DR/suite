@@ -119,12 +119,13 @@ export function namedStyleRequests(theme: Theme, tabId?: string): docs_v1.Schema
 export function documentStyleRequest(theme: Theme, tabId?: string): docs_v1.Schema$Request {
   const request: docs_v1.Schema$UpdateDocumentStyleRequest = {
     documentStyle: {
+      pageSize: { width: pt(theme.page.widthPt), height: pt(theme.page.heightPt) },
       marginTop: pt(theme.page.marginTopPt),
       marginBottom: pt(theme.page.marginBottomPt),
       marginLeft: pt(theme.page.marginLeftPt),
       marginRight: pt(theme.page.marginRightPt),
     },
-    fields: 'margin_top,margin_bottom,margin_left,margin_right',
+    fields: 'page_size,margin_top,margin_bottom,margin_left,margin_right',
   }
   if (tabId !== undefined) request.tabId = tabId
   return { updateDocumentStyle: request }

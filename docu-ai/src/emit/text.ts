@@ -1,8 +1,9 @@
 import type { docs_v1 } from 'googleapis'
 import type { Inline } from '../plan/types.js'
-import type { Theme } from '../theme/types.js'
+import type { Hex, Theme } from '../theme/types.js'
 import { flattenInline, type Mark } from './inline.js'
 import { textStyleFor, type NamedStyleType } from './namedStyles.js'
+import { optionalColor } from './units.js'
 
 /** The first index a document body will accept. Index 0 is not a valid location. */
 export const BODY_START = 1
@@ -64,6 +65,7 @@ export function textStyleForMarks(
   marks: Mark[],
   href: string | undefined,
   theme: Theme,
+  syntaxColor?: Hex,
 ): { style: docs_v1.Schema$TextStyle; fields: string[] } | undefined {
   let style: docs_v1.Schema$TextStyle = {}
   const fields = new Set<string>()
@@ -90,6 +92,10 @@ export function textStyleForMarks(
     // exactly what we want here — nothing extra to set.
     style.link = { url: href }
     fields.add('link')
+  }
+  if (syntaxColor !== undefined) {
+    style.foregroundColor = optionalColor(syntaxColor)
+    fields.add('foreground_color')
   }
 
   return fields.size > 0 ? { style, fields: [...fields] } : undefined
@@ -164,7 +170,8 @@ export function renderTextBlocks(
       const runRange: docs_v1.Schema$Range = { startIndex: runCursor, endIndex: runCursor + run.text.length }
       if (opts.tabId !== undefined) runRange.tabId = opts.tabId
 
-      const styled = textStyleForMarks(run.marks, run.href, theme)
+      const syntaxColor = run.syntaxKind !== undefined ? theme.codeBlock.syntax?.[run.syntaxKind] : undefined
+      const styled = textStyleForMarks(run.marks, run.href, theme, syntaxColor)
       if (styled) {
         runStyleRequests.push({
           updateTextStyle: {

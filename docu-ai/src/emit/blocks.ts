@@ -1,6 +1,7 @@
 import type { docs_v1 } from 'googleapis'
-import type { Block, Inline, TableBlock } from '../plan/types.js'
+import type { Block, CodeToken, ImageBlock, Inline, TableBlock } from '../plan/types.js'
 import type { Theme } from '../theme/types.js'
+import type { ImageResolution } from './image.js'
 import { textStyleFor, type NamedStyleType } from './namedStyles.js'
 import type { TextBlock } from './text.js'
 import type { ListRun } from './lists.js'
@@ -41,7 +42,22 @@ export interface TableSegment {
   table: TableBlock
 }
 
-export type Segment = TextSegment | TableSegment
+/**
+ * An embeddable image, split into its own segment for the same reason a table is: it can't be
+ * inserted as part of one plain-text blob (insertInlineImage is its own request type, not
+ * insertText). Only ever constructed for an image compileBlocks has already confirmed is
+ * embeddable — a non-embeddable image never reaches this far; it degrades to a plain paragraph of
+ * its own alt text instead, inline in whatever TextSegment already held it. naturalWidth/Height are
+ * resolved once, by document.ts's own I/O pass, before compileBlocks runs at all.
+ */
+export interface ImageSegment {
+  kind: 'image'
+  image: ImageBlock
+  naturalWidth: number
+  naturalHeight: number
+}
+
+export type Segment = TextSegment | TableSegment | ImageSegment
 
 function emptyTextSegment(): TextSegment {
   return { kind: 'text', textBlocks: [], listRuns: [], ruleIndices: [], codeBlockIndices: [], quoteRuns: [] }
@@ -54,19 +70,50 @@ function headingStyle(level: 1 | 2 | 3 | 4 | 5 | 6): NamedStyleType {
 }
 
 /**
- * A fenced code block as ONE paragraph: each source line becomes a plain-text run, joined by `{kind:
- * 'break'}` — the same inline node markdown hard breaks use, which emit/inline.ts turns into a literal
- * `\v`. One paragraph means one shading/border/spacing application covers the whole block with no
- * per-line gaps, and `keepLinesTogether` (applied in codeBlockStyleRequest) has something meaningful
- * to hold together. A blank source line becomes a single space: every line still needs to exist as a
- * distinct segment between `\v`s, and an empty one would just vanish.
+ * Groups `code` (or, if tokenized, each token's text) into one array of pieces per source line —
+ * the shared shape codeBlockRuns needs regardless of whether it's building plain or coloured runs.
+ * A token's own text can itself span multiple lines (a multi-line string or comment, say), so a
+ * `\n` found INSIDE one token's text is just as much a line boundary as the ones between tokens;
+ * this is what lets a single highlight.js token correctly split across several code-block lines
+ * without losing its kind.
  */
-function codeBlockRuns(code: string): Inline[] {
-  const lines = code.split('\n')
+function tokenPieces(code: string, tokens: CodeToken[] | undefined): CodeToken[][] {
+  const source = tokens ?? [{ kind: undefined, text: code }]
+  const lines: CodeToken[][] = [[]]
+  for (const token of source) {
+    token.text.split('\n').forEach((text, i) => {
+      if (i > 0) lines.push([])
+      lines[lines.length - 1]!.push({ kind: token.kind, text })
+    })
+  }
+  return lines
+}
+
+/**
+ * A fenced code block as ONE paragraph: each source line becomes one or more runs, joined by
+ * `{kind: 'break'}` — the same inline node markdown hard breaks use, which emit/inline.ts turns into
+ * a literal `\v`. One paragraph means one shading/border/spacing application covers the whole block
+ * with no per-line gaps, and `keepLinesTogether` (applied in codeBlockStyleRequest) has something
+ * meaningful to hold together. A blank source line becomes a single space: every line still needs to
+ * exist as a distinct segment between `\v`s, and an empty one would just vanish — flattenInline drops
+ * any zero-length run, tokenized or not.
+ *
+ * Without `tokens`, this produces exactly the plain `{kind: 'text'}` sequence it always has — a code
+ * block whose language wasn't tokenized (untagged fence, or a language lowlight doesn't register)
+ * must emit byte-identically to before this feature existed.
+ */
+function codeBlockRuns(code: string, tokens?: CodeToken[]): Inline[] {
   const runs: Inline[] = []
-  lines.forEach((line, i) => {
+  tokenPieces(code, tokens).forEach((pieces, i) => {
     if (i > 0) runs.push({ kind: 'break' })
-    runs.push({ kind: 'text', text: line.length > 0 ? line : ' ' })
+    const nonEmpty = pieces.filter((p) => p.text.length > 0)
+    if (nonEmpty.length === 0) {
+      runs.push({ kind: 'text', text: ' ' })
+    } else {
+      for (const p of nonEmpty) {
+        runs.push(tokens === undefined ? { kind: 'text', text: p.text } : { kind: 'codeToken', syntaxKind: p.kind, text: p.text })
+      }
+    }
   })
   return runs
 }
@@ -78,9 +125,13 @@ function codeBlockRuns(code: string): Inline[] {
  * block gets non-empty text, since a zero-length paragraph has no valid style range.
  *
  * A table gets its own segment rather than degrading to text: see emit/table.ts and TableSegment's
- * doc comment for why it needs a different insert/style path entirely.
+ * doc comment for why it needs a different insert/style path entirely. An image does too, but only
+ * when `imageResolutions` says it's actually embeddable — otherwise it degrades to its own alt text
+ * as an ordinary paragraph, no different from an image mixed into prose elsewhere in the same
+ * document (see plan/fromAst.ts's planParagraph for why that case never even reaches here as an
+ * ImageBlock in the first place).
  */
-export function compileBlocks(blocks: Block[]): Segment[] {
+export function compileBlocks(blocks: Block[], imageResolutions: Map<string, ImageResolution>): Segment[] {
   const segments: Segment[] = []
   let current = emptyTextSegment()
 
@@ -143,13 +194,32 @@ export function compileBlocks(blocks: Block[]): Segment[] {
 
         case 'code-block':
           current.codeBlockIndices.push(current.textBlocks.length)
-          current.textBlocks.push({ runs: codeBlockRuns(block.code), style: 'NORMAL_TEXT' })
+          current.textBlocks.push({ runs: codeBlockRuns(block.code, block.tokens), style: 'NORMAL_TEXT' })
           break
 
         case 'table':
           flush()
           segments.push({ kind: 'table', table: block })
           break
+
+        case 'image': {
+          const resolution = imageResolutions.get(block.src)
+          if (resolution?.embeddable) {
+            flush()
+            segments.push({
+              kind: 'image',
+              image: block,
+              naturalWidth: resolution.width,
+              naturalHeight: resolution.height,
+            })
+          } else {
+            // Not embeddable — the exact same fallback an image mixed into prose already gets via
+            // planInline's own default case: its alt text, as an ordinary paragraph. No flush: this
+            // stays part of whatever TextSegment is already open.
+            pushPlain(block.alt.length > 0 ? block.alt : ' ', 'NORMAL_TEXT')
+          }
+          break
+        }
 
         case 'blockquote': {
           const start = current.textBlocks.length
@@ -205,10 +275,27 @@ export function ruleStyleRequest(range: docs_v1.Schema$Range, theme: Theme): doc
  * indentStart/indentEnd are pinned to 0, overriding the narrower prose measure every named style
  * inherits: a code block is meant to run the full page width. Never rely on that inheritance not
  * applying here — CLAUDE.md's rule about setting every block's style explicitly cuts both ways.
+ *
+ * `highlighted` must be true when this block's own runs already carry per-token foreground colours
+ * (see emit/text.ts's renderTextBlocks). Confirmed live: this block-wide text request is issued
+ * AFTER those per-run requests in compile.ts, so a block-wide `foreground_color` here would silently
+ * overwrite every token's own colour with the base text colour — same field, later request wins,
+ * with no error from either request. Dropping `foreground_color` from THIS request's mask when
+ * `highlighted` is the fix, not reordering: no ordering dependency to get wrong again later.
+ *
+ * Known, deliberate cosmetic gap this creates: a highlighted block's own unclassified characters
+ * (punctuation, whitespace between tokens — anything highlight.js didn't tag, or a tag not in
+ * theme/'s syntax palette) get NO foreground colour at all rather than the theme's base grey, since
+ * dropping the field means dropping it everywhere in the range, not just where a token overrides it.
+ * They render in Docs' own default text colour, which for this theme (#202124, very dark grey) is
+ * visually indistinguishable from true black at reading size. Fixing it precisely would mean
+ * reordering (base colour first, token colours after) scoped to exactly this one block — real, if
+ * modest, complexity for a difference no reader will notice. Left as-is on purpose.
  */
 export function codeBlockStyleRequests(
   range: docs_v1.Schema$Range,
   theme: Theme,
+  highlighted = false,
 ): docs_v1.Schema$Request[] {
   const spec = theme.codeBlock
   const border: docs_v1.Schema$ParagraphBorder = {
@@ -239,11 +326,17 @@ export function codeBlockStyleRequests(
   }
 
   const text = textStyleFor(spec.text)
+  const textStyle = { ...text.style }
+  let textFields = text.fields
+  if (highlighted) {
+    delete textStyle.foregroundColor
+    textFields = textFields.filter((f) => f !== 'foreground_color')
+  }
   const textRequest: docs_v1.Schema$Request = {
     updateTextStyle: {
       range,
-      textStyle: text.style,
-      fields: text.fields.join(','),
+      textStyle,
+      fields: textFields.join(','),
     },
   }
 

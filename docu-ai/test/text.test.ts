@@ -138,6 +138,25 @@ describe('renderTextBlocks', () => {
     expect(chapterLinkRanges).toEqual([{ chapterIndex: 3, range: { startIndex: 1, endIndex: 4 } }])
   })
 
+  it('colours a codeToken run using the theme’s syntax palette for its kind (M7)', () => {
+    const { requests } = renderTextBlocks(
+      [{ runs: [{ kind: 'codeToken', syntaxKind: 'keyword', text: 'def' }], style: 'NORMAL_TEXT' }],
+      technical,
+    )
+    const req = requests.find((r) => r.updateTextStyle)?.updateTextStyle
+    expect(req?.textStyle?.foregroundColor).toBeDefined()
+    expect(req?.fields).toContain('foreground_color')
+  })
+
+  it('leaves a codeToken run with no matching palette entry uncoloured, never throwing', () => {
+    const { requests } = renderTextBlocks(
+      [{ runs: [{ kind: 'codeToken', syntaxKind: 'not-in-the-palette', text: 'x' }], style: 'NORMAL_TEXT' }],
+      technical,
+    )
+    // No marks, no href, no matching syntax colour — nothing to style, so no request at all.
+    expect(requests.some((r) => r.updateTextStyle)).toBe(false)
+  })
+
   it('keeps run-style requests after every paragraph-style request', () => {
     // A convention, not a correctness requirement (ranges don't overlap either way) — but it keeps
     // snapshot diffs readable as "structure, then decoration."

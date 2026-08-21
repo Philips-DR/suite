@@ -5,6 +5,7 @@ import { assertVerifiedFonts } from '../theme/fonts.js'
 import type { Theme } from '../theme/types.js'
 import { compileChapterContentRequests, compileChapterInserts, compileChapterLengthChangingRequests } from './compile.js'
 import { coverContentStyleRequests, coverInsertRequest } from './cover.js'
+import { classifyImageSrc, collectImageSrcs, parseImageDimensions, type ImageResolution } from './image.js'
 import { documentStyleRequest, namedStyleRequests } from './namedStyles.js'
 import { headingLinkRequests, renderTextBlocks, type TextBlock } from './text.js'
 import { fetchDocument, tabBody } from '../verify/readback.js'
@@ -20,6 +21,9 @@ export const MAX_REQUESTS_PER_BATCH = 300
 export interface BuiltDoc {
   documentId: string
   url: string
+  /** One line per image that couldn't be embedded — never a silent drop. Empty when every image in
+   * the plan embedded successfully, or the plan had none. */
+  imageWarnings: string[]
 }
 
 export function docsUrl(documentId: string): string {
@@ -70,7 +74,7 @@ export async function createThemedDocument(
   // Phase 2: the text itself.
   await batch(docs, documentId, renderTextBlocks(opts.blocks, opts.theme).requests)
 
-  return { documentId, url: docsUrl(documentId) }
+  return { documentId, url: docsUrl(documentId), imageWarnings: [] }
 }
 
 /** Google's own hard cap — addDocumentTab rejects anything longer with a 400. A chapter's title comes
@@ -125,6 +129,63 @@ async function createTabs(
   return { coverTabId: initialTabId, chapterTabIds }
 }
 
+const IMAGE_DIMENSION_FETCH_RANGE = 'bytes=0-65535'
+// Matches Docs' own per-image ceiling — a request beyond it would fail live anyway, so there's no
+// reason for us to buffer that much first.
+const MAX_IMAGE_FETCH_BYTES = 50 * 1024 * 1024
+
+/**
+ * Only the first 64KB is ever needed to read PNG/GIF/JPEG dimensions — far more than any real header
+ * needs, but asking for a Range at all means a well-behaved image host never has us download the
+ * whole file just to learn its size. A server that ignores Range and sends everything anyway is still
+ * bounded by MAX_IMAGE_FETCH_BYTES via its own Content-Length, matching Docs' own ceiling.
+ */
+async function fetchImageResolution(src: string): Promise<ImageResolution> {
+  try {
+    const res = await fetch(src, { headers: { Range: IMAGE_DIMENSION_FETCH_RANGE } })
+    if (!res.ok && res.status !== 206) return { embeddable: false, reason: 'fetch-failed' }
+    const contentLength = Number(res.headers.get('content-length') ?? '0')
+    if (contentLength > MAX_IMAGE_FETCH_BYTES) return { embeddable: false, reason: 'fetch-failed' }
+    const dims = parseImageDimensions(new Uint8Array(await res.arrayBuffer()))
+    return dims ? { embeddable: true, width: dims.width, height: dims.height } : { embeddable: false, reason: 'fetch-failed' }
+  } catch {
+    return { embeddable: false, reason: 'fetch-failed' }
+  }
+}
+
+/**
+ * Every distinct image src across the whole plan, classified and — for anything embeddable —
+ * fetched and measured, all before compileChapterInserts ever runs. Must happen this early, not
+ * lazily per-chapter: compileBlocks (called from compileChapterInserts) needs to know, synchronously,
+ * whether a given image is embeddable in order to decide whether it becomes its own segment or falls
+ * back to plain alt text — and CLAUDE.md's own rule that batchUpdate is atomic means an image that's
+ * certain to fail (local file, unsupported format) must never reach a real insertInlineImage request
+ * in the first place, not be sent and left to take the whole batch down with it.
+ */
+async function resolveImages(chapters: Chapter[]): Promise<Map<string, ImageResolution>> {
+  const resolutions = new Map<string, ImageResolution>()
+  await Promise.all(
+    collectImageSrcs(chapters).map(async (src) => {
+      const classification = classifyImageSrc(src)
+      resolutions.set(src, classification.embeddable ? await fetchImageResolution(src) : classification)
+    }),
+  )
+  return resolutions
+}
+
+const IMAGE_WARNING_REASONS: Record<Exclude<ImageResolution, { embeddable: true }>['reason'], string> = {
+  local: 'local file, no public URL',
+  'unsupported-format': 'unsupported format (only PNG/JPEG/GIF embed)',
+  'uri-too-long': 'URL too long',
+  'fetch-failed': 'could not fetch or read as an image',
+}
+
+function imageWarnings(resolutions: Map<string, ImageResolution>): string[] {
+  return [...resolutions]
+    .filter((entry): entry is [string, Extract<ImageResolution, { embeddable: false }>] => !entry[1].embeddable)
+    .map(([src, r]) => `image not embedded (${IMAGE_WARNING_REASONS[r.reason]}), shown as alt text instead: ${src}`)
+}
+
 /**
  * The real build: a cover tab (title + a clickable, hand-built table of contents) plus one tab per
  * chapter, in document order.
@@ -156,11 +217,16 @@ export async function buildFromPlan(
   const initialTabId = created.data.tabs?.[0]?.tabProperties?.tabId
   if (!initialTabId) throw new Error('documents.create returned no initial tab')
 
-  // Phase 0: cover tab (renaming the document's existing initial tab) + one tab per chapter.
-  const { coverTabId, chapterTabIds } = await createTabs(docs, documentId, opts.plan.chapters, initialTabId)
+  // Phase 0: cover tab (renaming the document's existing initial tab) + one tab per chapter. Image
+  // resolution is independent I/O (external HTTP fetches, nothing to do with the doc itself) and
+  // runs concurrently with it, not after.
+  const [{ coverTabId, chapterTabIds }, imageResolutions] = await Promise.all([
+    createTabs(docs, documentId, opts.plan.chapters, initialTabId),
+    resolveImages(opts.plan.chapters),
+  ])
 
   const inserts = opts.plan.chapters.map((chapter, i) =>
-    compileChapterInserts(opts.theme, chapter, chapterTabIds[i]!),
+    compileChapterInserts(opts.theme, chapter, chapterTabIds[i]!, imageResolutions),
   )
   const coverEntries = opts.plan.chapters.map((chapter, i) => ({
     title: chapter.title,
@@ -226,5 +292,5 @@ export async function buildFromPlan(
   const bodyChapterLinks = contents.flatMap((c) => c.chapterLinkRanges)
   await batch(docs, documentId, headingLinkRequests([...cover.entryRanges, ...bodyChapterLinks], headings))
 
-  return { documentId, url: docsUrl(documentId) }
+  return { documentId, url: docsUrl(documentId), imageWarnings: imageWarnings(imageResolutions) }
 }

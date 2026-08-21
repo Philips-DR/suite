@@ -170,6 +170,78 @@ describe('compileChapterContentRequests / compileChapterLengthChangingRequests �
   })
 })
 
+describe('compileChapterContentRequests / compileChapterLengthChangingRequests — image segments (M8)', () => {
+  const imageSegments: Segment[] = [
+    {
+      kind: 'text',
+      textBlocks: [{ runs: plain('Before'), style: 'NORMAL_TEXT' }],
+      listRuns: [],
+      ruleIndices: [],
+      codeBlockIndices: [],
+      quoteRuns: [],
+    },
+    {
+      kind: 'image',
+      image: { kind: 'image', src: 'https://example.com/x.png', alt: 'x', title: undefined },
+      naturalWidth: 100,
+      naturalHeight: 50,
+    },
+    {
+      kind: 'text',
+      textBlocks: [{ runs: plain('After'), style: 'NORMAL_TEXT' }],
+      listRuns: [],
+      ruleIndices: [],
+      codeBlockIndices: [],
+      quoteRuns: [],
+    },
+  ]
+
+  // The image's own paragraph: [inlineObjectElement, textRun("\n")] — matches the live-verified shape
+  // from emit/image.ts's imageInsertRequests (leading/trailing '\n' flanking the image itself).
+  function fakeImageParagraph(start: number): docs_v1.Schema$StructuralElement {
+    return {
+      startIndex: start,
+      endIndex: start + 2,
+      paragraph: {
+        elements: [
+          { startIndex: start, endIndex: start + 1, inlineObjectElement: { inlineObjectId: 'kix.abc' } },
+          { startIndex: start + 1, endIndex: start + 2, textRun: { content: '\n' } },
+        ],
+      },
+    }
+  }
+
+  const doc = fakeDoc([fakeParagraph(1, 'Before'), fakeImageParagraph(8), fakeParagraph(10, 'After')])
+
+  it('produces no content requests and no length-changing requests for the image itself', () => {
+    const content = compileChapterContentRequests(doc, TAB_ID, imageSegments, technical)
+    expect(content.contentRequests.every((r) => !r.insertInlineImage)).toBe(true)
+    const lengthChanging = compileChapterLengthChangingRequests(doc, TAB_ID, imageSegments, technical, NO_HEADINGS)
+    expect(lengthChanging).toEqual([])
+  })
+
+  it('does not let the image’s one-element paragraph throw off the following text segment’s real start', () => {
+    const content = compileChapterContentRequests(doc, TAB_ID, imageSegments, technical)
+    const afterReq = content.contentRequests.find((r) => r.updateParagraphStyle?.range?.startIndex === 10)
+    expect(afterReq).toBeDefined()
+  })
+
+  it('throws a clear error if a non-paragraph element sits where the image’s own paragraph should', () => {
+    // Not simply removing the image's element: with a shared cursor, that just shifts every element
+    // after it by one, surfacing as the NEXT segment's own count mismatch instead — a real, valid
+    // failure, just not the one this test means to isolate. A table standing in for the image's own
+    // paragraph is what actually exercises image's own "must be a paragraph" check.
+    const wrongKindDoc = fakeDoc([
+      fakeParagraph(1, 'Before'),
+      { startIndex: 8, endIndex: 10, table: { rows: 1, columns: 1 } },
+      fakeParagraph(10, 'After'),
+    ])
+    expect(() => compileChapterContentRequests(wrongKindDoc, TAB_ID, imageSegments, technical)).toThrow(
+      /expected the image.s own paragraph element/,
+    )
+  })
+})
+
 describe('compileChapterContentRequests / compileChapterLengthChangingRequests — defensive checks', () => {
   it('throws a clear error when the readback has fewer paragraphs than the segment expects', () => {
     const shortDoc = fakeDoc([fakeParagraph(1, 'H')])

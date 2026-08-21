@@ -230,6 +230,78 @@ paragraph's, not just different code.
   `compileChapterContentRequests` / `compileChapterLengthChangingRequests` split and
   `emit/document.ts`'s phase comments for the full sequencing.
 
+**Syntax highlighting (2026-08-20, M7).** Per-run `updateTextStyle.foregroundColor` — untested by any
+prior milestone, since only `namedStyles.ts` had ever set foreground colour, at named-style level —
+**does render**, PDF-verified before any implementation was written (this file's own culture: a stored
+value is not proof of a rendered one, and this project has been burned by exactly that inference once
+already with `indentStart`). Tokenizer is `lowlight` (highlight.js), not Shiki: Shiki loads grammars
+asynchronously, which would force `planChapter` async and ripple through `cli.ts` and every test;
+lowlight is sync and emits ~20 stable, documented class names rather than baked colours, so `theme/`
+keeps owning the palette instead of importing one. Two things worth recording:
+
+- **`documents.get` appends a paragraph's trailing `\n` to its LAST text run's `content` string, not
+  to a run of its own.** A code paragraph's final token (e.g. `1` in `return x + 1`) reads back as
+  `"1\n"`, not `"1"`. Not new behaviour, exactly — `test/live.build.test.ts`'s table-cell assertions
+  already `.trim()` around it — but this is the first time it bit an *exact-equality* check outside a
+  table cell, so it's worth naming explicitly: any readback assertion comparing a text run's content
+  by exact string equality must account for this, not just table cells.
+- **A block-wide `updateTextStyle` and per-run token colours must never both touch
+  `foreground_color` on overlapping ranges** — `codeBlockStyleRequests`'s own text request is issued
+  *after* the per-run requests in `compile.ts`, so leaving `foreground_color` in its mask for a
+  tokenized block silently overwrites every token's colour with the block's base one. Every request
+  succeeds; only a PDF render or a readback that actually inspects `foregroundColor` (not just "was a
+  request sent") reveals it. Fixed by dropping `foreground_color` from that one request's mask when
+  the block is tokenized (`highlighted: true`), not by reordering — see `codeBlockStyleRequests`'s own
+  doc comment, including the one deliberate cosmetic gap this leaves (unclassified characters inside a
+  highlighted block render in Docs' own default colour rather than the theme's exact base grey —
+  visually indistinguishable at reading size, left as-is on purpose).
+
+Palette (`theme/presets/technical.ts`'s `codeBlock.syntax`) is deliberately small — 7 entries, grounded
+in what the real 9-chapter corpus's 11 highlightable fences actually produce (175 tokens, 9 distinct
+highlight.js classes measured), not a guess at highlight.js's full vocabulary. An unrecognised class
+falls back to the block's base colour, never throws, never invents one.
+
+**Images (2026-08-21, M8).** `insertInlineImage` only ever accepts a `uri` — confirmed against the
+discovery doc, not assumed — which Google fetches once, at insert time. No bytes field, no Drive-file
+reference. Constraints from the same doc: under 50MB, under 25 megapixels, PNG/JPEG/GIF only (no
+WebP, no SVG), and the `uri` itself under 2kB.
+
+- **A file uploaded to the user's own Drive cannot be used as that `uri`, even made fully public —
+  live-verified, not a guess.** Tried all four commonly-documented forms (`webContentLink`,
+  `drive.google.com/uc?export=view`, `...?export=download`, `lh3.googleusercontent.com/d/{id}`)
+  against the same probe document, before AND after granting "anyone with the link" reader access,
+  and again after an 8-second propagation delay. **All four failed every time.** A genuinely external
+  URL succeeded immediately on the identical document and request shape, isolating the failure to
+  Drive-hosted URLs specifically. Consequence: a local markdown image (`./diagram.png`, the common
+  real pattern) has no v1 embedding path; only a markdown image that already names a public http(s)
+  URL embeds. Don't re-attempt a Drive-URL workaround without genuinely new evidence — this was tried
+  thoroughly, not casually.
+- **`insertInlineImage` does not create its own paragraph — verified live.** Inserted bare via
+  `endOfSegmentLocation`, it merges straight into whatever paragraph currently sits at the end of the
+  tab (confirmed: text → image → text in one batch produced ONE paragraph containing both the image
+  and the following text, not three). A leading and trailing `'\n'`, each its own `insertText` request
+  flanking the `insertInlineImage` one, is what gives it a clean paragraph of its own — the leading
+  `'\n'` terminates whatever paragraph preceded it rather than opening a new element of its own, so
+  the image's own structural element in a later readback is exactly one paragraph, not three.
+- **A "2x"/retina filename is not proof of an image's real pixel dimensions — trust the fetched
+  bytes, never the URL.** The live test's own fixture (Google's logo, filename
+  `googlelogo_color_272x92dp.png`) is a genuine retina asset: its actual PNG header reports 544×184,
+  exactly double the filename's claim. Reading real IHDR/GIF-header/JPEG-SOF bytes (already the
+  design, on principle) caught this automatically — trusting the filename would have inserted the
+  image at 112pt past this theme's 432pt column.
+- **Nothing before this milestone had ever needed the page's absolute width.** Margins are relative
+  offsets and `indentEnd` narrows relative to them; code blocks reset to "full width" without ever
+  computing a number. Capping an image to "the theme's usable column" is the first thing that needed
+  an actual page width in points — so `theme/types.ts`'s `PageSpec` now carries explicit
+  `widthPt`/`heightPt` (612×792, matching what this theme's margin comments already assumed), and
+  `documentStyleRequest` sends `pageSize` explicitly rather than leaving it to whatever the account's
+  own locale default happens to be (Letter in a US-locale account, A4 elsewhere).
+- **`image-size` (the obvious dependency) was installed, then deliberately removed.** `npm audit`
+  surfaced two unfixed high-severity DoS advisories — infinite loops in its ICNS/JXL/HEIF parsers,
+  formats this project will never touch since Docs only embeds PNG/JPEG/GIF. `emit/image.ts` instead
+  hand-parses exactly those three formats (PNG/GIF: fixed-offset header reads; JPEG: a bounded marker
+  walk, hard-capped at `MAX_JPEG_MARKERS` iterations so malformed input fails fast instead of hanging).
+
 Schema presence is not proof an endpoint behaves, and a stored value is not proof of a rendered one.
 `npm run probe` is the standing answer to both: it exercises `addDocumentTab`, checks whether `\v`
 really is an in-paragraph line break, confirms the field-mask dialect, and PDF-verifies every font
@@ -317,9 +389,12 @@ requirement is *presentation*, and no assertion catches a code block split acros
       cli.ts                  build | preview | lint | auth
       auth/google.ts          OAuth desktop flow + token cache, behind an interface (service account later)
       parse/                  loadDir.ts (discovery + SUMMARY.md ordering), toAst.ts (remark + remark-gfm)
-      plan/                   types.ts (DocPlan IR), fromAst.ts, typography.ts (smart quotes, dashes, soft-wraps)
+      plan/                   types.ts (DocPlan IR), fromAst.ts, typography.ts (smart quotes, dashes, soft-wraps),
+                               languageDetect.ts, syntaxHighlight.ts (lowlight tokenizer, M7)
       theme/                  types.ts, fonts.ts (allow-list), presets/{technical,business,book}.ts
-      emit/                   document.ts (orchestrator — the only I/O), namedStyles, text, code, table, lists, cursor
+      emit/                   document.ts (orchestrator — the only I/O), namedStyles, text, blocks (code/rules/
+                               quotes), table, lists, inline, units, image.ts (classification, sizing,
+                               PNG/GIF/JPEG dimension parsing, M8)
       verify/                 readback.ts (readback + residue lint), pdfFonts.ts (PDF font truth)
       probe/                  assumptions.ts — a diagnostic, outside the layer rules and allowed its own I/O
     test/*.test.ts + test/__snapshots__/

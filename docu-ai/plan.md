@@ -240,7 +240,253 @@ column), and treat inline code as the dominant construct rather than an aftertho
   ordinary prose and a link inside a table cell — since a passing build over the small live fixture is
   exactly what this feature needs proven, live, before trusting it against the real corpus again.
 
-Deferred: syntax highlighting (Shiki → per-token `foregroundColor`), PDF-render vision QA loop, images, LLM planner.
+- **M7 — syntax highlighting — DONE (2026-08-20).** Per-token colour inside fenced code blocks. The
+  scope below is grounded in measurements against the real corpus, not estimates — the numbers are
+  reproducible from `/home/philip/Documents/technical`.
+
+  **Step 1, before any implementation: probe that per-run `foregroundColor` actually renders.**
+  Nothing in `src/` currently sets `foregroundColor` on a per-run `updateTextStyle` — only
+  `theme/`+`namedStyles.ts` set it, at named-style level. Named-style colour demonstrably renders;
+  that is **not** proof the per-run case does, and this project has been burned by exactly that
+  inference once already (`indentStart`: echoed back perfectly by `documents.get`, total no-op in PDF
+  export). PDF-verify it with `pdftotext`/rendered pages before writing anything else. **If per-run
+  `foregroundColor` doesn't render, this milestone is dead** and no other decision here matters.
+
+  **Tokenizer: `lowlight` (highlight.js), not Shiki** — a reversal of this file's own earlier
+  parenthetical, on three grounds. (1) *Synchronous.* Shiki loads grammars asynchronously, which would
+  force `planChapter` to become async and ripple through `cli.ts` and every test; lowlight is sync, so
+  `plan/` stays sync and `emit/` stays pure. (2) *Semantic output, not baked colour.* Shiki resolves
+  tokens against a Shiki theme and hands back hex colours — importing a palette that `theme/` doesn't
+  own, straight through the layer boundary. highlight.js emits ~20 stable, documented, semantic class
+  names (`hljs-keyword`, `hljs-string`, …) that map cleanly onto a colour table `theme/` does own.
+  (3) *Structured output.* lowlight returns a hast tree, so no HTML-string parsing. Registered
+  languages: `all` = 192 and includes `dockerfile`; `common` = 37 and does **not**. Prefer a curated
+  registration drawn from `all` (the languages `detectLanguage` knows, plus the fence tags real
+  corpora actually use) over registering all 192 — an unregistered language must fall back to today's
+  unhighlighted block, never throw.
+
+  **Layer placement.** Tokenize in `plan/`: a token *kind* (`keyword`, `string`, `comment`) is
+  semantic, not visual, so it belongs in the IR under this file's own rules — and `plan/` already owns
+  the sibling concern (`languageDetect.ts`), which the architecture section already earmarks for the
+  planner seam. Colours live in `theme/` as `syntax: Record<SyntaxKind, Hex>`; `emit/` only ever looks
+  them up. `CodeBlockNode` gains an optional `tokens?: CodeToken[]` and **keeps `code: string`
+  unchanged**, so a block with no tokens emits byte-identically to today.
+
+  **Never highlight an untagged fence.** Measured: the real corpus has 16 fenced blocks — 11 tagged
+  (8 `yaml`, 1 `python`, 1 `dockerfile`, 1 `bash`) and 5 untagged. **All 5 untagged blocks are ASCII
+  flow diagrams**, not code in any language (`HTTP client │ ▼ FastAPI (src/api) ──` and similar), which
+  confirms `languageDetect.ts`'s own doc-comment observation at full-corpus scale. A highlighter turned
+  loose on those would colour arbitrary words in an ASCII diagram — strictly worse than plain text. The
+  existing guard is already correct and needs no addition: `detectLanguage` returns `undefined` for
+  every one of the 5 (verified), so gating on "a known language" is sufficient. Its "must never guess"
+  discipline is load-bearing for this feature, not just tidiness.
+
+  **The real trap, and it fails silently.** `codeBlockStyleRequests` ends with a block-wide
+  `updateTextStyle` whose field mask includes `foreground_color` whenever `theme.codeBlock.text.color`
+  is set — and the `technical` preset sets it (`#202124`). In `compile.ts` that request is pushed
+  *after* `renderTextBlocks`' per-run requests, so naive per-token colours are overwritten by the
+  block-wide base colour. Every request succeeds, the readback reports the overwriting value as though
+  it were intended, and only PDF export or human eyes reveal that nothing is highlighted. **Fix by
+  removing `foreground_color` from the block-wide mask when a block is tokenized** and letting every
+  run carry its own colour, rather than by reordering requests — no ordering dependency to get wrong
+  later, and it matches this file's standing preference for explicit over positional.
+
+  **Ride the existing machinery.** A syntax kind should become one more `FlatRun` field alongside
+  `href`/`chapterLink` — precisely the pattern M6 just established — so `renderTextBlocks`' cursor
+  arithmetic computes every range and `flattenInline`'s merge step collapses adjacent same-kind runs
+  for free. This also sidesteps an offset trap worth naming: raw-source offsets do **not** map 1:1
+  onto emitted text, because `codeBlockRuns` turns a blank line into a single space. Building runs from
+  tokens means never computing that remap at all.
+
+  **Request volume is a non-issue, contrary to the earlier worry.** Measured across all 11 highlightable
+  blocks in the 188-page corpus: **175 coloured tokens**, in 9 distinct classes (`attr` 82, `string` 70,
+  `number` 6, `bullet` 5, `literal` 4, `variable language_` 3, `comment` 3, `built_in` 1, `keyword` 1),
+  and the hast tree is **flat — max nesting depth 1, zero nested spans**. With run-merging, expect a few
+  hundred extra `updateTextStyle` requests document-wide, comfortably inside the existing 300-per-batch
+  chunking. Note `variable language_` is a two-class `className`: the collapse rule must take the first
+  `hljs-*` class, and an unrecognised class must degrade to the base colour rather than throw or guess.
+
+  **Honest payoff assessment.** On *this* corpus the feature touches 11 blocks and 175 tokens across 188
+  pages — a modest visual gain, dominated by yaml (keys one colour, values another). The case for
+  building it is future code-heavy input (API docs, tutorials), where it is the difference between
+  "formatted code" and "code that reads like code". Worth doing because it is small and contained, not
+  because this corpus is crying out for it.
+
+  **Non-goals for v1**, so they don't creep in: bold/italic per token kind (highlight.js class names
+  carry no weight/slant information — that would be a `theme/` choice, and colour-only is the honest
+  starting point); per-token background; highlighting inline `` `code` `` spans (a one-word span has no
+  useful token structure); and language auto-detection *for highlighting purposes* beyond what
+  `detectLanguage` already refuses to guess at.
+
+  **Definition of done**, per CLAUDE.md: probe passes → fixture added (a tagged block *and* an untagged
+  ASCII-diagram block, the latter asserting it stays unhighlighted) → IR asserted → request snapshot
+  reviewed → live doc built → readback assertions pass → residue lint passes → opened in Docs and
+  looked at with human eyes, which for this milestone is the only check that can confirm the colours
+  actually landed.
+
+  **Implementation.** Built exactly as scoped above, plus two things the scoping pass couldn't have
+  found without writing the code:
+
+  - `documents.get` appends a paragraph's trailing `\n` to its **last text run's own `content`
+    string**, not a separate run — a code paragraph's final token (`1` in `return x + 1`) reads back
+    as `"1\n"`. Caught by the live test's exact-equality check, not a unit test; fixed by trimming,
+    the same way the existing table-cell assertions already did. Recorded in CLAUDE.md since it's a
+    general readback fact, not specific to this feature.
+  - The suspected block-wide/per-run `foreground_color` collision (flagged during scoping as "the real
+    trap") was real and reproduced exactly as predicted in a dedicated live colour probe run *before*
+    any implementation code was written: five words, five distinct per-run colours, rendered
+    correctly on their own — then the same five words with a block-wide colour applied afterward,
+    which flattened all five to one colour. Confirmed the fix (drop `foreground_color` from the
+    block-wide mask when `highlighted`) before writing `codeBlockStyleRequests`'s real change, not
+    after finding it broken.
+
+  `CodeToken` (plan/types.ts) and `plan/syntaxHighlight.ts`'s `highlightCode()` do the tokenizing;
+  `Inline` gained a `codeToken` variant (kind + text, no `code` mark — a fenced block's mono/shading
+  already comes from the whole paragraph); `FlatRun` gained a `syntaxKind` field alongside M6's
+  `chapterLink`, same pattern. `emit/blocks.ts`'s `codeBlockRuns` groups tokens back into per-line
+  pieces via a small shared `tokenPieces` helper, splitting a token's own text on any embedded `\n`
+  (a multi-line string/comment is one token spanning several code-block lines) and preserving the
+  existing "blank line becomes a single space" rule so a tokenized block still can't lose a line to
+  `flattenInline`'s zero-length-run drop. Untokenized blocks emit through the exact same function,
+  byte-identical to before this milestone — verified by the pre-existing `compileBlocks` tests still
+  passing unchanged.
+
+  Verified: `tsc` clean, `npm test` (211/211, 1 correctly skipped), `npm run lint` clean, a dedicated
+  live colour probe confirming per-run `foregroundColor` renders and the trap reproduces, and
+  `npm run test:live` (extended to build a real Python fenced block and assert via readback that two
+  different tokens carry two different `foregroundColor` values). Rebuilt the full 9-chapter real
+  corpus and looked at the rendered PDF: a YAML checklist block reads with keys in orange and string
+  values in green, exactly as designed, with no new residue-lint findings introduced.
+
+- **M8 — images — DONE (2026-08-21).** Embedding `![alt](src)` as a real Google Docs inline image.
+
+  **Unlike every milestone since M2, this one cannot be grounded in real-corpus measurement — the
+  real corpus has zero images.** Worth naming explicitly rather than quietly scoping from guesswork:
+  every number and decision below comes from the Docs API discovery document and a dedicated live
+  probe (create a Drive file, try to reference it from `insertInlineImage` four different documented
+  ways, isolate against a genuine external control), not from what real content needs.
+
+  **The API's only insertion mechanism is a public `uri` — confirmed in the discovery doc, not
+  assumed.** `InsertInlineImageRequest` takes `uri`, `location`/`endOfSegmentLocation`, and an
+  optional `objectSize`. No bytes field, no base64, no Drive-file-id reference — Google fetches the
+  `uri` once, at insert time. Hard constraints from the same doc: under 50MB, under 25 megapixels,
+  PNG/JPEG/GIF only (**no WebP, no SVG**), and the `uri` string itself under 2kB.
+
+  **Decisive live finding: a file uploaded to the user's own Drive cannot be used as that `uri`, even
+  fully public — this is not a workaround gap, it's a dead end.** Tried, against the same probe
+  document: the file's own `webContentLink`, `drive.google.com/uc?export=view`,
+  `drive.google.com/uc?export=download`, and `lh3.googleusercontent.com/d/{id}` — all four rejected
+  by `insertInlineImage` ("There was a problem retrieving the image" / "Access... forbidden" /
+  "...not found"), both before AND after granting "anyone with the link" reader access, and again
+  after an 8-second propagation delay. A genuinely external URL (a well-known public PNG, fetched on
+  the exact same document, same request shape) **succeeded on the first try** — isolating the failure
+  specifically to Drive-hosted URLs, not the mechanism itself, and ruling out propagation timing as
+  the cause. No further Drive URL variant is worth trying without new evidence it'd behave
+  differently — chasing an undocumented trick is exactly what CLAUDE.md's own culture warns against.
+
+  **Consequence for markdown**: a `![alt](https://example.com/diagram.png)` — a remote URL — passes
+  straight through to `uri` and embeds trivially. A `![alt](./diagram.png)` — a local file, no public
+  host, the far more common real-world pattern — **has no viable v1 embedding path**. This is a real,
+  load-bearing scope boundary, not a corner case to smooth over.
+
+  **Sizing: Google's own default (when `objectSize` is omitted) is smarter than the discovery doc's
+  wording suggests, but still wrong for this theme.** Live-verified: a 2048×1536 test image, inserted
+  with no `objectSize`, came back sized at exactly 468×351pt — 468pt is precisely Docs' own built-in
+  1-inch-margin content width (letter page 612pt − 72pt − 72pt), not a naive blow-up by pixel
+  resolution. But this theme's actual prose column is narrower still: `marginLeftPt`/`marginRightPt`
+  are 54pt (not 72), and every prose named style additionally carries `indentEndPt: 72` — a true
+  usable width of 432pt, not 468. Relying on Docs' default would hang an image 36–72pt wider than the
+  paragraph text around it. **v1 must compute and set `objectSize` itself**, scaled to the theme's own
+  column width with aspect ratio preserved — which needs the image's natural pixel dimensions. No
+  need for a full image-decoding dependency: PNG/JPEG/GIF all encode width/height in their first few
+  dozen header bytes, cheap to fetch and parse directly.
+
+  **Architecture: no new Block kind needed, unlike tables.** Verified directly against mdast's own
+  output: `image` is a *phrasing* (inline) node, always nested inside a `paragraph` — and critically,
+  "an image alone on its own line" and "an image mixed with other text" produce the **identical**
+  AST shape (a paragraph whose `children` happen to include an image node; no structural marker
+  distinguishes the two). So `Inline` gains one new variant (`{kind: 'image', src, alt, title}`),
+  handled through the same `planInline`/`resolveInline` paths chapterLink and codeToken already
+  established — no new Block, no new segment kind. A paragraph whose only child is an image is
+  already exactly what most real markdown images look like; nothing extra is needed to make it read
+  as its own visual block once emit/ inserts it.
+
+  **An unembeddable image must not silently vanish** — this project's standing rule, going back to
+  the very first message that started it. Recommendation: render the image's `alt` text as a plain
+  paragraph in its place (so the reader sees *something* naming what should have been there, not a
+  silent gap), and have the CLI print a build-time summary ("N image(s) could not be embedded: local
+  file, no public URL" / "unsupported format: .svg"), the same spirit as the residue lint's own
+  summary reporting. This needs a decision, not just an implementation — flagging it rather than
+  deciding unilaterally.
+
+  **A real correctness requirement, not a nicety: invalid images must be filtered out BEFORE the
+  build, never sent and left to fail.** `batchUpdate` is atomic — CLAUDE.md's own rule. One
+  `insertInlineImage` request for a local file or a `.svg`/`.webp` extension would fail against the
+  live API and take the entire batch down with it, exactly the kind of failure this project has
+  always caught by verifying assumptions first rather than discovering it live. Every image must be
+  classified (embeddable / local-no-host / unsupported-format / uri-too-long) in `plan/`, before any
+  request is ever built.
+
+  **Worth including, not a stretch**: an image's `alt` (and `title`, if present) rendered as a small
+  italic caption paragraph immediately below it. Docs has no native "caption" object tied to an
+  image, so this is just reusing `renderTextBlocks` and the existing `italic` mark on an ordinary
+  paragraph — zero new API surface, and alt text is frequently the most meaningful line near a
+  diagram. Needs a decision on `alt` vs `title` precedence when both are present, not a new mechanism.
+
+  **Non-goals for v1**: local-file embedding (no viable path found this pass — revisit only on new
+  evidence, not another guess at a Drive URL trick); image resizing/cropping beyond fit-to-column;
+  text wrap / floating images (Docs models this as a `PositionedObject` with anchoring — real
+  complexity, a different feature from inline embedding); anything with animated GIF frames beyond
+  Docs' own default handling.
+
+  **Definition of done**, per CLAUDE.md: fixture added (a remote-URL image, a local-file image
+  proving the deliberate fallback, an oversized/wrong-format image proving pre-filtering) → IR
+  asserted → request snapshot reviewed → live doc built → readback assertions pass (image present,
+  `objectSize` matches the computed column-width scaling) → residue lint passes → opened in Docs and
+  looked at with human eyes, since a wrongly-scaled or misplaced image is exactly the kind of thing no
+  automated check alone would catch.
+
+  **Implementation.** Built as scoped, plus one thing the scoping pass's own reasoning couldn't have
+  caught without live data: a "2x" filename is not proof of anything about an image's real pixel
+  dimensions. The live test's own fixture (Google's own logo, filename `..._272x92dp.png`) turned out
+  to be a genuine retina asset — its real PNG header reports 544×184, exactly double the filename's
+  claim. Trusting the filename would have inserted it at native size, 112pt past this theme's 432pt
+  column; reading the actual IHDR bytes (which the design already called for, on general principle)
+  caught it automatically, capping to 432×146pt with no special-casing needed. Recorded as a real
+  justification for the "always read real header bytes, never infer from a filename or URL" design
+  choice, not a hypothetical one.
+
+  Landed largely as designed: `Inline` gained an `image` variant and `Block` gained `ImageBlock` (for
+  the sole-image-paragraph case — mdast's own shape makes the mixed-inline case free, handled by
+  `planInline`'s pre-existing unknown-node fallback with zero new code); `emit/image.ts` holds
+  classification, sizing, byte-level PNG/GIF/JPEG dimension parsing, and request-building, all pure;
+  `emit/document.ts`'s new `resolveImages` does the one genuinely new I/O this milestone needed
+  (fetching each distinct image src, Range-limited to 64KB, before `compileChapterInserts` ever runs);
+  `Segment` gained `ImageSegment`, handled in `compileBlocks` exactly like `TableSegment` — flush,
+  push, own insert path — except a non-embeddable image never reaches that far, degrading to its own
+  alt text as an ordinary paragraph instead. `theme/types.ts`'s `PageSpec` gained explicit
+  `widthPt`/`heightPt` (612×792, matching what this theme's own margin comments already assumed) and
+  `documentStyleRequest` now sends `pageSize` explicitly — a real, if small, expansion beyond "just
+  images": nothing needed an absolute page width before this milestone, and leaving it to whatever
+  the account's own locale default happened to be was never actually safe.
+
+  `image-size`, the obvious off-the-shelf dependency, was installed and then deliberately removed:
+  `npm audit` surfaced two unfixed high-severity DoS advisories in its ICNS/JXL/HEIF parsers —
+  formats this project will never touch, since Docs only embeds PNG/JPEG/GIF. Writing a ~90-line
+  parser scoped to exactly those three formats, with a hard-capped marker-walk loop for JPEG, removed
+  the vulnerable surface entirely rather than accepting it for functionality never used.
+
+  Verified: `tsc` clean, `npm test` (250/250, 1 correctly skipped), `npm run lint` clean, a dedicated
+  live probe proving Drive-hosted URLs are a dead end for `insertInlineImage` and that a flanking
+  `'\n'` pair is what gives an inline image its own clean paragraph, and `npm run test:live` (extended
+  with a real embeddable image and a real local-file image in the same chapter) confirming via
+  readback that the embedded object's `sourceUri` and computed `size` are correct and that the local
+  image's alt text appears as a visible paragraph with a matching CLI warning. Rebuilt a real document
+  and looked at the PDF: the logo renders cleanly at the capped width, spaced correctly above and
+  below, and the local-file fallback reads as ordinary, unmarked prose — indistinguishable from a
+  human having written "A local diagram" as a caption-less placeholder.
+
+Deferred: PDF-render vision QA loop, LLM planner.
 
 ## Acceptance gates
 

@@ -44,6 +44,33 @@ describe('codeBlockStyleRequests', () => {
       technical.codeBlock.text.font,
     )
   })
+
+  it('sets the block’s own base foreground colour when not highlighted', () => {
+    expect(textReq?.updateTextStyle?.fields).toContain('foreground_color')
+    expect(textReq?.updateTextStyle?.textStyle?.foregroundColor).toBeDefined()
+  })
+})
+
+describe('codeBlockStyleRequests — highlighted (M7)', () => {
+  // The real trap this guards against: renderTextBlocks' own per-run foreground_color requests for
+  // a highlighted block's tokens are issued BEFORE this one (see compile.ts), so a block-wide
+  // foreground_color here would silently overwrite every token's own colour — same field, later
+  // request wins, no error from either side. Confirmed live before this test was written.
+  const highlighted = codeBlockStyleRequests(RANGE, technical, true)
+  const highlightedTextReq = highlighted[1]!
+
+  it('drops foreground_color from the mask entirely when the block is highlighted', () => {
+    expect(highlightedTextReq.updateTextStyle?.fields).not.toContain('foreground_color')
+    expect(highlightedTextReq.updateTextStyle?.textStyle?.foregroundColor).toBeUndefined()
+  })
+
+  it('keeps every other text field (font, size, weight) untouched by the highlighted flag', () => {
+    const fields = highlightedTextReq.updateTextStyle?.fields?.split(',')
+    expect(fields).toEqual(expect.arrayContaining(['weighted_font_family', 'font_size', 'bold', 'italic']))
+    expect(highlightedTextReq.updateTextStyle?.textStyle?.weightedFontFamily?.fontFamily).toBe(
+      technical.codeBlock.text.font,
+    )
+  })
 })
 
 describe('quoteStyleRequest', () => {

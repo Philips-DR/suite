@@ -9,8 +9,9 @@ import type {
   Root,
   Table as MdastTable,
 } from 'mdast'
-import type { Block, Chapter, DocPlan, Inline, ListItem } from './types.js'
+import type { Block, CodeBlockNode, Chapter, DocPlan, ImageBlock, Inline, ListItem } from './types.js'
 import { detectLanguage } from './languageDetect.js'
+import { highlightCode } from './syntaxHighlight.js'
 import { collapseSoftWraps, typeset } from './typography.js'
 
 /** Inline marks flatten recursively; typography applies only at the plain-text leaves. */
@@ -86,18 +87,56 @@ function planBlockquote(node: Blockquote): Block {
   return { kind: 'blockquote', children: node.children.map(planBlock).filter((b): b is Block => b !== undefined) }
 }
 
+/**
+ * mdast has no "block image" node — `![alt](src)` is a phrasing node like any other, always nested
+ * in a paragraph, whether it sits alone on its own line or mixed with other text (verified directly:
+ * both produce the identical AST shape). So a real embedded image is only ever the special case of a
+ * paragraph whose sole child is that one image node; anything else — image mixed with prose, or html/
+ * footnoteReference/etc. mixed in — falls through to the ordinary paragraph path, where planInline's
+ * existing unknown-node fallback already renders an image as its own alt text. That fallback isn't
+ * new code for this feature; it already existed and already does the right thing.
+ */
+function planParagraph(node: Paragraph): Block {
+  const onlyChild = node.children.length === 1 ? node.children[0] : undefined
+  if (onlyChild?.type === 'image') {
+    return imageBlock(onlyChild)
+  }
+  return { kind: 'paragraph', children: planInline(node.children) }
+}
+
+function imageBlock(node: { url: string; alt?: string | null; title?: string | null }): ImageBlock {
+  return {
+    kind: 'image',
+    src: node.url,
+    alt: typeset(node.alt ?? ''),
+    title: node.title != null ? typeset(node.title) : undefined,
+  }
+}
+
+/**
+ * Never typesets `code` (byte-for-byte, same rule as an inline code span) and never guesses a
+ * language just to get a highlight: `lang` is already either an explicit fence tag or
+ * detectLanguage's own considered "or nothing" answer. Tokenizing only when `lang` is defined is
+ * what keeps an untagged ASCII diagram from ever reaching highlightCode at all — see
+ * languageDetect.ts's finding that every untagged fence in the real corpus was exactly that, not code.
+ */
+function planCodeBlock(lang: string | undefined, code: string): CodeBlockNode {
+  const tokens = lang !== undefined ? highlightCode(lang, code) : undefined
+  return tokens ? { kind: 'code-block', lang, code, tokens } : { kind: 'code-block', lang, code }
+}
+
 function planBlock(node: Content): Block | undefined {
   switch (node.type) {
     case 'heading':
       return { kind: 'heading', level: node.depth, children: planInline(node.children) }
     case 'paragraph':
-      return { kind: 'paragraph', children: planInline(node.children) }
+      return planParagraph(node)
     case 'list':
       return { kind: 'list', items: flattenList(node, 0) }
     case 'thematicBreak':
       return { kind: 'rule' }
     case 'code':
-      return { kind: 'code-block', lang: node.lang ?? detectLanguage(node.value), code: node.value }
+      return planCodeBlock(node.lang ?? detectLanguage(node.value), node.value)
     case 'table':
       return planTable(node)
     case 'blockquote':
@@ -134,6 +173,9 @@ function resolveInline(node: Inline, chapterByFile: Map<string, number>): Inline
     case 'text':
     case 'code':
     case 'break':
+    case 'codeToken':
+      // codeToken is synthesized later, in emit/blocks.ts, from a code-block's own `tokens` — it
+      // never exists at this point in the pipeline. Handled only so this switch stays exhaustive.
       return node
     case 'bold':
     case 'italic':
@@ -173,6 +215,9 @@ function resolveBlockLinks(block: Block, chapterByFile: Map<string, number>): Bl
       return { ...block, children: block.children.map((c) => resolveBlockLinks(c, chapterByFile)) }
     case 'rule':
     case 'code-block':
+    case 'image':
+      // An image carries no Inline children to resolve — src/alt/title are plain strings, and a
+      // sole-image paragraph never itself IS a link (see planParagraph).
       return block
   }
 }

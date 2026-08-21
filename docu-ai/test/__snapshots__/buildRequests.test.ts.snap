@@ -207,15 +207,57 @@ INITIALIZE → VALIDATE → END",
         {
           "runs": [
             {
-              "kind": "text",
-              "text": "def f(x):",
+              "kind": "codeToken",
+              "syntaxKind": "keyword",
+              "text": "def",
+            },
+            {
+              "kind": "codeToken",
+              "syntaxKind": undefined,
+              "text": " ",
+            },
+            {
+              "kind": "codeToken",
+              "syntaxKind": "title",
+              "text": "f",
+            },
+            {
+              "kind": "codeToken",
+              "syntaxKind": undefined,
+              "text": "(",
+            },
+            {
+              "kind": "codeToken",
+              "syntaxKind": "params",
+              "text": "x",
+            },
+            {
+              "kind": "codeToken",
+              "syntaxKind": undefined,
+              "text": "):",
             },
             {
               "kind": "break",
             },
             {
-              "kind": "text",
-              "text": "    return x + 1",
+              "kind": "codeToken",
+              "syntaxKind": undefined,
+              "text": "    ",
+            },
+            {
+              "kind": "codeToken",
+              "syntaxKind": "keyword",
+              "text": "return",
+            },
+            {
+              "kind": "codeToken",
+              "syntaxKind": undefined,
+              "text": " x + ",
+            },
+            {
+              "kind": "codeToken",
+              "syntaxKind": "number",
+              "text": "1",
             },
           ],
           "style": "NORMAL_TEXT",
@@ -386,8 +428,18 @@ INITIALIZE → VALIDATE → END",
             "magnitude": 60,
             "unit": "PT",
           },
+          "pageSize": {
+            "height": {
+              "magnitude": 792,
+              "unit": "PT",
+            },
+            "width": {
+              "magnitude": 612,
+              "unit": "PT",
+            },
+          },
         },
-        "fields": "margin_top,margin_bottom,margin_left,margin_right",
+        "fields": "page_size,margin_top,margin_bottom,margin_left,margin_right",
         "tabId": "t.golden",
       },
     },

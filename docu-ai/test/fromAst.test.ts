@@ -97,7 +97,9 @@ describe('planChapter — rule, code block, table, blockquote', () => {
   it('preserves fenced code verbatim, with no fence markers in the value', () => {
     const { blocks } = plan('```python\nx = 1\n```')
     const code = blocks[0] as Extract<Block, { kind: 'code-block' }>
-    expect(code).toEqual({ kind: 'code-block', lang: 'python', code: 'x = 1' })
+    expect(code.kind).toBe('code-block')
+    expect(code.lang).toBe('python')
+    expect(code.code).toBe('x = 1')
   })
 
   it('marks an unlabeled fence with lang undefined when detectLanguage finds nothing', () => {
@@ -115,6 +117,28 @@ describe('planChapter — rule, code block, table, blockquote', () => {
     expect((blocks[0] as Extract<Block, { kind: 'code-block' }>).lang).toBe('text')
   })
 
+  // M7: syntax highlighting. Tokenizing only ever happens once `lang` is already settled (explicit
+  // tag or detectLanguage's own considered answer) — never a separate guess of its own.
+  it('tokenizes a fenced block whose language is a registered highlight.js grammar', () => {
+    const { blocks } = plan('```python\ndef f(x):\n    return x + 1\n```')
+    const code = blocks[0] as Extract<Block, { kind: 'code-block' }>
+    expect(code.tokens?.some((t) => t.kind === 'keyword' && t.text === 'def')).toBe(true)
+    expect(code.tokens?.some((t) => t.kind === 'keyword' && t.text === 'return')).toBe(true)
+    expect(code.tokens?.some((t) => t.kind === 'number' && t.text === '1')).toBe(true)
+  })
+
+  it('leaves an untagged, undetected fence untokenized rather than guessing a language for it', () => {
+    const { blocks } = plan('```\nHTTP client\n   ▼\nFastAPI\n```')
+    expect((blocks[0] as Extract<Block, { kind: 'code-block' }>).tokens).toBeUndefined()
+  })
+
+  it('leaves a fence tagged with an unregistered language untokenized rather than throwing', () => {
+    const { blocks } = plan('```not-a-real-language\nwhatever\n```')
+    const code = blocks[0] as Extract<Block, { kind: 'code-block' }>
+    expect(code.lang).toBe('not-a-real-language')
+    expect(code.tokens).toBeUndefined()
+  })
+
   it('captures table alignment and cell content structurally, never as pipe characters', () => {
     const { blocks } = plan('| L | C |\n|:---|:---:|\n| a | b |')
     const table = blocks[0] as Extract<Block, { kind: 'table' }>
@@ -126,6 +150,47 @@ describe('planChapter — rule, code block, table, blockquote', () => {
   it('keeps a blockquote as block children, not flattened text', () => {
     const { blocks } = plan('> quoted')
     expect(blocks[0]).toMatchObject({ kind: 'blockquote', children: [{ kind: 'paragraph' }] })
+  })
+})
+
+// M8: images. mdast has no "block image" node — a standalone `![alt](src)` is a paragraph whose sole
+// child is an image, identical in shape to one mixed into prose (verified directly against mdast's
+// own output). So the sole-image case gets a real ImageBlock; anything else keeps falling through to
+// planInline's pre-existing unknown-node fallback, which already renders an image as its alt text.
+describe('planChapter — images', () => {
+  it('turns a paragraph containing only an image into an ImageBlock', () => {
+    const { blocks } = plan('![A diagram](https://example.com/diagram.png)')
+    expect(blocks[0]).toEqual({
+      kind: 'image',
+      src: 'https://example.com/diagram.png',
+      alt: 'A diagram',
+      title: undefined,
+    })
+  })
+
+  it('carries an optional title through', () => {
+    const { blocks } = plan('![alt](https://example.com/x.png "A caption")')
+    expect((blocks[0] as Extract<Block, { kind: 'image' }>).title).toBe('A caption')
+  })
+
+  it('defaults alt to an empty string, never undefined, when the markdown has none', () => {
+    const { blocks } = plan('![](https://example.com/x.png)')
+    expect((blocks[0] as Extract<Block, { kind: 'image' }>).alt).toBe('')
+  })
+
+  it('falls back to alt text for an image mixed with other text in the same paragraph', () => {
+    const { blocks } = plan('See the ![diagram](https://example.com/x.png) below.')
+    const paragraph = blocks[0] as Extract<Block, { kind: 'paragraph' }>
+    expect(paragraph.kind).toBe('paragraph')
+    const text = (paragraph.children as Extract<Inline, { kind: 'text' }>[]).map((n) => n.text).join('')
+    expect(text).toBe('See the diagram below.')
+  })
+
+  it('typesets alt/title the same as any other plain text leaf', () => {
+    const { blocks } = plan('![It\'s "quoted"](https://example.com/x.png "It\'s here")')
+    const image = blocks[0] as Extract<Block, { kind: 'image' }>
+    expect(image.alt).toBe('It’s “quoted”')
+    expect(image.title).toBe('It’s here')
   })
 })
 

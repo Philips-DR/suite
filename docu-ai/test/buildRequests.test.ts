@@ -18,7 +18,7 @@ const TAB_ID = 't.golden'
  * inserted," not "how it gets styled."
  */
 describe('compileChapterInserts — golden request snapshot', () => {
-  const compiled = compileChapterInserts(technical, chapter, TAB_ID)
+  const compiled = compileChapterInserts(technical, chapter, TAB_ID, new Map())
 
   it('emits a stable, reviewable Request[] for theme + insert phases', () => {
     expect(compiled).toMatchSnapshot()

@@ -8,6 +8,7 @@ import {
   ruleStyleRequest,
   type Segment,
 } from './blocks.js'
+import { imageInsertRequests, imageMaxWidthPt, type ImageResolution } from './image.js'
 import { bulletRequest } from './lists.js'
 import { documentStyleRequest, namedStyleRequests } from './namedStyles.js'
 import { extractCellParagraphRanges, tableCellFills, tableEarlyStyleRequests, tableInsertRequest } from './table.js'
@@ -47,17 +48,26 @@ export interface CompiledContent {
  * calls this once per chapter with the id it got back. No chapter-divider rule here either — that was
  * M1–M3's stand-in for tabs not existing yet; the tab boundary itself is the divider now.
  */
-export function compileChapterInserts(theme: Theme, chapter: Chapter, tabId: string): CompiledInserts {
-  const segments = compileBlocks(chapter.blocks)
+export function compileChapterInserts(
+  theme: Theme,
+  chapter: Chapter,
+  tabId: string,
+  imageResolutions: Map<string, ImageResolution>,
+): CompiledInserts {
+  const segments = compileBlocks(chapter.blocks, imageResolutions)
+  const maxWidthPt = imageMaxWidthPt(theme)
 
-  const insertRequests = segments.map((segment): docs_v1.Schema$Request => {
-    if (segment.kind === 'table') return tableInsertRequest(segment.table, tabId)
+  const insertRequests = segments.flatMap((segment): docs_v1.Schema$Request[] => {
+    if (segment.kind === 'table') return [tableInsertRequest(segment.table, tabId)]
+    if (segment.kind === 'image') {
+      return imageInsertRequests(segment.image, segment.naturalWidth, segment.naturalHeight, maxWidthPt, tabId)
+    }
     // The placeholder startIndex here is never used for anything: only requests[0].insertText.text
     // is read out. Real ranges come from a second call in compileChapterStyleRequests, once a
     // readback gives real indices — see that function's own comment for why a second call, not an
     // offset.
     const text = renderTextBlocks(segment.textBlocks, theme, { startIndex: 1 }).requests[0]?.insertText?.text ?? ''
-    return { insertText: { endOfSegmentLocation: { tabId }, text } }
+    return [{ insertText: { endOfSegmentLocation: { tabId }, text } }]
   })
 
   return {
@@ -70,15 +80,23 @@ export function compileChapterInserts(theme: Theme, chapter: Chapter, tabId: str
 type MatchedSegment =
   | { kind: 'table'; segment: Extract<Segment, { kind: 'table' }>; tableStart: number; cellRanges: docs_v1.Schema$Range[][] }
   | { kind: 'text'; segment: Extract<Segment, { kind: 'text' }>; realStart: number }
+  | { kind: 'image' }
 
 /**
  * Looks up `tabId`'s own body via `tabBody`, never `bodies()` (which flattens every tab together —
  * exactly wrong once tabs mean separate, independently-indexed documents), then walks that one tab's
- * structural elements and `segments` IN LOCKSTEP: segment i's expected element count (1 for a table,
- * textBlocks.length for a text run) tells us exactly how many elements to consume before moving to
- * segment i+1. This works because nothing else ever inserts a structural element — a fresh tab's own
- * initial empty paragraph is absorbed by the very first insertText rather than surviving as an extra
- * element, confirmed live before relying on it.
+ * structural elements and `segments` IN LOCKSTEP: segment i's expected element count (1 for a table
+ * or an image, textBlocks.length for a text run) tells us exactly how many elements to consume before
+ * moving to segment i+1. This works because nothing else ever inserts a structural element — a fresh
+ * tab's own initial empty paragraph is absorbed by the very first insertText rather than surviving as
+ * an extra element, confirmed live before relying on it.
+ *
+ * An image segment consumes exactly one paragraph element too, not zero: verified live (see
+ * plan.md's M8 note) that an inline image inserted via endOfSegmentLocation, flanked by the leading
+ * and trailing '\n' emit/image.ts's imageInsertRequests supplies, lands in its OWN paragraph — the
+ * leading '\n' terminates whatever paragraph preceded it (already accounted for by THAT segment's own
+ * element count) rather than creating a paragraph of its own, so only the image's own [image, '\n']
+ * paragraph is new here.
  *
  * Shared between compileChapterContentRequests and compileChapterLengthChangingRequests, which call
  * it against two different readbacks (see the latter's own comment for why two) but need the exact
@@ -109,6 +127,15 @@ function matchSegmentsToElements(doc: docs_v1.Schema$Document, tabId: string, se
       const tableStart = element.startIndex
       if (tableStart == null) throw new Error('table structural element has no startIndex')
       return { kind: 'table', segment, tableStart, cellRanges: extractCellParagraphRanges(element) }
+    }
+
+    if (segment.kind === 'image') {
+      const element = elements[cursor]
+      if (!element?.paragraph) {
+        throw new Error(`expected the image's own paragraph element at readback position ${cursor}`)
+      }
+      cursor += 1
+      return { kind: 'image' }
     }
 
     const count = segment.textBlocks.length
@@ -154,13 +181,19 @@ export function compileChapterContentRequests(
       contentRequests.push(...tableEarlyStyleRequests(m.tableStart, m.cellRanges, m.segment.table, theme, tabId))
       continue
     }
+    // An image needs no further styling — its size and position were already fully specified in its
+    // own insertInlineImage request at insert time; nothing here to add.
+    if (m.kind === 'image') continue
 
     const rendered = renderTextBlocks(m.segment.textBlocks, theme, { startIndex: m.realStart, tabId })
     chapterLinkRanges.push(...rendered.chapterLinkRanges)
     contentRequests.push(...rendered.requests.filter((r) => !r.insertText))
     contentRequests.push(...m.segment.ruleIndices.map((i) => ruleStyleRequest(rendered.ranges[i]!, theme)))
     contentRequests.push(
-      ...m.segment.codeBlockIndices.flatMap((i) => codeBlockStyleRequests(rendered.ranges[i]!, theme)),
+      ...m.segment.codeBlockIndices.flatMap((i) => {
+        const highlighted = m.segment.textBlocks[i]!.runs.some((r) => r.kind === 'codeToken')
+        return codeBlockStyleRequests(rendered.ranges[i]!, theme, highlighted)
+      }),
     )
     // Shallowest first: a nested blockquote's own call is issued after its enclosing quote's, so its
     // deeper indent/border wins on the sub-range both calls touch.
@@ -207,6 +240,7 @@ export function compileChapterLengthChangingRequests(
       lengthChanging.push(...tableCellFills(m.cellRanges, m.segment.table, theme, { tabId, headings }))
       continue
     }
+    if (m.kind === 'image') continue
 
     const rendered = renderTextBlocks(m.segment.textBlocks, theme, { startIndex: m.realStart, tabId })
     for (const run of m.segment.listRuns) {

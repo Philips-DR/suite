@@ -72,20 +72,30 @@ trying to compute them by hand and hoping the math holds up on a 40-page documen
   becomes a real, working jump to that chapter — not just the cover's table of contents
 - Real headings, using Google Docs' own heading styles (so they show up in Google's own outline view)
 - Bold, italic, and strikethrough text, rendered as actual formatting, not symbols
-- Fenced code blocks rendered in a monospaced font with a shaded background box
+- Fenced code blocks rendered in a monospaced font with a shaded background box, with keywords,
+  strings, numbers, and a few other token kinds colour-coded when the language is recognized (an
+  untagged block, or one whose language nothing recognizes, still renders as clean plain code — it's
+  never guessed at)
 - Tables with borders, a shaded header row that repeats if the table spans multiple pages, and
   correct left/center/right alignment per column
 - Blockquotes, shown as an indented block with a left border (nested quotes get a heavier border)
 - Smart quotes and dashes, the same typographic cleanup a careful human editor would do by hand
+- Images that already live on the web (`![alt](https://...)`) embedded for real, sized to fit the
+  page's own text column rather than however large the source happened to be. An image that can't be
+  embedded — most commonly a local file on your computer rather than something already online — shows
+  its caption text in its place instead of silently disappearing, and the tool tells you which ones
 
 ## What it doesn't do yet
 
 This is a deliberately staged project, and a few things are intentionally not built yet rather than
 half-done:
 
-- **Syntax highlighting** inside code blocks (colored keywords/strings) — code blocks are correctly
-  formatted as code, just not color-coded yet.
-- **Images** embedded in the Markdown aren't handled yet.
+- **Images stored locally on your own computer** can't be embedded — only images that already have a
+  public web address can be. This turned out to be a real limit of Google Docs itself, not something
+  this tool chose not to build: there's no way to hand Google Docs raw image bytes directly, only a
+  public URL for it to fetch, and uploading the image to your own Google Drive first doesn't work
+  around this either (tried, and confirmed it doesn't). A future version could add a way to actually
+  host these images somewhere first, but that's real added infrastructure, not a quick fix.
 - **Smarter, AI-assisted planning** — today, chapter titles and code-block languages are worked out
   with straightforward, predictable rules. There's a deliberate seam in the design for a
   smarter/LLM-assisted version of that step later, without it needing to touch anything else in the

@@ -8,6 +8,11 @@ import type { Theme } from '../types.js'
 export const technical: Theme = {
   name: 'technical',
   page: {
+    // US Letter — matches what this theme's own margin comments already assumed (504pt column below
+    // is 612 - 54 - 54), now sent explicitly via documentStyleRequest rather than left to whatever
+    // the account's own locale default happens to be.
+    widthPt: 612,
+    heightPt: 792,
     // 54pt (0.75in) rather than the usual 72pt, on evidence: the real corpus has 95-character code
     // lines, and a 72pt+ margin cannot fit those at a readable monospace size. See
     // test/fixtures/README.md. 54pt gives a ~504pt column: 95 chars at ~8.8pt.
@@ -59,6 +64,19 @@ export const technical: Theme = {
     paddingPt: 6,
     spaceAbovePt: 12,
     spaceBelowPt: 12,
+    // Google Material accent hues — visually confirmed distinct and legible together via a live PDF
+    // probe (plan.md's M7). Covers 167 of the 175 tokens the real corpus actually produces; `bullet`
+    // and `variable` (YAML list dashes and document markers, 8 tokens total) are left uncolored on
+    // purpose — punctuation-like, not worth a distinct hue.
+    syntax: {
+      keyword: '#d93025',
+      string: '#188038',
+      number: '#1a73e8',
+      literal: '#1a73e8',
+      comment: '#5f6368',
+      built_in: '#9334e6',
+      attr: '#e8710a',
+    },
   },
   blockquote: { borderColor: '#80868b', borderWidthPt: 2, paddingPt: 6 },
   // A step darker than the rule/code-block grays (#dadce0/#f8f9fa) so the header row reads as

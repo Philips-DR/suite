@@ -43,6 +43,14 @@ export interface BlockSpec {
 }
 
 export interface PageSpec {
+  /** Never set explicitly before M8 — a new document just inherited whatever page size Docs' own
+   * locale default happened to be (Letter in a US-locale account, A4 elsewhere). Nothing needed an
+   * absolute value until image sizing did: capping an image's width to "the page's usable column"
+   * requires actually knowing the page width in points, not just the margins relative to it.
+   * Explicit and sent via documentStyleRequest so the assumption this theme computes against always
+   * matches the rendered reality, regardless of the account's own locale default. */
+  widthPt: number
+  heightPt: number
   marginTopPt: number
   marginBottomPt: number
   marginLeftPt: number
@@ -63,6 +71,16 @@ export interface CodeBlockSpec {
   paddingPt: number
   spaceAbovePt: number
   spaceBelowPt: number
+  /**
+   * Per-token colour for syntax highlighting, keyed by a bare highlight.js class name (the `hljs-`
+   * prefix stripped — see plan/syntaxHighlight.ts) — e.g. `keyword`, `string`. Deliberately small and
+   * grounded in what the real corpus's own fenced blocks actually produce (see plan.md's M7), not a
+   * guess at every class highlight.js can emit. A kind absent from this map — because it wasn't
+   * judged worth a distinct colour, or because the block wasn't tokenized at all (unknown language,
+   * or an untagged fence — languageDetect.ts's own "never guess" rule applies here too) — renders in
+   * the block's own base text colour. Never throws, never invents a colour.
+   */
+  syntax?: Partial<Record<string, Hex>>
 }
 
 /**

@@ -175,6 +175,7 @@ async function cmdBuild(dir: string | undefined, title: string | undefined): Pro
 ${built.url}
 
 `)
+  for (const warning of built.imageWarnings) process.stdout.write(`${warning}\n`)
 
   const doc = await fetchDocument(auth, built.documentId)
   process.stdout.write(`paragraphs: ${countParagraphs(doc)}\n`)

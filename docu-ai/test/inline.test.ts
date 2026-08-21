@@ -65,6 +65,31 @@ describe('flattenInline', () => {
     expect(flattenInline(nodes)).toHaveLength(2)
   })
 
+  it('carries a codeToken’s syntaxKind through, without the code mark or a link (M7)', () => {
+    const nodes: Inline[] = [{ kind: 'codeToken', syntaxKind: 'keyword', text: 'def' }]
+    expect(flattenInline(nodes)).toEqual([
+      { text: 'def', marks: [], href: undefined, chapterLink: undefined, syntaxKind: 'keyword' },
+    ])
+  })
+
+  it('does not merge two adjacent codeToken runs with different syntaxKinds', () => {
+    const nodes: Inline[] = [
+      { kind: 'codeToken', syntaxKind: 'keyword', text: 'def' },
+      { kind: 'codeToken', syntaxKind: undefined, text: ' ' },
+    ]
+    expect(flattenInline(nodes)).toHaveLength(2)
+  })
+
+  it('merges adjacent codeToken runs that share the same syntaxKind', () => {
+    const nodes: Inline[] = [
+      { kind: 'codeToken', syntaxKind: 'string', text: '"a' },
+      { kind: 'codeToken', syntaxKind: 'string', text: 'b"' },
+    ]
+    expect(flattenInline(nodes)).toEqual([
+      { text: '"ab"', marks: [], href: undefined, chapterLink: undefined, syntaxKind: 'string' },
+    ])
+  })
+
   it('turns a hard break into a literal \\v', () => {
     const nodes: Inline[] = [{ kind: 'text', text: 'a' }, { kind: 'break' }, { kind: 'text', text: 'b' }]
     expect(plainText(flattenInline(nodes))).toBe('a\vb')
@@ -107,8 +132,8 @@ describe('plainText', () => {
   it('concatenates run text with no separators', () => {
     expect(
       plainText([
-        { text: 'a', marks: [], href: undefined, chapterLink: undefined },
-        { text: 'b', marks: ['code'], href: undefined, chapterLink: undefined },
+        { text: 'a', marks: [], href: undefined, chapterLink: undefined, syntaxKind: undefined },
+        { text: 'b', marks: ['code'], href: undefined, chapterLink: undefined, syntaxKind: undefined },
       ]),
     ).toBe('ab')
   })
