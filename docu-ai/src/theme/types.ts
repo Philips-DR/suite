@@ -24,6 +24,20 @@ export interface RuleSpec {
   spaceBelowPt: number
 }
 
+/**
+ * A rule under a paragraph — what makes a section heading read as a section rather than just bigger
+ * text. Every field is mandatory on purpose: CLAUDE.md's "paragraph borders cannot be partially
+ * updated" means Docs requires a complete ParagraphBorder, so a theme is not allowed to supply half
+ * of one. `dashStyle` is not exposed — SOLID is the only style a document here has ever wanted, and
+ * an option nothing sets is an option nothing tests.
+ */
+export interface ParaBorderSpec {
+  color: Hex
+  widthPt: number
+  /** Border-to-text gap, i.e. how far below the text the rule sits. */
+  paddingPt: number
+}
+
 export interface ParaSpec {
   spaceAbovePt?: number
   spaceBelowPt?: number
@@ -35,6 +49,7 @@ export interface ParaSpec {
   /** Page-margin-relative inset. Prose narrows to a comfortable measure; code blocks stay full width. */
   indentStartPt?: number
   indentEndPt?: number
+  borderBottom?: ParaBorderSpec
 }
 
 export interface BlockSpec {

@@ -1,0 +1,955 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`a résumé-shaped chapter — golden request snapshot > emits a stable, reviewable Request[] 1`] = `
+{
+  "insertRequests": [
+    {
+      "insertText": {
+        "endOfSegmentLocation": {
+          "tabId": "t.resume",
+        },
+        "text": "Ada Okonkwo
+Data Engineer · Platform
+Lagos, Nigeria — open to remote · ada@example.com · +234 000 000 0000linkedin.com/in/example · github.com/example
+Summary
+Engineer with a track record of shipping batch and streaming data platforms end to end, from ingestion through to the dashboards analysts actually open.
+Experience
+Senior Data Engineer — Example Corp
+Mar 2021 – Present · Lagos, Nigeria
+Streaming ingestion. Rebuilt a nightly batch pipeline as a streaming one, cutting end-to-end latency from 9 hours to under 4 minutes at the same cost.
+Cost. Cut warehouse spend 38% by partitioning the three largest tables and retiring 40 unused scheduled queries.
+Data Engineer — Another Company
+Jan 2019 – Feb 2021 · Remote
+Built the company’s first dbt project, covering 120 models with tested contracts.
+Skills
+Languages: Python, SQL, Go
+Platform: Airflow, dbt, Kafka, Snowflake, Terraform
+Education
+BSc. Computer Science — Example University
+Lagos, Nigeria · Graduated 2018 · First Class",
+      },
+    },
+  ],
+  "segments": [
+    {
+      "codeBlockIndices": [],
+      "kind": "text",
+      "listRuns": [
+        {
+          "end": 10,
+          "ordered": false,
+          "start": 8,
+        },
+        {
+          "end": 13,
+          "ordered": false,
+          "start": 12,
+        },
+        {
+          "end": 16,
+          "ordered": false,
+          "start": 14,
+        },
+      ],
+      "quoteRuns": [],
+      "ruleIndices": [],
+      "textBlocks": [
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "Ada Okonkwo",
+            },
+          ],
+          "style": "HEADING_1",
+        },
+        {
+          "runs": [
+            {
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "Data Engineer · Platform",
+                },
+              ],
+              "kind": "bold",
+            },
+          ],
+          "style": "NORMAL_TEXT",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "Lagos, Nigeria — open to remote · ",
+            },
+            {
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "ada@example.com",
+                },
+              ],
+              "href": "mailto:ada@example.com",
+              "kind": "link",
+            },
+            {
+              "kind": "text",
+              "text": " · +234 000 000 0000",
+            },
+            {
+              "kind": "break",
+            },
+            {
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "linkedin.com/in/example",
+                },
+              ],
+              "href": "https://www.linkedin.com/in/example/",
+              "kind": "link",
+            },
+            {
+              "kind": "text",
+              "text": " · ",
+            },
+            {
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "github.com/example",
+                },
+              ],
+              "href": "https://github.com/example",
+              "kind": "link",
+            },
+          ],
+          "style": "NORMAL_TEXT",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "Summary",
+            },
+          ],
+          "style": "HEADING_2",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "Engineer with a track record of shipping batch and streaming data platforms end to end, from ingestion through to the dashboards analysts actually open.",
+            },
+          ],
+          "style": "NORMAL_TEXT",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "Experience",
+            },
+          ],
+          "style": "HEADING_2",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "Senior Data Engineer — Example Corp",
+            },
+          ],
+          "style": "HEADING_3",
+        },
+        {
+          "runs": [
+            {
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "Mar 2021 – Present · Lagos, Nigeria",
+                },
+              ],
+              "kind": "italic",
+            },
+          ],
+          "style": "NORMAL_TEXT",
+        },
+        {
+          "runs": [
+            {
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "Streaming ingestion.",
+                },
+              ],
+              "kind": "bold",
+            },
+            {
+              "kind": "text",
+              "text": " Rebuilt a nightly batch pipeline as a streaming one, cutting end-to-end latency from 9 hours to under 4 minutes at the same cost.",
+            },
+          ],
+          "style": "NORMAL_TEXT",
+        },
+        {
+          "runs": [
+            {
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "Cost.",
+                },
+              ],
+              "kind": "bold",
+            },
+            {
+              "kind": "text",
+              "text": " Cut warehouse spend 38% by partitioning the three largest tables and retiring 40 unused scheduled queries.",
+            },
+          ],
+          "style": "NORMAL_TEXT",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "Data Engineer — Another Company",
+            },
+          ],
+          "style": "HEADING_3",
+        },
+        {
+          "runs": [
+            {
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "Jan 2019 – Feb 2021 · Remote",
+                },
+              ],
+              "kind": "italic",
+            },
+          ],
+          "style": "NORMAL_TEXT",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "Built the company’s first dbt project, covering 120 models with tested contracts.",
+            },
+          ],
+          "style": "NORMAL_TEXT",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "Skills",
+            },
+          ],
+          "style": "HEADING_2",
+        },
+        {
+          "runs": [
+            {
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "Languages:",
+                },
+              ],
+              "kind": "bold",
+            },
+            {
+              "kind": "text",
+              "text": " Python, SQL, Go",
+            },
+          ],
+          "style": "NORMAL_TEXT",
+        },
+        {
+          "runs": [
+            {
+              "children": [
+                {
+                  "kind": "text",
+                  "text": "Platform:",
+                },
+              ],
+              "kind": "bold",
+            },
+            {
+              "kind": "text",
+              "text": " Airflow, dbt, Kafka, Snowflake, Terraform",
+            },
+          ],
+          "style": "NORMAL_TEXT",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "Education",
+            },
+          ],
+          "style": "HEADING_2",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "BSc. Computer Science — Example University",
+            },
+          ],
+          "style": "HEADING_3",
+        },
+        {
+          "runs": [
+            {
+              "kind": "text",
+              "text": "Lagos, Nigeria · Graduated 2018 · First Class",
+            },
+          ],
+          "style": "NORMAL_TEXT",
+        },
+      ],
+    },
+  ],
+  "themeRequests": [
+    {
+      "updateDocumentStyle": {
+        "documentStyle": {
+          "marginBottom": {
+            "magnitude": 44,
+            "unit": "PT",
+          },
+          "marginLeft": {
+            "magnitude": 50,
+            "unit": "PT",
+          },
+          "marginRight": {
+            "magnitude": 50,
+            "unit": "PT",
+          },
+          "marginTop": {
+            "magnitude": 44,
+            "unit": "PT",
+          },
+          "pageSize": {
+            "height": {
+              "magnitude": 792,
+              "unit": "PT",
+            },
+            "width": {
+              "magnitude": 612,
+              "unit": "PT",
+            },
+          },
+        },
+        "fields": "page_size,margin_top,margin_bottom,margin_left,margin_right",
+        "tabId": "t.resume",
+      },
+    },
+    {
+      "updateNamedStyle": {
+        "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.alignment,paragraph_style.indent_end",
+        "namedStyle": {
+          "namedStyleType": "TITLE",
+          "paragraphStyle": {
+            "alignment": "START",
+            "indentEnd": {
+              "magnitude": 0,
+              "unit": "PT",
+            },
+            "lineSpacing": 100,
+            "spaceAbove": {
+              "magnitude": 0,
+              "unit": "PT",
+            },
+            "spaceBelow": {
+              "magnitude": 2,
+              "unit": "PT",
+            },
+          },
+          "textStyle": {
+            "bold": true,
+            "fontSize": {
+              "magnitude": 22,
+              "unit": "PT",
+            },
+            "foregroundColor": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.102,
+                  "green": 0.102,
+                  "red": 0.102,
+                },
+              },
+            },
+            "italic": false,
+            "weightedFontFamily": {
+              "fontFamily": "Inter",
+              "weight": 400,
+            },
+          },
+        },
+        "tabId": "t.resume",
+      },
+    },
+    {
+      "updateNamedStyle": {
+        "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.alignment,paragraph_style.indent_end",
+        "namedStyle": {
+          "namedStyleType": "SUBTITLE",
+          "paragraphStyle": {
+            "alignment": "START",
+            "indentEnd": {
+              "magnitude": 0,
+              "unit": "PT",
+            },
+            "lineSpacing": 100,
+            "spaceAbove": {
+              "magnitude": 0,
+              "unit": "PT",
+            },
+            "spaceBelow": {
+              "magnitude": 8,
+              "unit": "PT",
+            },
+          },
+          "textStyle": {
+            "bold": false,
+            "fontSize": {
+              "magnitude": 10.5,
+              "unit": "PT",
+            },
+            "foregroundColor": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.4078,
+                  "green": 0.3882,
+                  "red": 0.3725,
+                },
+              },
+            },
+            "italic": true,
+            "weightedFontFamily": {
+              "fontFamily": "Source Serif Pro",
+              "weight": 400,
+            },
+          },
+        },
+        "tabId": "t.resume",
+      },
+    },
+    {
+      "updateNamedStyle": {
+        "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.alignment,paragraph_style.indent_end",
+        "namedStyle": {
+          "namedStyleType": "HEADING_1",
+          "paragraphStyle": {
+            "alignment": "START",
+            "indentEnd": {
+              "magnitude": 0,
+              "unit": "PT",
+            },
+            "lineSpacing": 100,
+            "spaceAbove": {
+              "magnitude": 0,
+              "unit": "PT",
+            },
+            "spaceBelow": {
+              "magnitude": 3,
+              "unit": "PT",
+            },
+          },
+          "textStyle": {
+            "bold": true,
+            "fontSize": {
+              "magnitude": 22,
+              "unit": "PT",
+            },
+            "foregroundColor": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.102,
+                  "green": 0.102,
+                  "red": 0.102,
+                },
+              },
+            },
+            "italic": false,
+            "weightedFontFamily": {
+              "fontFamily": "Inter",
+              "weight": 400,
+            },
+          },
+        },
+        "tabId": "t.resume",
+      },
+    },
+    {
+      "updateNamedStyle": {
+        "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.keep_with_next,paragraph_style.alignment,paragraph_style.indent_end,paragraph_style.border_bottom",
+        "namedStyle": {
+          "namedStyleType": "HEADING_2",
+          "paragraphStyle": {
+            "alignment": "START",
+            "borderBottom": {
+              "color": {
+                "color": {
+                  "rgbColor": {
+                    "blue": 0.651,
+                    "green": 0.6275,
+                    "red": 0.6039,
+                  },
+                },
+              },
+              "dashStyle": "SOLID",
+              "padding": {
+                "magnitude": 3,
+                "unit": "PT",
+              },
+              "width": {
+                "magnitude": 0.75,
+                "unit": "PT",
+              },
+            },
+            "indentEnd": {
+              "magnitude": 0,
+              "unit": "PT",
+            },
+            "keepWithNext": true,
+            "lineSpacing": 100,
+            "spaceAbove": {
+              "magnitude": 15,
+              "unit": "PT",
+            },
+            "spaceBelow": {
+              "magnitude": 6,
+              "unit": "PT",
+            },
+          },
+          "textStyle": {
+            "bold": true,
+            "fontSize": {
+              "magnitude": 12.5,
+              "unit": "PT",
+            },
+            "foregroundColor": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.102,
+                  "green": 0.102,
+                  "red": 0.102,
+                },
+              },
+            },
+            "italic": false,
+            "weightedFontFamily": {
+              "fontFamily": "Inter",
+              "weight": 400,
+            },
+          },
+        },
+        "tabId": "t.resume",
+      },
+    },
+    {
+      "updateNamedStyle": {
+        "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.keep_with_next,paragraph_style.alignment,paragraph_style.indent_end",
+        "namedStyle": {
+          "namedStyleType": "HEADING_3",
+          "paragraphStyle": {
+            "alignment": "START",
+            "indentEnd": {
+              "magnitude": 0,
+              "unit": "PT",
+            },
+            "keepWithNext": true,
+            "lineSpacing": 100,
+            "spaceAbove": {
+              "magnitude": 10,
+              "unit": "PT",
+            },
+            "spaceBelow": {
+              "magnitude": 1,
+              "unit": "PT",
+            },
+          },
+          "textStyle": {
+            "bold": true,
+            "fontSize": {
+              "magnitude": 11,
+              "unit": "PT",
+            },
+            "foregroundColor": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.1412,
+                  "green": 0.1294,
+                  "red": 0.1255,
+                },
+              },
+            },
+            "italic": false,
+            "weightedFontFamily": {
+              "fontFamily": "Inter",
+              "weight": 400,
+            },
+          },
+        },
+        "tabId": "t.resume",
+      },
+    },
+    {
+      "updateNamedStyle": {
+        "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.alignment,paragraph_style.indent_end",
+        "namedStyle": {
+          "namedStyleType": "NORMAL_TEXT",
+          "paragraphStyle": {
+            "alignment": "START",
+            "indentEnd": {
+              "magnitude": 0,
+              "unit": "PT",
+            },
+            "lineSpacing": 108,
+            "spaceAbove": {
+              "magnitude": 0,
+              "unit": "PT",
+            },
+            "spaceBelow": {
+              "magnitude": 4,
+              "unit": "PT",
+            },
+          },
+          "textStyle": {
+            "bold": false,
+            "fontSize": {
+              "magnitude": 10,
+              "unit": "PT",
+            },
+            "foregroundColor": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.1412,
+                  "green": 0.1294,
+                  "red": 0.1255,
+                },
+              },
+            },
+            "italic": false,
+            "weightedFontFamily": {
+              "fontFamily": "Source Serif Pro",
+              "weight": 400,
+            },
+          },
+        },
+        "tabId": "t.resume",
+      },
+    },
+  ],
+}
+`;
+
+exports[`the résumé theme > emits a stable named-style request shape 1`] = `
+[
+  {
+    "updateNamedStyle": {
+      "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.alignment,paragraph_style.indent_end",
+      "namedStyle": {
+        "namedStyleType": "TITLE",
+        "paragraphStyle": {
+          "alignment": "START",
+          "indentEnd": {
+            "magnitude": 0,
+            "unit": "PT",
+          },
+          "lineSpacing": 100,
+          "spaceAbove": {
+            "magnitude": 0,
+            "unit": "PT",
+          },
+          "spaceBelow": {
+            "magnitude": 2,
+            "unit": "PT",
+          },
+        },
+        "textStyle": {
+          "bold": true,
+          "fontSize": {
+            "magnitude": 22,
+            "unit": "PT",
+          },
+          "foregroundColor": {
+            "color": {
+              "rgbColor": {
+                "blue": 0.102,
+                "green": 0.102,
+                "red": 0.102,
+              },
+            },
+          },
+          "italic": false,
+          "weightedFontFamily": {
+            "fontFamily": "Inter",
+            "weight": 400,
+          },
+        },
+      },
+    },
+  },
+  {
+    "updateNamedStyle": {
+      "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.alignment,paragraph_style.indent_end",
+      "namedStyle": {
+        "namedStyleType": "SUBTITLE",
+        "paragraphStyle": {
+          "alignment": "START",
+          "indentEnd": {
+            "magnitude": 0,
+            "unit": "PT",
+          },
+          "lineSpacing": 100,
+          "spaceAbove": {
+            "magnitude": 0,
+            "unit": "PT",
+          },
+          "spaceBelow": {
+            "magnitude": 8,
+            "unit": "PT",
+          },
+        },
+        "textStyle": {
+          "bold": false,
+          "fontSize": {
+            "magnitude": 10.5,
+            "unit": "PT",
+          },
+          "foregroundColor": {
+            "color": {
+              "rgbColor": {
+                "blue": 0.4078,
+                "green": 0.3882,
+                "red": 0.3725,
+              },
+            },
+          },
+          "italic": true,
+          "weightedFontFamily": {
+            "fontFamily": "Source Serif Pro",
+            "weight": 400,
+          },
+        },
+      },
+    },
+  },
+  {
+    "updateNamedStyle": {
+      "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.alignment,paragraph_style.indent_end",
+      "namedStyle": {
+        "namedStyleType": "HEADING_1",
+        "paragraphStyle": {
+          "alignment": "START",
+          "indentEnd": {
+            "magnitude": 0,
+            "unit": "PT",
+          },
+          "lineSpacing": 100,
+          "spaceAbove": {
+            "magnitude": 0,
+            "unit": "PT",
+          },
+          "spaceBelow": {
+            "magnitude": 3,
+            "unit": "PT",
+          },
+        },
+        "textStyle": {
+          "bold": true,
+          "fontSize": {
+            "magnitude": 22,
+            "unit": "PT",
+          },
+          "foregroundColor": {
+            "color": {
+              "rgbColor": {
+                "blue": 0.102,
+                "green": 0.102,
+                "red": 0.102,
+              },
+            },
+          },
+          "italic": false,
+          "weightedFontFamily": {
+            "fontFamily": "Inter",
+            "weight": 400,
+          },
+        },
+      },
+    },
+  },
+  {
+    "updateNamedStyle": {
+      "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.keep_with_next,paragraph_style.alignment,paragraph_style.indent_end,paragraph_style.border_bottom",
+      "namedStyle": {
+        "namedStyleType": "HEADING_2",
+        "paragraphStyle": {
+          "alignment": "START",
+          "borderBottom": {
+            "color": {
+              "color": {
+                "rgbColor": {
+                  "blue": 0.651,
+                  "green": 0.6275,
+                  "red": 0.6039,
+                },
+              },
+            },
+            "dashStyle": "SOLID",
+            "padding": {
+              "magnitude": 3,
+              "unit": "PT",
+            },
+            "width": {
+              "magnitude": 0.75,
+              "unit": "PT",
+            },
+          },
+          "indentEnd": {
+            "magnitude": 0,
+            "unit": "PT",
+          },
+          "keepWithNext": true,
+          "lineSpacing": 100,
+          "spaceAbove": {
+            "magnitude": 15,
+            "unit": "PT",
+          },
+          "spaceBelow": {
+            "magnitude": 6,
+            "unit": "PT",
+          },
+        },
+        "textStyle": {
+          "bold": true,
+          "fontSize": {
+            "magnitude": 12.5,
+            "unit": "PT",
+          },
+          "foregroundColor": {
+            "color": {
+              "rgbColor": {
+                "blue": 0.102,
+                "green": 0.102,
+                "red": 0.102,
+              },
+            },
+          },
+          "italic": false,
+          "weightedFontFamily": {
+            "fontFamily": "Inter",
+            "weight": 400,
+          },
+        },
+      },
+    },
+  },
+  {
+    "updateNamedStyle": {
+      "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.keep_with_next,paragraph_style.alignment,paragraph_style.indent_end",
+      "namedStyle": {
+        "namedStyleType": "HEADING_3",
+        "paragraphStyle": {
+          "alignment": "START",
+          "indentEnd": {
+            "magnitude": 0,
+            "unit": "PT",
+          },
+          "keepWithNext": true,
+          "lineSpacing": 100,
+          "spaceAbove": {
+            "magnitude": 10,
+            "unit": "PT",
+          },
+          "spaceBelow": {
+            "magnitude": 1,
+            "unit": "PT",
+          },
+        },
+        "textStyle": {
+          "bold": true,
+          "fontSize": {
+            "magnitude": 11,
+            "unit": "PT",
+          },
+          "foregroundColor": {
+            "color": {
+              "rgbColor": {
+                "blue": 0.1412,
+                "green": 0.1294,
+                "red": 0.1255,
+              },
+            },
+          },
+          "italic": false,
+          "weightedFontFamily": {
+            "fontFamily": "Inter",
+            "weight": 400,
+          },
+        },
+      },
+    },
+  },
+  {
+    "updateNamedStyle": {
+      "fields": "named_style_type,text_style.weighted_font_family,text_style.font_size,text_style.bold,text_style.italic,text_style.foreground_color,paragraph_style.space_above,paragraph_style.space_below,paragraph_style.line_spacing,paragraph_style.alignment,paragraph_style.indent_end",
+      "namedStyle": {
+        "namedStyleType": "NORMAL_TEXT",
+        "paragraphStyle": {
+          "alignment": "START",
+          "indentEnd": {
+            "magnitude": 0,
+            "unit": "PT",
+          },
+          "lineSpacing": 108,
+          "spaceAbove": {
+            "magnitude": 0,
+            "unit": "PT",
+          },
+          "spaceBelow": {
+            "magnitude": 4,
+            "unit": "PT",
+          },
+        },
+        "textStyle": {
+          "bold": false,
+          "fontSize": {
+            "magnitude": 10,
+            "unit": "PT",
+          },
+          "foregroundColor": {
+            "color": {
+              "rgbColor": {
+                "blue": 0.1412,
+                "green": 0.1294,
+                "red": 0.1255,
+              },
+            },
+          },
+          "italic": false,
+          "weightedFontFamily": {
+            "fontFamily": "Source Serif Pro",
+            "weight": 400,
+          },
+        },
+      },
+    },
+  },
+]
+`;

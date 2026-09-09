@@ -78,6 +78,18 @@ export function paragraphStyleFor(spec: ParaSpec): {
     style.indentEnd = pt(spec.indentEndPt)
     fields.push('indent_end')
   }
+  // Supplied complete, never partially: setting borderBottom at all means sending every field of
+  // ParagraphBorder (CLAUDE.md). ParaBorderSpec makes that a type-level guarantee rather than a
+  // thing to remember here.
+  if (spec.borderBottom !== undefined) {
+    style.borderBottom = {
+      color: optionalColor(spec.borderBottom.color),
+      width: pt(spec.borderBottom.widthPt),
+      padding: pt(spec.borderBottom.paddingPt),
+      dashStyle: 'SOLID',
+    }
+    fields.push('border_bottom')
+  }
   return { style, fields }
 }
 

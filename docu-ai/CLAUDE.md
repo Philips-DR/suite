@@ -302,6 +302,36 @@ WebP, no SVG), and the `uri` itself under 2kB.
   hand-parses exactly those three formats (PNG/GIF: fixed-offset header reads; JPEG: a bounded marker
   walk, hard-capped at `MAX_JPEG_MARKERS` iterations so malformed input fails fast instead of hanging).
 
+**A résumé build (2026-09-09) surfaced two more facts, one about tabs and one about `\v`, both live-verified
+with a control on the same document rather than assumed:**
+
+- **Renaming a document's own sole native tab — via `updateDocumentTabProperties`, for ANY reason, even
+  back to its own default name — is what makes Docs' PDF export prepend a blank interstitial title page.**
+  Not a multi-tab-only effect as the M4 note above first characterised it: isolated with a control on one
+  single-tab document — inserted a paragraph and exported (1 page), then renamed that same tab and
+  exported again with no other change (2 pages, the new first page reading just the tab's title). Renaming
+  it *back* to the default `"Tab 1"` still produced the extra page — neither the tab count nor the title's
+  value is what matters, only whether the rename call was ever made. Consequence for `emit/document.ts`'s
+  `createTabs`: a build with exactly one tab and no cover must send **zero** tab-property requests and
+  leave the native tab exactly as `documents.create` made it — the cost is a tab strip that reads "Tab 1"
+  nobody will ever navigate; the benefit is a résumé PDF that opens on the résumé, not a blank page reading
+  the candidate's own name. Once a second tab exists this protection is moot anyway (Docs emits a title
+  page per tab regardless, per the existing M4 note), so the special case is narrow on purpose: sole tab,
+  no cover, nothing else.
+- **A bare `\v` in-paragraph hard break — on its own, no bullets, no punctuation, nothing else unusual —
+  is enough to make Docs' PDF export embed Times New Roman**, alongside whatever font the theme actually
+  asked for. Isolated with the smallest possible live reproduction: one NORMAL_TEXT paragraph set to
+  Source Serif Pro, containing nothing but `'line one text\vline two text\n'`, exported with `pdffonts`
+  showing both `SourceSerifPro-Regular` and `TimesNewRomanPSMT`. The Times glyph is never visible — it's
+  an invisible zero-width control character the break itself carries (confirmed present in `pdftotext`'s
+  raw extraction, confirmed absent from the rendered page image at reading resolution) — so this is NOT a
+  VERIFIED_FONTS violation and does not need a workaround: every visible character in a build still renders
+  in a theme font exactly as `assertVerifiedFonts` requires. Recorded because it's the same category of
+  fact as the bullet glyph's own Arial embedding (M0's font-fallback note generalised: an invisible
+  structural glyph can silently pull in a font the theme never named, and only a PDF font list — never a
+  readback — can show it). Don't mistake a `pdffonts` report that includes Arial or Times New Roman for a
+  fallback bug on its own: check whether the glyph is actually visible before treating it as one.
+
 Schema presence is not proof an endpoint behaves, and a stored value is not proof of a rendered one.
 `npm run probe` is the standing answer to both: it exercises `addDocumentTab`, checks whether `\v`
 really is an in-paragraph line break, confirms the field-mask dialect, and PDF-verifies every font

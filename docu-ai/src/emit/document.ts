@@ -4,7 +4,7 @@ import type { Chapter, DocPlan } from '../plan/types.js'
 import { assertVerifiedFonts } from '../theme/fonts.js'
 import type { Theme } from '../theme/types.js'
 import { compileChapterContentRequests, compileChapterInserts, compileChapterLengthChangingRequests } from './compile.js'
-import { coverContentStyleRequests, coverInsertRequest } from './cover.js'
+import { coverContentStyleRequests, coverInsertRequest, type CoverChapterEntry, type CoverContentStyles } from './cover.js'
 import { classifyImageSrc, collectImageSrcs, parseImageDimensions, type ImageResolution } from './image.js'
 import { documentStyleRequest, namedStyleRequests } from './namedStyles.js'
 import { headingLinkRequests, renderTextBlocks, type TextBlock } from './text.js'
@@ -91,28 +91,53 @@ export function tabTitle(title: string): string {
 }
 
 /**
- * Phase 0: a cover tab plus one tab per chapter. A new document already has exactly one tab ("Tab 1",
- * id known from `documents.create`'s own response — no readback needed) — verified live: adding a tab
- * on top of it leaves that stray empty tab sitting in the document, so the cover renames it rather
- * than adding alongside it. Every chapter gets a real `addDocumentTab` call. All requests go in ONE
- * batch, and both reply kinds carry what's needed directly (`addDocumentTab`'s reply includes the new
- * tab's id; the rename's reply is empty, which is fine — we already know that id) — no readback
- * needed here either, which is what keeps chapter count from costing an extra round trip.
+ * Phase 0: one tab per chapter, plus a cover tab when the document has one. A new document already
+ * has exactly one tab ("Tab 1", id known from `documents.create`'s own response — no readback
+ * needed) — verified live: adding a tab on top of it leaves that stray empty tab sitting in the
+ * document. So whichever tab is meant to come FIRST claims that initial tab by renaming it rather
+ * than adding alongside it: the cover when there is one, otherwise chapter 1. Everything after it
+ * gets a real `addDocumentTab` call. All requests go in ONE batch, and both reply kinds carry what's
+ * needed directly (`addDocumentTab`'s reply includes the new tab's id; the rename's reply is empty,
+ * which is fine — we already know that id) — no readback needed here either, which is what keeps
+ * chapter count from costing an extra round trip.
+ *
+ * A coverless single-chapter build therefore issues NO requests here at all — see the `soleTab`
+ * comment below for why touching that one tab, even to give it a better name, is what puts a blank
+ * title page in front of the résumé.
  */
 async function createTabs(
   docs: docs_v1.Docs,
   documentId: string,
   chapters: Chapter[],
   initialTabId: string,
-): Promise<{ coverTabId: string; chapterTabIds: string[] }> {
+  withCover: boolean,
+): Promise<{ coverTabId?: string; chapterTabIds: string[] }> {
+  // chapters[0] is safe: buildFromPlan rejects an empty plan before ever getting here.
+  const added = withCover ? chapters : chapters.slice(1)
+
+  // A document whose only tab is the native one Docs created must NEVER be renamed: calling
+  // updateDocumentTabProperties at all is what makes Docs' PDF export prepend a tab title page.
+  // Verified live 2026-09-09 with a control on ONE document — inserted a paragraph and exported (1
+  // page), then renamed that same tab and exported again (2 pages). Neither the tab count nor the
+  // title's value matters; renaming it back to the default "Tab 1" still produced the title page.
+  // The cost is a tab strip reading "Tab 1", which nobody navigates in a one-tab document; the
+  // benefit is a résumé PDF that opens on the résumé. Once any other tab exists, Docs emits title
+  // pages regardless, so there's nothing left to protect and a readable strip wins.
+  //
+  // A sole tab with no cover means `added` is also empty (chapters.slice(1) on one chapter is []),
+  // so there would be nothing to send at all — batchUpdate rejects an empty requests array with a
+  // 400 ("Must specify at least one request"), so this case returns without calling the API rather
+  // than sending a call it knows is empty.
+  if (!withCover && chapters.length === 1) return { chapterTabIds: [initialTabId] }
+
   const requests: docs_v1.Schema$Request[] = [
     {
       updateDocumentTabProperties: {
-        tabProperties: { tabId: initialTabId, title: 'Contents' },
+        tabProperties: { tabId: initialTabId, title: withCover ? 'Contents' : tabTitle(chapters[0]!.title) },
         fields: 'title',
       },
     },
-    ...chapters.map((chapter): docs_v1.Schema$Request => ({
+    ...added.map((chapter): docs_v1.Schema$Request => ({
       addDocumentTab: { tabProperties: { title: tabTitle(chapter.title) } },
     })),
   ]
@@ -120,13 +145,36 @@ async function createTabs(
   const res = await docs.documents.batchUpdate({ documentId, requestBody: { requests } })
   const replies = res.data.replies ?? []
 
-  const chapterTabIds = chapters.map((_, i) => {
+  // The rename is requests[0], so an added tab's reply sits at its index within `added`, offset by
+  // that one.
+  const addedTabIds = added.map((_, i) => {
     const tabId = replies[i + 1]?.addDocumentTab?.tabProperties?.tabId
     if (!tabId) throw new Error(`addDocumentTab for chapter ${i} returned no tabId`)
     return tabId
   })
 
-  return { coverTabId: initialTabId, chapterTabIds }
+  // chapterTabIds stays positionally aligned with plan.chapters in both modes — headingLinkRequests
+  // indexes a chapter's heading target by position, so a shifted array here would silently link the
+  // wrong chapter rather than fail.
+  return withCover
+    ? { coverTabId: initialTabId, chapterTabIds: addedTabIds }
+    : { chapterTabIds: [initialTabId, ...addedTabIds] }
+}
+
+/** Phase 3's cover styling, or nothing at all when the build has no cover. Split out so
+ * buildFromPlan's own phase sequence stays readable with the conditional folded away. */
+function coverStyleRequests(
+  doc: docs_v1.Schema$Document,
+  coverTabId: string | undefined,
+  title: string,
+  entries: CoverChapterEntry[],
+  theme: Theme,
+): CoverContentStyles {
+  if (coverTabId === undefined) return { requests: [], entryRanges: [] }
+  const firstParagraph = tabBody(doc, coverTabId)?.content?.find((e) => e.paragraph)
+  const realStart = firstParagraph?.startIndex
+  if (realStart == null) throw new Error('cover tab has no paragraph in the readback')
+  return coverContentStyleRequests(title, entries, theme, coverTabId, realStart)
 }
 
 const IMAGE_DIMENSION_FETCH_RANGE = 'bytes=0-65535'
@@ -206,9 +254,13 @@ function imageWarnings(resolutions: Map<string, ImageResolution>): string[] {
  */
 export async function buildFromPlan(
   auth: AuthProvider,
-  opts: { theme: Theme; plan: DocPlan },
+  opts: { theme: Theme; plan: DocPlan; cover?: boolean },
 ): Promise<BuiltDoc> {
   assertVerifiedFonts(opts.theme)
+  if (opts.plan.chapters.length === 0) throw new Error('a plan needs at least one chapter to build')
+  // Defaults to true: a cover is what every multi-chapter build has always produced, and adding an
+  // option must not silently change what existing callers get.
+  const withCover = opts.cover ?? true
 
   const docs = await docsFor(auth)
   const created = await docs.documents.create({ requestBody: { title: opts.plan.title } })
@@ -221,7 +273,7 @@ export async function buildFromPlan(
   // resolution is independent I/O (external HTTP fetches, nothing to do with the doc itself) and
   // runs concurrently with it, not after.
   const [{ coverTabId, chapterTabIds }, imageResolutions] = await Promise.all([
-    createTabs(docs, documentId, opts.plan.chapters, initialTabId),
+    createTabs(docs, documentId, opts.plan.chapters, initialTabId, withCover),
     resolveImages(opts.plan.chapters),
   ])
 
@@ -234,15 +286,19 @@ export async function buildFromPlan(
   }))
 
   // Phase 1: theme first, so text inserted afterwards inherits it instead of needing a restyle pass.
+  // The cover's own theme requests are separate from the chapters' because named styles are per-tab.
   await batch(docs, documentId, [
-    documentStyleRequest(opts.theme, coverTabId),
-    ...namedStyleRequests(opts.theme, coverTabId),
+    ...(coverTabId === undefined
+      ? []
+      : [documentStyleRequest(opts.theme, coverTabId), ...namedStyleRequests(opts.theme, coverTabId)]),
     ...inserts.flatMap((c) => c.themeRequests),
   ])
   // Phase 2: every chapter's (and the cover's) raw content, chained via endOfSegmentLocation within
   // its own tab.
   await batch(docs, documentId, [
-    coverInsertRequest(opts.plan.title, coverEntries, opts.theme, coverTabId),
+    ...(coverTabId === undefined
+      ? []
+      : [coverInsertRequest(opts.plan.title, coverEntries, opts.theme, coverTabId)]),
     ...inserts.flatMap((c) => c.insertRequests),
   ])
 
@@ -251,10 +307,7 @@ export async function buildFromPlan(
   const contents = opts.plan.chapters.map((_, i) =>
     compileChapterContentRequests(doc1, chapterTabIds[i]!, inserts[i]!.segments, opts.theme),
   )
-  const coverFirstParagraph = tabBody(doc1, coverTabId)?.content?.find((e) => e.paragraph)
-  const coverRealStart = coverFirstParagraph?.startIndex
-  if (coverRealStart == null) throw new Error('cover tab has no paragraph in the readback')
-  const cover = coverContentStyleRequests(opts.plan.title, coverEntries, opts.theme, coverTabId, coverRealStart)
+  const cover = coverStyleRequests(doc1, coverTabId, opts.plan.title, coverEntries, opts.theme)
 
   await batch(docs, documentId, [...contents.flatMap((c) => c.contentRequests), ...cover.requests])
 
@@ -271,7 +324,12 @@ export async function buildFromPlan(
       (e) => e.paragraph?.paragraphStyle?.namedStyleType === 'HEADING_1',
     )
     const headingId = h1?.paragraph?.paragraphStyle?.headingId
-    if (!headingId) throw new Error(`chapter tab ${tabId} has no HEADING_1 with an assigned headingId`)
+    if (!headingId) {
+      throw new Error(
+        `chapter tab ${tabId} has no HEADING_1 with an assigned headingId — every chapter needs a ` +
+          'top-level `# heading` in its source to be linkable from a cover or a cross-chapter link',
+      )
+    }
     return { tabId, headingId }
   })
 

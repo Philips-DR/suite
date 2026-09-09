@@ -6,8 +6,11 @@ import { loadChapterFiles } from './parse/loadDir.js'
 import { parseMarkdown } from './parse/toAst.js'
 import { planChapter, planDocument } from './plan/fromAst.js'
 import { plain, type Block } from './plan/types.js'
+import type { Theme } from './theme/types.js'
 import { formatReport, probeAssumptions, writeReport } from './probe/assumptions.js'
+import { resume } from './theme/presets/resume.js'
 import { technical } from './theme/presets/technical.js'
+import { exportPdf } from './verify/pdfFonts.js'
 import { countParagraphs, fetchDocument, namedStyleSummary, residueFindings } from './verify/readback.js'
 
 const USAGE = `docu-ai — markdown to Google Docs
@@ -17,6 +20,8 @@ const USAGE = `docu-ai — markdown to Google Docs
   npm run m0                         build the M0 proof document
   npm start -- preview <dir>         parse + plan a folder and print its structure — no network, no quota spent
   npm start -- build <dir> [title]   build a doc: one tab per chapter, plus a cover with a clickable TOC
+  npm start -- resume <dir> [out]    build a single-tab doc with no cover and export it to PDF
+  npm start -- export <docId> [out]  export an already-built document to PDF
   npm start -- lint <documentId>     re-run the residue lint against an already-built document
 
 See SETUP.md for the one-time Google Cloud setup.
@@ -24,7 +29,9 @@ See SETUP.md for the one-time Google Cloud setup.
 
 async function cmdAuth(): Promise<void> {
   const auth = new GoogleOAuthProvider()
-  await auth.client()
+  // authorize(), not client(): the whole point of this command is to replace what's cached, and
+  // client() would hand back an expired token rather than re-running consent. See google.ts.
+  await auth.authorize()
   process.stdout.write(`\nAuthorised. Refresh token cached at ${tokenPath()}\n`)
 }
 
@@ -106,11 +113,15 @@ async function cmdM0(): Promise<void> {
 
 /**
  * Prints the residue lint's verdict for an already-fetched document and sets the exit code — shared
- * by `build` (checked right after creating a document) and `lint` (checked against an existing one),
- * so the two commands can't quietly drift into reporting this differently.
+ * by `build` and `resume` (checked right after creating a document) and `lint` (checked against an
+ * existing one), so the commands can't quietly drift into reporting this differently.
+ *
+ * The theme is a parameter rather than hardcoded because the lint's one exemption is code-styled
+ * runs, identified by their mono font: a theme whose code font differed from the one passed here
+ * would have every inline code span either wrongly exempted or wrongly flagged.
  */
-function reportResidue(doc: Parameters<typeof residueFindings>[0]): void {
-  const residue = residueFindings(doc, { codeFont: technical.code.font })
+function reportResidue(doc: Parameters<typeof residueFindings>[0], theme: Theme): void {
+  const residue = residueFindings(doc, { codeFont: theme.code.font })
   process.stdout.write(`markdown residue: ${residue.length === 0 ? 'none' : residue.join('; ')}\n\n`)
   if (residue.length > 0) process.exitCode = 1
 }
@@ -179,7 +190,58 @@ ${built.url}
 
   const doc = await fetchDocument(auth, built.documentId)
   process.stdout.write(`paragraphs: ${countParagraphs(doc)}\n`)
-  reportResidue(doc)
+  reportResidue(doc, technical)
+}
+
+/**
+ * A résumé is a different SHAPE of document from everything else this tool builds, not just a
+ * different theme, and the difference is entirely about what the PDF export looks like: Docs
+ * auto-inserts a title page per tab when exporting a multi-tab document (CLAUDE.md, M4), so the
+ * cover + one-tab-per-chapter structure that makes a good technical manual makes a résumé that opens
+ * with two pages of front matter before the candidate's name. Hence `cover: false` and one chapter:
+ * a single native tab exports as a plain document with no interstitials at all.
+ *
+ * The export is part of the command rather than a separate step because a résumé's deliverable is
+ * the PDF — the Doc is the intermediate artifact here, which is the reverse of every other command.
+ */
+async function cmdResume(dir: string | undefined, outPath: string | undefined): Promise<void> {
+  if (!dir) throw new Error('usage: npm start -- resume <markdown-folder> [out.pdf]')
+  const auth = new GoogleOAuthProvider()
+
+  const files = await loadChapterFiles(dir)
+  if (files.length === 0) throw new Error(`no .md files found in ${dir}`)
+  if (files.length > 1) {
+    throw new Error(
+      `a résumé is one document, but ${dir} holds ${files.length} .md files: ` +
+        `${files.map((f) => basename(f.path)).join(', ')}. Use \`build\` for a multi-chapter document.`,
+    )
+  }
+
+  const chapters = files.map((file) => planChapter(parseMarkdown(file.source), file.slug, basename(file.path)))
+  // The document title is the H1 — a résumé's H1 is the candidate's name, which is exactly what the
+  // file should be called in Drive. No folder-name fallback worth having here.
+  const plan = planDocument(chapters, chapters[0]!.title)
+
+  const built = await buildFromPlan(auth, { theme: resume, plan, cover: false })
+  process.stdout.write(`\n${built.url}\n\n`)
+  for (const warning of built.imageWarnings) process.stdout.write(`${warning}\n`)
+
+  const doc = await fetchDocument(auth, built.documentId)
+  process.stdout.write(`paragraphs: ${countParagraphs(doc)}\n`)
+  reportResidue(doc, resume)
+
+  const out = outPath ?? 'resume.pdf'
+  await exportPdf(auth, built.documentId, out)
+  process.stdout.write(`exported pdf: ${out}\n\n`)
+}
+
+/** Export without rebuilding — for re-exporting after editing the document by hand in Docs. */
+async function cmdExport(documentId: string | undefined, outPath: string | undefined): Promise<void> {
+  if (!documentId) throw new Error('usage: npm start -- export <documentId> [out.pdf]')
+  const auth = new GoogleOAuthProvider()
+  const out = outPath ?? `${documentId}.pdf`
+  await exportPdf(auth, documentId, out)
+  process.stdout.write(`exported pdf: ${out}\n`)
 }
 
 /** Re-checks an already-built document without rebuilding it — e.g. after a human has edited it. */
@@ -189,7 +251,9 @@ async function cmdLint(documentId: string | undefined): Promise<void> {
 
   const doc = await fetchDocument(auth, documentId)
   process.stdout.write(`paragraphs: ${countParagraphs(doc)}\n`)
-  reportResidue(doc)
+  // `lint` is given a documentId, not a theme, so it can't know which one built the document. Both
+  // presets use the same mono family, so the code-run exemption resolves identically either way.
+  reportResidue(doc, technical)
 }
 
 async function main(): Promise<void> {
@@ -210,6 +274,12 @@ async function main(): Promise<void> {
     case 'build':
       await cmdBuild(process.argv[3], process.argv[4])
       break
+    case 'resume':
+      await cmdResume(process.argv[3], process.argv[4])
+      break
+    case 'export':
+      await cmdExport(process.argv[3], process.argv[4])
+      break
     case 'lint':
       await cmdLint(process.argv[3])
       break
@@ -225,6 +295,13 @@ async function main(): Promise<void> {
 }
 
 main().catch((err: unknown) => {
-  process.stderr.write(`\n${err instanceof Error ? err.message : String(err)}\n\n`)
+  const message = err instanceof Error ? err.message : String(err)
+  // Google's own wording for "this refresh token is dead", which is the single most common failure
+  // here: the OAuth app sits in "Testing" publishing status, where refresh tokens last 7 days.
+  const hint = message.includes('invalid_grant')
+    ? '\n\nThat refresh token has expired or been revoked. Run `npm run auth` to sign in again.\n' +
+      'To stop it expiring weekly, move the OAuth consent screen off "Testing" — see SETUP.md.'
+    : ''
+  process.stderr.write(`\n${message}${hint}\n\n`)
   process.exitCode = 1
 })

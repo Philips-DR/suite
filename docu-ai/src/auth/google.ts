@@ -158,6 +158,23 @@ export class GoogleOAuthProvider implements AuthProvider {
     return client
   }
 
+  /**
+   * Always runs the browser flow, ignoring whatever is cached. This is what `npm run auth` needs and
+   * `client()` cannot provide: `fromCache` hands back a client whenever the token file merely
+   * CONTAINS a refresh_token, without ever checking that the token still works — which is correct
+   * for the common path (validating on every command would cost a round trip) but meant that once a
+   * refresh token went stale, `auth` short-circuited to the dead one and printed "Authorised"
+   * without opening a browser. Re-authorising was impossible short of deleting the file by hand.
+   *
+   * Google expires refresh tokens after 7 days while the OAuth app is in "Testing" (SETUP.md), so a
+   * stale token is the normal state here, not an edge case.
+   */
+  async authorize(): Promise<Auth.OAuth2Client> {
+    const client = await authorizeInteractively(await loadClientSecrets())
+    this.cached = client
+    return client
+  }
+
   private async fromCache(secrets: ClientSecrets): Promise<Auth.OAuth2Client | undefined> {
     let raw: string
     try {
