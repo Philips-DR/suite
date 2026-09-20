@@ -26,6 +26,20 @@ describe('planChapter — structure', () => {
     const { blocks } = plan('# a\n\n## b\n\n### c')
     expect(blocks.map((b) => (b as Extract<Block, { kind: 'heading' }>).level)).toEqual([1, 2, 3])
   })
+
+  // Found building meet-ai's M0 handoff: every transcript it writes opens with a YAML block, and
+  // CommonMark reads the closing `---` as a setext underline. Without remark-frontmatter the whole
+  // metadata block became an H2 heading — with a headingId and a place in the document structure —
+  // preceded by a stray rule from the opening `---`. A real 2-hour meeting parsed as
+  // thematicBreak + heading(depth 2) + the actual H1.
+  it('drops YAML frontmatter instead of leaving a rule and an H2 behind', () => {
+    const { blocks } = plan('---\nsource: "a.m4a"\nduration: 02:02:08\n---\n\n# Real Title\n\nbody')
+    expect(blocks.map((b) => b.kind)).toEqual(['heading', 'paragraph'])
+  })
+
+  it('still finds the H1 title past a frontmatter block', () => {
+    expect(plan('---\ntitle: metadata\n---\n\n# Real Title').title).toBe('Real Title')
+  })
 })
 
 describe('planChapter — inline marks', () => {

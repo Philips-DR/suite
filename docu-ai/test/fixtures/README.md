@@ -34,6 +34,10 @@ set isn't meant to retire them, just to be what M1 builds against first.
 - **Exactly one H1 per file, in all 10 files.** "One file = one chapter = one tab" is not a guess for
   this input, it is the literal structure. The folder-input decision holds.
 - **No YAML frontmatter anywhere.** No frontmatter parsing needed for M1.
+  *Still true of this corpus, superseded as a decision (2026-09-20):* meet-ai transcripts always
+  carry a YAML block, and CommonMark turns its closing `---` into a setext underline, so the
+  metadata parsed as an H2 heading. `parse/toAst.ts` now uses remark-frontmatter and `planBlock`
+  drops the resulting `yaml` node. The measurement stands; the corpus is just no longer the only input.
 - **7,676 inline-code spans across the corpus** — an order of magnitude more than every other
   construct combined. Inline code is the dominant element in this document set, so its fidelity
   matters more than anything else, and it cannot be deferred. Each span is an `updateTextStyle`
