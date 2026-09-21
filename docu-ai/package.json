@@ -15,16 +15,19 @@
     "probe": "tsx src/cli.ts probe",
     "m0": "tsx src/cli.ts m0",
     "resume": "tsx src/cli.ts resume",
-    "start": "tsx src/cli.ts"
+    "start": "tsx src/cli.ts",
+    "mcp": "tsx src/mcp/server.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "googleapis": "^176.0.0",
     "lowlight": "^3.3.0",
     "mdast-util-to-string": "^4.0.0",
     "remark": "^15.0.1",
     "remark-frontmatter": "^5.0.0",
     "remark-gfm": "^4.0.1",
-    "unist-util-visit": "^5.1.0"
+    "unist-util-visit": "^5.1.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

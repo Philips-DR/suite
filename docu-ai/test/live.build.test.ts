@@ -50,7 +50,7 @@ Just a short paragraph, to prove a second tab gets its own content.
 `
 
 describe.skipIf(!LIVE)('live build — the real API, real readback, real residue lint', () => {
-  const auth = new GoogleOAuthProvider()
+  const auth = GoogleOAuthProvider.fromEnvironment()
   let documentId: string
 
   afterAll(async () => {

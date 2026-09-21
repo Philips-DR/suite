@@ -2,11 +2,11 @@ import { basename } from 'node:path'
 import { GoogleOAuthProvider, hasCachedToken, tokenPath } from './auth/google.js'
 import { buildFromPlan, createThemedDocument } from './emit/document.js'
 import type { TextBlock } from './emit/text.js'
+import { buildDocument, lintDocument, previewFolder } from './operations.js'
 import { loadChapterFiles } from './parse/loadDir.js'
 import { parseMarkdown } from './parse/toAst.js'
 import { planChapter, planDocument } from './plan/fromAst.js'
-import { plain, type Block } from './plan/types.js'
-import type { Theme } from './theme/types.js'
+import { plain } from './plan/types.js'
 import { formatReport, probeAssumptions, writeReport } from './probe/assumptions.js'
 import { resume } from './theme/presets/resume.js'
 import { technical } from './theme/presets/technical.js'
@@ -23,12 +23,13 @@ const USAGE = `docu-ai — markdown to Google Docs
   npm start -- resume <dir> [out]    build a single-tab doc with no cover and export it to PDF
   npm start -- export <docId> [out]  export an already-built document to PDF
   npm start -- lint <documentId>     re-run the residue lint against an already-built document
+  npm run mcp                        serve preview/build/lint over MCP on stdio, for a model to call
 
 See SETUP.md for the one-time Google Cloud setup.
 `
 
 async function cmdAuth(): Promise<void> {
-  const auth = new GoogleOAuthProvider()
+  const auth = GoogleOAuthProvider.fromEnvironment()
   // authorize(), not client(): the whole point of this command is to replace what's cached, and
   // client() would hand back an expired token rather than re-running consent. See google.ts.
   await auth.authorize()
@@ -36,7 +37,7 @@ async function cmdAuth(): Promise<void> {
 }
 
 async function cmdProbe(): Promise<void> {
-  const auth = new GoogleOAuthProvider()
+  const auth = GoogleOAuthProvider.fromEnvironment()
   const report = await probeAssumptions(auth, 'probe.pdf')
   const doc = await fetchDocument(auth, report.documentId)
   process.stdout.write(formatReport(report, { paragraphs: countParagraphs(doc) }))
@@ -58,7 +59,7 @@ async function cmdProbe(): Promise<void> {
  * The font question is settled by `npm run probe`, not here — a readback cannot see a fallback.
  */
 async function cmdM0(): Promise<void> {
-  const auth = new GoogleOAuthProvider()
+  const auth = GoogleOAuthProvider.fromEnvironment()
 
   const blocks: TextBlock[] = [
     { runs: plain('docu-ai M0'), style: 'TITLE' },
@@ -120,22 +121,9 @@ async function cmdM0(): Promise<void> {
  * runs, identified by their mono font: a theme whose code font differed from the one passed here
  * would have every inline code span either wrongly exempted or wrongly flagged.
  */
-function reportResidue(doc: Parameters<typeof residueFindings>[0], theme: Theme): void {
-  const residue = residueFindings(doc, { codeFont: theme.code.font })
+function reportResidue(residue: string[]): void {
   process.stdout.write(`markdown residue: ${residue.length === 0 ? 'none' : residue.join('; ')}\n\n`)
   if (residue.length > 0) process.exitCode = 1
-}
-
-/** Recursively tallies block kinds — blockquotes aren't a kind of their own here, their contents are. */
-function countBlockKinds(blocks: Block[], counts: Record<string, number> = {}): Record<string, number> {
-  for (const block of blocks) {
-    if (block.kind === 'blockquote') {
-      countBlockKinds(block.children, counts)
-      continue
-    }
-    counts[block.kind] = (counts[block.kind] ?? 0) + 1
-  }
-  return counts
 }
 
 /**
@@ -146,18 +134,15 @@ function countBlockKinds(blocks: Block[], counts: Record<string, number> = {}): 
 async function cmdPreview(dir: string | undefined): Promise<void> {
   if (!dir) throw new Error('usage: npm start -- preview <markdown-folder>')
 
-  const files = await loadChapterFiles(dir)
-  if (files.length === 0) throw new Error(`no .md files found in ${dir}`)
+  const { chapters } = await previewFolder(dir)
 
-  process.stdout.write(`${files.length} chapter(s) — plan only, no changes made:\n\n`)
-  files.forEach((file, i) => {
-    const chapter = planChapter(parseMarkdown(file.source), file.slug, basename(file.path))
-    const counts = countBlockKinds(chapter.blocks)
+  process.stdout.write(`${chapters.length} chapter(s) — plan only, no changes made:\n\n`)
+  chapters.forEach((chapter, i) => {
     const summary =
-      Object.entries(counts)
+      Object.entries(chapter.blocks)
         .map(([kind, n]) => `${n} ${kind}`)
         .join(', ') || '(empty)'
-    process.stdout.write(`${i + 1}. ${chapter.title} (${basename(file.path)})\n   ${summary}\n\n`)
+    process.stdout.write(`${i + 1}. ${chapter.title} (${chapter.file})\n   ${summary}\n\n`)
   })
 }
 
@@ -167,30 +152,15 @@ async function cmdPreview(dir: string | undefined): Promise<void> {
  */
 async function cmdBuild(dir: string | undefined, title: string | undefined): Promise<void> {
   if (!dir) throw new Error('usage: npm start -- build <markdown-folder> [title]')
-  const auth = new GoogleOAuthProvider()
+  const auth = GoogleOAuthProvider.fromEnvironment()
 
-  const files = await loadChapterFiles(dir)
-  if (files.length === 0) throw new Error(`no .md files found in ${dir}`)
+  const built = await buildDocument(auth, { dir, title })
 
-  const chapters = files.map((file) => planChapter(parseMarkdown(file.source), file.slug, basename(file.path)))
-  // The cover's own title, distinct from any chapter's — chapter 1's title was a reasonable stand-in
-  // before there was a cover to put it on, but it's the wrong default now. The folder name is a
-  // plain, unsurprising fallback; pass a title explicitly for anything better.
-  const plan = planDocument(chapters, title ?? basename(dir))
-
-  process.stdout.write(`${files.length} chapter(s): ${chapters.map((c) => c.title).join(', ')}
-`)
-
-  const built = await buildFromPlan(auth, { theme: technical, plan })
-  process.stdout.write(`
-${built.url}
-
-`)
+  process.stdout.write(`${built.chapters.length} chapter(s): ${built.chapters.join(', ')}\n`)
+  process.stdout.write(`\n${built.url}\n\n`)
   for (const warning of built.imageWarnings) process.stdout.write(`${warning}\n`)
-
-  const doc = await fetchDocument(auth, built.documentId)
-  process.stdout.write(`paragraphs: ${countParagraphs(doc)}\n`)
-  reportResidue(doc, technical)
+  process.stdout.write(`paragraphs: ${built.paragraphs}\n`)
+  reportResidue(built.residue)
 }
 
 /**
@@ -206,7 +176,7 @@ ${built.url}
  */
 async function cmdResume(dir: string | undefined, outPath: string | undefined): Promise<void> {
   if (!dir) throw new Error('usage: npm start -- resume <markdown-folder> [out.pdf]')
-  const auth = new GoogleOAuthProvider()
+  const auth = GoogleOAuthProvider.fromEnvironment()
 
   const files = await loadChapterFiles(dir)
   if (files.length === 0) throw new Error(`no .md files found in ${dir}`)
@@ -228,7 +198,7 @@ async function cmdResume(dir: string | undefined, outPath: string | undefined): 
 
   const doc = await fetchDocument(auth, built.documentId)
   process.stdout.write(`paragraphs: ${countParagraphs(doc)}\n`)
-  reportResidue(doc, resume)
+  reportResidue(residueFindings(doc, { codeFont: resume.code.font }))
 
   const out = outPath ?? 'resume.pdf'
   await exportPdf(auth, built.documentId, out)
@@ -238,7 +208,7 @@ async function cmdResume(dir: string | undefined, outPath: string | undefined): 
 /** Export without rebuilding — for re-exporting after editing the document by hand in Docs. */
 async function cmdExport(documentId: string | undefined, outPath: string | undefined): Promise<void> {
   if (!documentId) throw new Error('usage: npm start -- export <documentId> [out.pdf]')
-  const auth = new GoogleOAuthProvider()
+  const auth = GoogleOAuthProvider.fromEnvironment()
   const out = outPath ?? `${documentId}.pdf`
   await exportPdf(auth, documentId, out)
   process.stdout.write(`exported pdf: ${out}\n`)
@@ -247,13 +217,11 @@ async function cmdExport(documentId: string | undefined, outPath: string | undef
 /** Re-checks an already-built document without rebuilding it — e.g. after a human has edited it. */
 async function cmdLint(documentId: string | undefined): Promise<void> {
   if (!documentId) throw new Error('usage: npm start -- lint <documentId>')
-  const auth = new GoogleOAuthProvider()
+  const auth = GoogleOAuthProvider.fromEnvironment()
 
-  const doc = await fetchDocument(auth, documentId)
-  process.stdout.write(`paragraphs: ${countParagraphs(doc)}\n`)
-  // `lint` is given a documentId, not a theme, so it can't know which one built the document. Both
-  // presets use the same mono family, so the code-run exemption resolves identically either way.
-  reportResidue(doc, technical)
+  const result = await lintDocument(auth, documentId)
+  process.stdout.write(`paragraphs: ${result.paragraphs}\n`)
+  reportResidue(result.residue)
 }
 
 async function main(): Promise<void> {

@@ -21,19 +21,47 @@ interface ClientSecrets {
   clientSecret: string
 }
 
-export function tokenPath(): string {
-  const override = process.env.DOCU_AI_TOKEN
-  if (override) return override
-  const base = process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config')
-  return join(base, 'docu-ai', 'token.json')
+/**
+ * Everything this provider needs, supplied by the caller. Nothing here is discovered.
+ *
+ * The point is not ceremony: as long as a tool reaches into the environment for its own
+ * credentials, "where identity lives" is a fact every tool has to agree on, and the second tool
+ * either duplicates the lookup or imports the first one to borrow it. That second option is
+ * exactly the cross-module auth import that made the old monolith's modules non-independent.
+ * Config in, and the question never arises.
+ */
+export interface GoogleAuthConfig {
+  /** Set both, or leave both unset and point `credentialsPath` at the client JSON. */
+  clientId?: string
+  clientSecret?: string
+  credentialsPath: string
+  tokenPath: string
 }
 
-async function loadClientSecrets(): Promise<ClientSecrets> {
-  const id = process.env.DOCU_AI_CLIENT_ID
-  const secret = process.env.DOCU_AI_CLIENT_SECRET
+/**
+ * The one place the environment is read, and a deliberately named act rather than a default that
+ * happens silently inside a constructor. Front doors call this; library code does not.
+ */
+export function authConfigFromEnvironment(): GoogleAuthConfig {
+  const base = process.env.XDG_CONFIG_HOME ?? join(homedir(), '.config')
+  return {
+    clientId: process.env.DOCU_AI_CLIENT_ID,
+    clientSecret: process.env.DOCU_AI_CLIENT_SECRET,
+    credentialsPath: process.env.DOCU_AI_CREDENTIALS ?? 'credentials.json',
+    tokenPath: process.env.DOCU_AI_TOKEN ?? join(base, 'docu-ai', 'token.json'),
+  }
+}
+
+/** The default token location. Kept for callers that only want to report where it would be. */
+export function tokenPath(): string {
+  return authConfigFromEnvironment().tokenPath
+}
+
+async function loadClientSecrets(config: GoogleAuthConfig): Promise<ClientSecrets> {
+  const { clientId: id, clientSecret: secret } = config
   if (id && secret) return { clientId: id, clientSecret: secret }
 
-  const path = process.env.DOCU_AI_CREDENTIALS ?? 'credentials.json'
+  const path = config.credentialsPath
   let raw: string
   try {
     raw = await readFile(path, 'utf8')
@@ -57,8 +85,7 @@ async function loadClientSecrets(): Promise<ClientSecrets> {
   return { clientId: node.client_id, clientSecret: node.client_secret }
 }
 
-async function saveCredentials(creds: Auth.Credentials): Promise<void> {
-  const path = tokenPath()
+async function saveCredentials(creds: Auth.Credentials, path: string): Promise<void> {
   await mkdir(dirname(path), { recursive: true })
   // The refresh token is a long-lived secret: keep it owner-only.
   await writeFile(path, JSON.stringify(creds, null, 2), { mode: 0o600 })
@@ -78,7 +105,10 @@ function openBrowser(url: string): void {
  * Desktop OAuth: spin up a loopback listener on an ephemeral port, send the user to Google, and
  * catch the redirect. Desktop client types permit any localhost port, so nothing is hardcoded.
  */
-function authorizeInteractively(secrets: ClientSecrets): Promise<Auth.OAuth2Client> {
+function authorizeInteractively(
+  secrets: ClientSecrets,
+  tokenFile: string,
+): Promise<Auth.OAuth2Client> {
   return new Promise<Auth.OAuth2Client>((resolve, reject) => {
     const state = randomBytes(16).toString('hex')
     const server = createServer()
@@ -123,7 +153,7 @@ function authorizeInteractively(secrets: ClientSecrets): Promise<Auth.OAuth2Clie
 
             const { tokens } = await client.getToken(code)
             client.setCredentials(tokens)
-            await saveCredentials(tokens)
+            await saveCredentials(tokens, tokenFile)
 
             res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
             res.end('<h2>docu-ai is authorised.</h2><p>You can close this tab.</p>')
@@ -150,10 +180,19 @@ export class GoogleOAuthProvider implements AuthProvider {
   readonly kind = 'oauth-desktop'
   private cached: Auth.OAuth2Client | undefined
 
+  constructor(private readonly config: GoogleAuthConfig) {}
+
+  /** The escape hatch, named so it is visible at the call site. Front doors only. */
+  static fromEnvironment(): GoogleOAuthProvider {
+    return new GoogleOAuthProvider(authConfigFromEnvironment())
+  }
+
   async client(): Promise<Auth.OAuth2Client> {
     if (this.cached) return this.cached
-    const secrets = await loadClientSecrets()
-    const client = (await this.fromCache(secrets)) ?? (await authorizeInteractively(secrets))
+    const secrets = await loadClientSecrets(this.config)
+    const client =
+      (await this.fromCache(secrets)) ??
+      (await authorizeInteractively(secrets, this.config.tokenPath))
     this.cached = client
     return client
   }
@@ -170,7 +209,10 @@ export class GoogleOAuthProvider implements AuthProvider {
    * stale token is the normal state here, not an edge case.
    */
   async authorize(): Promise<Auth.OAuth2Client> {
-    const client = await authorizeInteractively(await loadClientSecrets())
+    const client = await authorizeInteractively(
+      await loadClientSecrets(this.config),
+      this.config.tokenPath,
+    )
     this.cached = client
     return client
   }
@@ -178,7 +220,7 @@ export class GoogleOAuthProvider implements AuthProvider {
   private async fromCache(secrets: ClientSecrets): Promise<Auth.OAuth2Client | undefined> {
     let raw: string
     try {
-      raw = await readFile(tokenPath(), 'utf8')
+      raw = await readFile(this.config.tokenPath, 'utf8')
     } catch {
       return undefined
     }
@@ -193,15 +235,15 @@ export class GoogleOAuthProvider implements AuthProvider {
     // Persist rotated access tokens. The library folds the existing refresh_token into
     // client.credentials, so writing the whole object keeps it intact.
     client.on('tokens', () => {
-      void saveCredentials(client.credentials)
+      void saveCredentials(client.credentials, this.config.tokenPath)
     })
     return client
   }
 }
 
-export async function hasCachedToken(): Promise<boolean> {
+export async function hasCachedToken(path: string = tokenPath()): Promise<boolean> {
   try {
-    const creds = JSON.parse(await readFile(tokenPath(), 'utf8')) as Auth.Credentials
+    const creds = JSON.parse(await readFile(path, 'utf8')) as Auth.Credentials
     return Boolean(creds.refresh_token)
   } catch {
     return false
