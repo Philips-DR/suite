@@ -12,6 +12,7 @@ import { resume } from './theme/presets/resume.js'
 import { technical } from './theme/presets/technical.js'
 import { exportPdf } from './verify/pdfFonts.js'
 import { countParagraphs, fetchDocument, namedStyleSummary, residueFindings } from './verify/readback.js'
+import { tolerateSlowConnections } from './network.js'
 
 const USAGE = `docu-ai — markdown to Google Docs
 
@@ -225,6 +226,7 @@ async function cmdLint(documentId: string | undefined): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  tolerateSlowConnections()
   const command = process.argv[2]
   switch (command) {
     case 'auth':

@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { GoogleOAuthProvider } from '../auth/google.js'
 import type { AuthProvider } from '../auth/types.js'
 import { buildDocument, lintDocument, preview } from '../operations.js'
+import { tolerateSlowConnections } from '../network.js'
 
 /**
  * docu-ai's second front door: the same operations the CLI exposes, reachable by a model.
@@ -124,6 +125,7 @@ export function createDocuAiServer(auth: AuthProvider): McpServer {
 }
 
 async function main(): Promise<void> {
+  tolerateSlowConnections()
   // The one place this entry point reaches for the environment, and named so it is visible.
   const server = createDocuAiServer(GoogleOAuthProvider.fromEnvironment())
   await server.connect(new StdioServerTransport())
