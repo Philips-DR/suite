@@ -54,25 +54,67 @@ function planInline(nodes: PhrasingContent[]): Inline[] {
   return out
 }
 
-function paragraphChildren(node: { children: Content[] }): Inline[] {
-  const paragraphs = node.children.filter((c): c is Paragraph => c.type === 'paragraph')
-  return planInline(paragraphs.flatMap((p) => p.children))
+/**
+ * A list item's paragraphs, as one bullet's text. A second paragraph in the same item (a "loose"
+ * list) continues the bullet after a line break rather than being glued onto the first with no
+ * separator.
+ */
+function paragraphChildren(paragraphs: Paragraph[]): Inline[] {
+  return paragraphs.flatMap((p, i) => [
+    ...(i > 0 ? [{ kind: 'break' } as const] : []),
+    ...planInline(p.children),
+  ])
 }
 
 /**
  * A list's items may each contain a nested `list` alongside their own paragraph — mdast has already
  * resolved the nesting structurally, so depth comes from recursion, never from counting leading
  * whitespace in source text.
+ *
+ * An item can also hold blocks a bullet cannot: a blockquote, a code block, a table. Those end the
+ * current list, appear as blocks of their own directly after the item that held them, and the list
+ * resumes after them. They used to be dropped without a word — a meeting's notes lost every
+ * supporting quote nested under its bullets, and the residue lint could not notice, because
+ * missing text contains no markdown.
  */
-function flattenList(list: MdastList, depth: number): ListItem[] {
-  const items: ListItem[] = []
-  for (const item of list.children) {
-    items.push({ depth, ordered: list.ordered ?? false, children: paragraphChildren(item) })
-    for (const child of item.children) {
-      if (child.type === 'list') items.push(...flattenList(child, depth + 1))
+function planList(list: MdastList): Block[] {
+  const out: Block[] = []
+  let items: ListItem[] = []
+  const flush = () => {
+    if (items.length > 0) out.push({ kind: 'list', items })
+    items = []
+  }
+  const walk = (node: MdastList, depth: number) => {
+    for (const item of node.children) {
+      const paragraphs: Paragraph[] = []
+      let bulletWritten = false
+      const writeBullet = () => {
+        if (bulletWritten) return
+        items.push({ depth, ordered: node.ordered ?? false, children: paragraphChildren(paragraphs) })
+        bulletWritten = true
+      }
+      for (const child of item.children) {
+        if (child.type === 'paragraph' && !bulletWritten) {
+          paragraphs.push(child)
+          continue
+        }
+        writeBullet()
+        if (child.type === 'list') {
+          walk(child, depth + 1)
+        } else {
+          const blocks = planBlock(child)
+          if (blocks.length > 0) {
+            flush()
+            out.push(...blocks)
+          }
+        }
+      }
+      writeBullet()
     }
   }
-  return items
+  walk(list, 0)
+  flush()
+  return out
 }
 
 function planTable(node: MdastTable): Block {
@@ -84,7 +126,7 @@ function planTable(node: MdastTable): Block {
 }
 
 function planBlockquote(node: Blockquote): Block {
-  return { kind: 'blockquote', children: node.children.map(planBlock).filter((b): b is Block => b !== undefined) }
+  return { kind: 'blockquote', children: node.children.flatMap(planBlock) }
 }
 
 /**
@@ -125,26 +167,27 @@ function planCodeBlock(lang: string | undefined, code: string): CodeBlockNode {
   return tokens ? { kind: 'code-block', lang, code, tokens } : { kind: 'code-block', lang, code }
 }
 
-function planBlock(node: Content): Block | undefined {
+/** Usually one block. A list can become several, when its items hold blocks a bullet cannot. */
+function planBlock(node: Content): Block[] {
   switch (node.type) {
     case 'heading':
-      return { kind: 'heading', level: node.depth, children: planInline(node.children) }
+      return [{ kind: 'heading', level: node.depth, children: planInline(node.children) }]
     case 'paragraph':
-      return planParagraph(node)
+      return [planParagraph(node)]
     case 'list':
-      return { kind: 'list', items: flattenList(node, 0) }
+      return planList(node)
     case 'thematicBreak':
-      return { kind: 'rule' }
+      return [{ kind: 'rule' }]
     case 'code':
-      return planCodeBlock(node.lang ?? detectLanguage(node.value), node.value)
+      return [planCodeBlock(node.lang ?? detectLanguage(node.value), node.value)]
     case 'table':
-      return planTable(node)
+      return [planTable(node)]
     case 'blockquote':
-      return planBlockquote(node)
+      return [planBlockquote(node)]
     default:
       // yaml frontmatter, html, definitions — none present in the target corpus (see
       // test/fixtures/README.md); skipped rather than guessed at.
-      return undefined
+      return []
   }
 }
 
@@ -157,7 +200,7 @@ export function planChapter(ast: Root, fallbackTitle: string, sourceFile: string
   return {
     title: chapterTitle(ast, fallbackTitle),
     sourceFile,
-    blocks: ast.children.map(planBlock).filter((b): b is Block => b !== undefined),
+    blocks: ast.children.flatMap(planBlock),
   }
 }
 

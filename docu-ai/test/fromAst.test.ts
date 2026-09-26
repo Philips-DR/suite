@@ -298,3 +298,48 @@ describe('planDocument — cross-chapter link resolution', () => {
     expect(plan.chapters[0]).toEqual(a)
   })
 })
+
+// Found building a real 2-hour meeting's notes from meet-ai: every decision and action is a bullet
+// with its supporting quote nested under it as a blockquote. The Doc kept all 20 bullets and lost
+// all 20 quotes, silently — the residue lint passed, because text that isn't there contains no
+// markdown. Fixture named for the bug.
+describe('planChapter — blocks nested inside list items', () => {
+  const source = readFileSync(new URL('./fixtures/list-item-nested-blockquote.md', import.meta.url), 'utf8')
+  const { blocks } = plan(source)
+  const text = (inlines: Inline[]) =>
+    inlines.map((i) => ('text' in i ? i.text : i.kind === 'break' ? '\n' : '')).join('')
+
+  it('keeps a quote nested under a bullet, as its own block right after that bullet', () => {
+    expect(blocks.map((b) => b.kind)).toEqual([
+      'heading', 'heading',
+      'list', 'blockquote', 'list', 'blockquote',
+      'heading',
+      'list', 'blockquote', 'paragraph', 'list', 'code-block', 'list',
+    ])
+    const quote = blocks[3] as Extract<Block, { kind: 'blockquote' }>
+    const paragraph = quote.children[0] as Extract<Block, { kind: 'paragraph' }>
+    expect(text(paragraph.children)).toContain('acceptance of the minutes')
+  })
+
+  it('keeps source order: a paragraph after a nested quote follows the quote, not the bullet', () => {
+    // "Owner: the secretary." comes after the quote in source. Pulling it back into the bullet
+    // would reorder the author's text, so it stays a paragraph of its own, after the quote.
+    const after = blocks[9] as Extract<Block, { kind: 'paragraph' }>
+    expect(text(after.children)).toBe('Owner: the secretary.')
+  })
+
+  it('continues a bullet’s second paragraph after a line break instead of gluing it on', () => {
+    const loose = plan('- first para\n\n  second para\n')
+    const item = (loose.blocks[0] as Extract<Block, { kind: 'list' }>).items[0]!
+    expect(text(item.children)).toBe('first para\nsecond para')
+  })
+
+  it('keeps nesting depth and numbering style when a list resumes after a nested block', () => {
+    // Known limit: a numbered list interrupted by a nested block restarts its numbering in Docs,
+    // since each list block gets its own createParagraphBullets. Losing the block was worse.
+    const afterCode = blocks[12] as Extract<Block, { kind: 'list' }>
+    expect(afterCode.items).toEqual([expect.objectContaining({ depth: 1, ordered: false })])
+    const beforeCode = blocks[10] as Extract<Block, { kind: 'list' }>
+    expect(beforeCode.items.map((i) => [i.depth, i.ordered])).toEqual([[0, true], [1, false]])
+  })
+})
