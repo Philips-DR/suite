@@ -3,7 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { GoogleOAuthProvider } from '../auth/google.js'
 import type { AuthProvider } from '../auth/types.js'
-import { buildDocument, lintDocument, previewFolder } from '../operations.js'
+import { buildDocument, lintDocument, preview } from '../operations.js'
 
 /**
  * docu-ai's second front door: the same operations the CLI exposes, reachable by a model.
@@ -45,18 +45,20 @@ export function createDocuAiServer(auth: AuthProvider): McpServer {
     {
       title: 'Preview a markdown folder',
       description:
-        'Parse and plan a folder of markdown files and report the structure that would be built: ' +
+        'Parse and plan a folder of markdown files, or a single file, and report the structure that would be built: ' +
         'one chapter per file, with a tally of block kinds. Touches no network and creates nothing, ' +
         'so it is the safe way to check a folder before spending a build on it.',
       inputSchema: {
-        dir: z.string().describe('Path to a folder of .md files. One file becomes one chapter.'),
+        path: z
+          .string()
+          .describe('A folder of .md files (one file becomes one chapter), or a single .md file.'),
       },
       // No network, no document, nothing to undo. This is the approval surface.
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
-    async ({ dir }) => {
+    async ({ path }) => {
       try {
-        return ok(await previewFolder(dir))
+        return ok(await preview(path))
       } catch (error) {
         return failed(error)
       }
@@ -73,7 +75,12 @@ export function createDocuAiServer(auth: AuthProvider): McpServer {
         'document id and URL, a paragraph count, and the residue lint findings. Creates a document ' +
         "in the user's Drive and spends write quota — run preview first.",
       inputSchema: {
-        dir: z.string().describe('Path to a folder of .md files.'),
+        path: z
+          .string()
+          .describe(
+            'A folder of .md files, or a single .md file. A folder gets one tab per chapter and a ' +
+              'cover with a table of contents; a single file becomes one tab with no cover.',
+          ),
         title: z
           .string()
           .optional()
@@ -81,9 +88,9 @@ export function createDocuAiServer(auth: AuthProvider): McpServer {
       },
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
-    async ({ dir, title }) => {
+    async ({ path, title }) => {
       try {
-        return ok(await buildDocument(auth, { dir, title }))
+        return ok(await buildDocument(auth, { path, title }))
       } catch (error) {
         return failed(error)
       }

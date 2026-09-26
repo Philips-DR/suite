@@ -1,7 +1,7 @@
 import { basename } from 'node:path'
 import type { AuthProvider } from './auth/types.js'
 import { buildFromPlan } from './emit/document.js'
-import { loadChapterFiles } from './parse/loadDir.js'
+import { loadChapters } from './parse/loadDir.js'
 import { parseMarkdown } from './parse/toAst.js'
 import { planChapter, planDocument } from './plan/fromAst.js'
 import type { Block } from './plan/types.js'
@@ -43,6 +43,8 @@ export interface ChapterPreview {
 
 export interface PreviewResult {
   chapters: ChapterPreview[]
+  /** A single file: built as one tab with no cover. */
+  single: boolean
 }
 
 /**
@@ -52,11 +54,12 @@ export interface PreviewResult {
  * somebody has to remember into a property of the tool. It is also the only operation here that
  * takes no AuthProvider, and that is the whole idea.
  */
-export async function previewFolder(dir: string): Promise<PreviewResult> {
-  const files = await loadChapterFiles(dir)
-  if (files.length === 0) throw new Error(`no .md files found in ${dir}`)
+export async function preview(path: string): Promise<PreviewResult> {
+  const { files, single } = await loadChapters(path)
+  if (files.length === 0) throw new Error(`no .md files found in ${path}`)
 
   return {
+    single,
     chapters: files.map((file) => {
       const chapter = planChapter(parseMarkdown(file.source), file.slug, basename(file.path))
       return {
@@ -86,21 +89,24 @@ export interface BuildResult {
  */
 export async function buildDocument(
   auth: AuthProvider,
-  opts: { dir: string; title?: string; theme?: Theme },
+  opts: { path: string; title?: string; theme?: Theme },
 ): Promise<BuildResult> {
   const theme = opts.theme ?? technical
-  const files = await loadChapterFiles(opts.dir)
-  if (files.length === 0) throw new Error(`no .md files found in ${opts.dir}`)
+  const { files, single } = await loadChapters(opts.path)
+  if (files.length === 0) throw new Error(`no .md files found in ${opts.path}`)
 
   const chapters = files.map((file) =>
     planChapter(parseMarkdown(file.source), file.slug, basename(file.path)),
   )
-  // The folder name is a plain, unsurprising fallback for the cover's own title; pass one
-  // explicitly for anything better.
-  const title = opts.title ?? basename(opts.dir)
+  // A folder falls back to its own name for the cover title. A single file has no cover, so
+  // its own H1 is the natural document title.
+  const title = opts.title ?? (single ? (chapters[0]?.title ?? basename(opts.path)) : basename(opts.path))
   const plan = planDocument(chapters, title)
 
-  const built = await buildFromPlan(auth, { theme, plan })
+  // A lone file gets no cover: a cover whose table of contents has one entry is a page that
+  // says nothing. With one tab and no cover, emit/document.ts also leaves the native tab
+  // unrenamed, which keeps Docs from adding a blank first page to the PDF export.
+  const built = await buildFromPlan(auth, { theme, plan, cover: !single })
   const doc = await fetchDocument(auth, built.documentId)
 
   return {

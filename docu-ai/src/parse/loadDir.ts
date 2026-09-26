@@ -1,11 +1,31 @@
-import { readFile, readdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { readFile, readdir, stat } from 'node:fs/promises'
+import { basename, join } from 'node:path'
 
 export interface ChapterFile {
   /** Filename without extension, used only as a fallback title until plan/ derives one from the H1. */
   slug: string
   path: string
   source: string
+}
+
+/**
+ * A folder of chapters, or a single markdown file as the only chapter.
+ *
+ * The single-file case exists because the tools that feed docu-ai do not write into folders of
+ * their own: meet-ai's notes land beside every other transcript it has produced, so building
+ * "the folder" would compile all of them into one document. `single` tells the caller which it
+ * got, since a lone file wants no cover and no one-entry table of contents.
+ */
+export async function loadChapters(path: string): Promise<{ files: ChapterFile[]; single: boolean }> {
+  const info = await stat(path)
+  if (info.isFile()) {
+    if (!/\.md$/i.test(path)) throw new Error(`${path} is not a markdown file`)
+    return {
+      files: [{ slug: basename(path).replace(/\.md$/i, ''), path, source: await readFile(path, 'utf8') }],
+      single: true,
+    }
+  }
+  return { files: await loadChapterFiles(path), single: false }
 }
 
 /**

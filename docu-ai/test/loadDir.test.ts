@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { loadChapterFiles } from '../src/parse/loadDir.js'
+import { loadChapterFiles, loadChapters } from '../src/parse/loadDir.js'
 
 let dir: string
 
@@ -56,5 +56,37 @@ describe('loadChapterFiles — with SUMMARY.md', () => {
     await put('SUMMARY.md', 'not a link list, just prose')
     const files = await loadChapterFiles(dir)
     expect(files.map((f) => f.slug)).toEqual(['a'])
+  })
+})
+
+describe('loadChapters — a folder or a single file', () => {
+  it('treats a single .md file as a one-chapter source', async () => {
+    await put('notes.md', '# Meeting notes\n\nbody')
+    const { files, single } = await loadChapters(join(dir, 'notes.md'))
+    expect(single).toBe(true)
+    expect(files.map((f) => f.slug)).toEqual(['notes'])
+  })
+
+  // Found building meet-ai's notes into a Doc: the notes land beside every other transcript the
+  // tool has written, so the only way to build just them was to build a folder of everything.
+  it('builds only the named file, not its neighbours', async () => {
+    await put('20260812.notes.md', '# Notes')
+    await put('20260812.md', '# The full transcript')
+    await put('Voice 260915.md', '# A different meeting')
+    const { files } = await loadChapters(join(dir, '20260812.notes.md'))
+    expect(files).toHaveLength(1)
+  })
+
+  it('still treats a folder as a folder', async () => {
+    await put('01-a.md', '# A')
+    await put('02-b.md', '# B')
+    const { files, single } = await loadChapters(dir)
+    expect(single).toBe(false)
+    expect(files).toHaveLength(2)
+  })
+
+  it('refuses a file that is not markdown', async () => {
+    await put('audio.flac', 'fLaC')
+    await expect(loadChapters(join(dir, 'audio.flac'))).rejects.toThrow('not a markdown file')
   })
 })

@@ -68,7 +68,7 @@ describe('the MCP front door', () => {
     await writeFile(join(dir, '02-next.md'), '# Next\n\n- one\n- two\n', 'utf8')
 
     const client = await connect()
-    const result = await client.callTool({ name: 'preview', arguments: { dir } })
+    const result = await client.callTool({ name: 'preview', arguments: { path: dir } })
 
     const parsed = JSON.parse(textOf(result)) as {
       chapters: { title: string; file: string; blocks: Record<string, number> }[]
@@ -79,14 +79,26 @@ describe('the MCP front door', () => {
 
   it('reports a bad folder as a tool error rather than throwing the connection down', async () => {
     const client = await connect()
-    const result = await client.callTool({ name: 'preview', arguments: { dir: join(dir, 'nope') } })
+    const result = await client.callTool({ name: 'preview', arguments: { path: join(dir, 'nope') } })
     expect((result as { isError?: boolean }).isError).toBe(true)
   })
 
   it('rejects an empty folder, rather than building a document with no chapters', async () => {
     const client = await connect()
-    const result = await client.callTool({ name: 'preview', arguments: { dir } })
+    const result = await client.callTool({ name: 'preview', arguments: { path: dir } })
     expect((result as { isError?: boolean }).isError).toBe(true)
     expect(textOf(result)).toContain('no .md files found')
+  })
+})
+
+describe('the MCP front door — single files', () => {
+  it('previews one file as a single-tab document', async () => {
+    await writeFile(join(dir, 'x.notes.md'), '# Notes\n\nbody\n', 'utf8')
+    await writeFile(join(dir, 'other.md'), '# Not this one\n', 'utf8')
+    const client = await connect()
+    const result = await client.callTool({ name: 'preview', arguments: { path: join(dir, 'x.notes.md') } })
+    const parsed = JSON.parse(textOf(result)) as { single: boolean; chapters: { title: string }[] }
+    expect(parsed.single).toBe(true)
+    expect(parsed.chapters.map((c) => c.title)).toEqual(['Notes'])
   })
 })

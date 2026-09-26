@@ -2,7 +2,7 @@ import { basename } from 'node:path'
 import { GoogleOAuthProvider, hasCachedToken, tokenPath } from './auth/google.js'
 import { buildFromPlan, createThemedDocument } from './emit/document.js'
 import type { TextBlock } from './emit/text.js'
-import { buildDocument, lintDocument, previewFolder } from './operations.js'
+import { buildDocument, lintDocument, preview } from './operations.js'
 import { loadChapterFiles } from './parse/loadDir.js'
 import { parseMarkdown } from './parse/toAst.js'
 import { planChapter, planDocument } from './plan/fromAst.js'
@@ -18,8 +18,8 @@ const USAGE = `docu-ai — markdown to Google Docs
   npm run auth                       authorise against Google and cache the refresh token
   npm run probe                      verify assumptions against the live API (fonts, tabs, line breaks)
   npm run m0                         build the M0 proof document
-  npm start -- preview <dir>         parse + plan a folder and print its structure — no network, no quota spent
-  npm start -- build <dir> [title]   build a doc: one tab per chapter, plus a cover with a clickable TOC
+  npm start -- preview <dir|file>    parse + plan a folder or one .md file — no network, no quota spent
+  npm start -- build <dir|file> [t]  build a doc: a folder gets a tab per chapter and a cover; one file, a single tab
   npm start -- resume <dir> [out]    build a single-tab doc with no cover and export it to PDF
   npm start -- export <docId> [out]  export an already-built document to PDF
   npm start -- lint <documentId>     re-run the residue lint against an already-built document
@@ -134,7 +134,7 @@ function reportResidue(residue: string[]): void {
 async function cmdPreview(dir: string | undefined): Promise<void> {
   if (!dir) throw new Error('usage: npm start -- preview <markdown-folder>')
 
-  const { chapters } = await previewFolder(dir)
+  const { chapters } = await preview(dir)
 
   process.stdout.write(`${chapters.length} chapter(s) — plan only, no changes made:\n\n`)
   chapters.forEach((chapter, i) => {
@@ -154,7 +154,7 @@ async function cmdBuild(dir: string | undefined, title: string | undefined): Pro
   if (!dir) throw new Error('usage: npm start -- build <markdown-folder> [title]')
   const auth = GoogleOAuthProvider.fromEnvironment()
 
-  const built = await buildDocument(auth, { dir, title })
+  const built = await buildDocument(auth, { path: dir, title })
 
   process.stdout.write(`${built.chapters.length} chapter(s): ${built.chapters.join(', ')}\n`)
   process.stdout.write(`\n${built.url}\n\n`)
