@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Install everything the suite needs, once: one Python environment shared by the three
+# Python tools, docu-ai's Node packages, the web app's build, and meet-ai's speaker models.
+# Safe to re-run; each step skips what is already done. Touches nothing outside this folder
+# except where npm and pip keep their caches.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
+step() { printf '\n==> %s\n' "$*"; }
+need() { command -v "$1" >/dev/null || { echo "missing: $1 — $2" >&2; exit 1; }; }
+
+need python3 "install Python 3.14"
+need node    "install Node 24"
+need npm     "install Node 24"
+need ffmpeg  "meet-ai records and decodes audio with it"
+
+step "Python environment (.venv), shared by assistant, meet-ai and mail-ai"
+[[ -x .venv/bin/python ]] || python3 -m venv .venv
+.venv/bin/pip install -q --upgrade pip
+.venv/bin/pip install -q \
+  -r assistant/requirements.txt \
+  -r meet-ai/requirements.txt -r meet-ai/requirements-dev.txt \
+  -r mail-ai/requirements.txt -r mail-ai/requirements-dev.txt
+.venv/bin/pip check
+
+step "docu-ai (Node)"
+(cd docu-ai && npm ci --silent)
+
+step "Web app"
+(cd assistant/web && npm ci --silent && npm run --silent build)
+
+step "meet-ai speaker models"
+meet-ai/fetch-models.sh
+
+[[ -f .env ]] || { cp .env.example .env; echo; echo "Wrote .env from .env.example — check the AWS profile in it."; }
+
+step "Logins still needed"
+missing=0
+[[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/docu-ai/token.json" ]] || { echo "  Google Docs: (cd docu-ai && npm run auth)"; missing=1; }
+[[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/mail-ai/token.json" ]] || { echo "  Gmail:       mail-ai/mail auth   (and mail-ai/mail auth --compose to draft and send)"; missing=1; }
+echo "  AWS:         aws sso login --profile <the profile in .env>   (whenever the login lapses)"
+[[ $missing = 1 ]] || echo "  Google logins are in place."
+echo
+echo "Done. Start with ./start"

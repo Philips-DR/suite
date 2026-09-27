@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# The whole suite, as one command: the assistant's server, which starts meet-ai, docu-ai and
+# mail-ai as its own child processes and stops them when it stops. Ctrl-C ends everything
+# except work built to outlive a restart -- a running transcription or recording carries on,
+# and the app picks it up again next time.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
+[[ -x .venv/bin/python ]] || { echo "Not set up yet. Run ./setup first." >&2; exit 1; }
+
+# One place for settings. Exported so every tool the server starts inherits them.
+if [[ -f .env ]]; then set -a; source .env; set +a; fi
+
+# Rebuild the web app if any of its source is newer than the last build.
+web=assistant/web
+if [[ ! -f $web/dist/index.html ]] || [[ -n "$(find $web/src $web/index.html -newer $web/dist/index.html -print -quit)" ]]; then
+  echo "Rebuilding the web app..."
+  (cd $web && npm run --silent build >/dev/null)
+fi
+
+exec assistant/assistant-web "$@"

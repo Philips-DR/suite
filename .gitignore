@@ -1,0 +1,4 @@
+# The shared Python environment and local settings. Each tool's own .gitignore covers its data.
+.venv/
+.env
+__pycache__/
