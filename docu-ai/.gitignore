@@ -1,0 +1,10 @@
+node_modules/
+dist/
+# OAuth client secret downloaded from Google Cloud — never commit.
+# Both the documented name and Google's own download filename.
+credentials.json
+client_secret_*.json
+token.json
+# probe artefacts
+probe-report.json
+*.pdf

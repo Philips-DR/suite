@@ -1,0 +1,3 @@
+I want an agentic system to take in md files and create a full document in google docs. with formatting, spacing, correct fonts, and the likes. if there is code in the md file, it should use the code format in google docs, kind of like a human being is creating a document. everything should be spot on, well presented. no markdowns in the google document. I should correctly create and format tables, give proper titles, paragraphs etc.
+
+it should be able to create, tabs, for chapters. like chapter 1, chapter 2 etc.
