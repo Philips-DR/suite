@@ -486,7 +486,116 @@ column), and treat inline code as the dominant construct rather than an aftertho
   below, and the local-file fallback reads as ordinary, unmarked prose — indistinguishable from a
   human having written "A local diagram" as a caption-less placeholder.
 
-Deferred: PDF-render vision QA loop, LLM planner.
+- **M9 — LLM planner: tab titles + emoji. SCOPED, NOT STARTED.** The seam CLAUDE.md names
+  (`plan/`) names four candidate uses — chapter segmentation, tab titles and emoji, code-language
+  detection, table captions. This milestone is **only the second of those four**, chosen deliberately:
+
+  **Why this one first, and why not the other three (yet).** Tab titles/emoji is the lowest-risk of
+  the four — purely cosmetic (never affects document structure, tab count, or chapter boundaries),
+  bounded output (a short string plus at most one emoji), and it's exactly what M4's own entry
+  anticipated ("tab emoji were skipped... revisit alongside the planner, not before it").
+  - *Chapter segmentation* is the riskiest: chapter boundaries are load-bearing for tabs, cross-chapter
+    links, and the cover TOC. Today's "one file = one chapter" model already handles the real corpus
+    well; there's no concrete need driving a change, and getting it wrong breaks everything
+    downstream. Deferred indefinitely absent a real use case (e.g., one huge file that should split).
+  - *Code-language detection* is the philosophically awkward one. `languageDetect.ts`'s whole design
+    is "return undefined rather than guess," and the real corpus proved that discipline correct — all
+    5 untagged fences turned out to be ASCII diagrams, not code. A wrong LLM language guess feeds
+    `syntaxHighlight.ts`'s tokenizer and produces confidently-wrong highlighting, which reads *worse*
+    than the current honest "no highlighting." Worth revisiting only with a real confidence signal and
+    a design for when to trust it over silence — not in this milestone.
+  - *Table captions* is architecturally the closest cousin of this milestone (bounded, additive, no
+    structural risk) and the most likely NEXT application of whatever plumbing this milestone builds —
+    named here so it isn't forgotten, not scoped now.
+
+  **Architecture: keep `planChapter`/`planDocument` synchronous — this is M8's own pattern, reused.**
+  An LLM call is irreducibly async (real network I/O), and making the core parse-to-IR walk async
+  would ripple `await` into `cli.ts` and every one of the 35+ call sites across the test suite that
+  call `planChapter`/`plan()` today — exactly the ripple M7 sidestepped by choosing a sync tokenizer,
+  and exactly what M8 avoided for image fetching by moving the async step OUTSIDE the pure functions
+  entirely. The same move applies here: a new, optional, async enrichment pass —
+  `plan/llmPlanner.ts`'s `enrichChapterTabs(chapters): Promise<Map<string, ChapterEnrichment>>`
+  (keyed by `sourceFile`, mirroring how M8's `imageResolutions` is keyed by `src`) — runs at the
+  orchestration level, AFTER the deterministic plan exists, and its result is threaded in as plain
+  data. `Chapter` itself is untouched; enrichment lives alongside it, not inside it.
+
+  **Interface, mirroring `AuthProvider` — the established pattern for "a real external service tests
+  must never touch."** `ChapterEnricher` (real network call) vs. a fake/no-op implementation, exactly
+  parallel to `AuthProvider`/`GoogleOAuthProvider`. This is what keeps `npm test` credential-free for
+  Anthropic the same way it already is for Google — prompt-building and response-validation are pure,
+  unit-tested functions; only the actual API call is behind the interface, exercised by a **new live
+  tier gated behind its own env var** (e.g. `DOCU_AI_LLM_LIVE_TESTS=1`), never `npm test`.
+
+  **Opt-in only, off by default, fails loudly if misconfigured** — matching this project's own
+  established rule for the Google live-test tier ("setting the env var without a cached token IS a
+  failure"). A new explicit CLI flag (e.g. `--llm-titles`), not an automatic "credential happens to be
+  present" auto-detect: silently spending the user's Anthropic API credits on every build because a
+  key happened to be in the environment would be a surprising, unwanted default. Passing the flag
+  without a resolvable credential must fail the build, not silently fall back.
+
+  **Model and call shape.** Per this project's own "single call, no agent" classification for exactly
+  this kind of task (short classification/extraction, not open-ended): one non-streaming
+  `messages.create` per chapter, run concurrently via `Promise.all` — the same concurrency pattern
+  M8's `resolveImages` already established — using `output_config.format` for a validated
+  `{tabTitle: string, tabEmoji: string | null}` shape, `effort: "low"` (this is not a task that
+  benefits from deep reasoning), and **claude-opus-5** by default. Worth an explicit choice, not a
+  unilateral one: Claude Haiku 4.5 would very likely do this specific low-stakes task just as well at
+  roughly a fifth of the cost — flagging it as an option, not deciding it here. Rough cost at Opus 5
+  rates: ~1–2¢ per chapter (a few hundred input tokens of excerpt, well under 100 output tokens), so
+  ~10–20¢ for a 9-chapter document like the real corpus.
+
+  **Input is a bounded excerpt, never the full chapter — this is what actually prevents the "a model
+  will drift on a 40-page document" failure CLAUDE.md warns about, not a validation step after the
+  fact.** Send the chapter's own deterministic title plus roughly its first 1500 characters of plain
+  text (headings/prose only — stripped of code/table syntax, which would waste tokens without helping
+  a title/emoji pick). Never hand the model pages it doesn't need for this task.
+
+  **Every LLM output must be validated before it can ever reach a request — the same discipline M8
+  used for images, for the same reason: `batchUpdate` is atomic, and `addDocumentTab` for every
+  chapter is sent in ONE batch, so one bad value fails tab creation for the whole document, not just
+  one chapter.**
+  - *Emoji*: validate as exactly one user-perceived character via grapheme-cluster count
+    (`Intl.Segmenter`, which correctly treats a flag or a ZWJ compound as one grapheme) plus an
+    `Extended_Pictographic` check — reject anything else and omit `iconEmoji` for that tab rather than
+    guessing. Google's own API *does* validate server-side too (confirmed live — see below) — but
+    finding out via a batch-wide 400 is a worse failure mode than catching it ourselves first.
+  - *Title*: `emit/document.ts`'s existing `tabTitle()` truncation remains the backstop for length —
+    unchanged. New requirement this milestone surfaces: **tab titles must be unique across the whole
+    document — verified live, not assumed** (`addDocumentTab` rejected a duplicate title with "Tab
+    title must be unique"; found by accident, reusing a placeholder title across probe tabs, not by
+    design). Enrichment must de-duplicate its own suggestions against each other and against the
+    cover's fixed "Contents" title before any request is built — a second title-shaped correctness
+    check the deterministic v1 never needed, since chapter titles were never chosen to collide.
+  - *Any failure at all* — validation, API error, timeout, rate limit — degrades that one chapter back
+    to its deterministic title with no emoji. One chapter's bad LLM output must never affect any
+    other chapter, let alone the whole build.
+
+  **Live-verified, not assumed: `iconEmoji` accepts every real-world emoji shape, and rejects garbage
+  exactly as documented.** Checked against the discovery doc first (`TabProperties.iconEmoji`: "Any
+  set of characters that don't represent a single emoji is invalid... a 400 bad request error is
+  returned"), then confirmed live: a simple emoji, a two-codepoint flag, a ZWJ compound (person +
+  ZWJ + laptop), and a skin-tone-modified emoji were all accepted and round-tripped correctly through
+  readback in one batch; a plain two-letter string was rejected with exactly the documented 400.
+
+  **A real, disclosed gap in this project's own verification playbook: PDF export cannot show a tab
+  strip at all.** Every prior milestone's "look at it with human eyes" step has meant exporting a PDF
+  and looking at rendered pages. A tab's icon emoji has no PDF representation whatsoever — it only
+  ever appears in the Docs web UI's own tab strip. This means the standing "a stored value is not
+  proof of a rendered one" lesson (fonts, `indentStart`, per-tab PDF title pages) can't be closed the
+  usual way for this one feature: confirming it actually *renders* correctly (not just stores
+  correctly, which is already live-verified above) requires a human opening the built document in a
+  browser, not a PDF export. Browser automation wasn't available in the session that did this
+  scoping pass — this check is left for whoever implements this milestone, and must not be skipped
+  just because it's inconvenient.
+
+  **Definition of done**, per CLAUDE.md, adapted for the one step this milestone can't automate away:
+  fixture added (a chapter enrichment call, a duplicate-title collision, an invalid-emoji response) →
+  IR/enrichment-shape asserted → request snapshot reviewed → live doc built (gated behind
+  `DOCU_AI_LLM_LIVE_TESTS=1`) → readback assertions pass (title unique, emoji stored as sent) →
+  residue lint passes → **opened in the actual Docs web UI and looked at**, since this is the one
+  feature this project has built so far that a PDF export cannot verify at all.
+
+Deferred: PDF-render vision QA loop, chapter segmentation, LLM-assisted code-language detection, LLM table captions.
 
 ## Acceptance gates
 
