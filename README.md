@@ -31,13 +31,14 @@ One command, two programs: the backend (API on port 8750, which launches the thr
 its own children) and the web app (port 8751). Stopping either stops both. A transcription or
 recording in progress is built to outlive a restart and is picked up again next time.
 
-The first time you open the app, and after each restart, it asks for the backend's **access
-token** — copy it from the `access token: …` line `./start` prints. Set `ASSISTANT_TOKEN` in
-`.env` to keep one token across restarts. **Buttons → Settings** shows whether the model login,
-the network and each tool are working.
+Nothing to sign in to: `./start` makes a fresh access token each launch, gives it to both
+programs, and the web app's server puts it in the page. A tab left open across a restart picks
+up the new one by itself. **Buttons → Settings** shows whether the model login, the network and
+each tool are working.
 
 Each half also runs alone: `assistant/assistant-web` for the backend, `web/serve` for the app
-(or `cd web && npm run dev` for live reload).
+(or `cd web && npm run dev` for live reload). Run that way without a shared `ASSISTANT_TOKEN`,
+the app asks once for the token the backend prints.
 
 ```bash
 ./test           # every tool's tests; none needs a login, a model or the network

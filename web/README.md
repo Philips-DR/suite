@@ -16,11 +16,13 @@ The backend must be running for the app to do anything (`../start` runs both).
 path, which the Transcribe box or the Make a Google Doc button then uses — or, from chat, the
 assistant is told about it with your next message.
 
-**The first time, and after each backend restart**, the app asks for the backend's access
-token. Copy it from the terminal where the backend started (the line `access token: …`). The
-browser remembers it until the backend restarts with a new one. To skip that during
-development, run the backend with a fixed `ASSISTANT_TOKEN` and put the same value in
-`web/.env` as `VITE_ASSISTANT_TOKEN`.
+**The access token arrives by itself.** Given `ASSISTANT_TOKEN` in its environment (which
+`../start` sets, fresh each launch, for both programs), this app's server writes it into the
+page as it serves it — at serve time only, never into `dist/`, and only to a request whose
+`Host` is localhost. When the backend refuses a token after a restart, the app re-fetches its
+own page for the new one and carries on. Only when it has no token to be had — the two halves
+started separately with nothing shared — does it show a Connect screen and ask for the token
+the backend prints.
 
 The backend is found at `VITE_API_URL` (default `http://127.0.0.1:8750`), and it allows calls
 only from this app's two origins, ports 8751 and 5173.

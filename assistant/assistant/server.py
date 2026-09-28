@@ -473,8 +473,8 @@ def main() -> None:
     holder: dict[str, FastAPI] = {}
 
     def announce() -> None:
-        # The web app no longer receives the token from this server, so the person carries it
-        # across once: printed here, pasted there, remembered by the browser until a restart.
+        # Printed for the case where the web app runs without being handed the token (the two
+        # started separately); ../start gives both the same one and nobody needs this line.
         # flush: when stdout is a file or a pipe rather than a terminal, Python holds these
         # back, and the one line a person needs to connect never appears in the log.
         print(f"assistant API on http://127.0.0.1:{args.port}/  (localhost only)", flush=True)

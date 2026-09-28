@@ -1,13 +1,15 @@
 // The only module that talks to the server.
 //
 // The web app is its own program: it is served from its own port and reaches the backend
-// across origins. Nothing is injected into this page, so the token is carried over by the
-// person -- printed by the backend when it starts, pasted into the Connect screen once, and
-// remembered by this browser until the backend restarts with a new one.
+// across origins. ./start gives both programs the same random token, and the web app's own
+// server writes it into this page as it serves it -- so normally nothing is typed. When the
+// two are run separately with no shared token, the Connect screen asks for it instead.
 
 export const API_URL = (import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8750').replace(/\/$/, '')
 
 const TOKEN_KEY = 'assistant-token'
+
+const fromPage = (doc: Document) => doc.querySelector<HTMLMetaElement>('meta[name="assistant-token"]')?.content ?? ''
 
 function stored(): string {
   try {
@@ -17,9 +19,34 @@ function stored(): string {
   }
 }
 
-// A development convenience only: a token fixed with ASSISTANT_TOKEN on the backend can be
-// baked in with VITE_ASSISTANT_TOKEN, and the Connect screen never appears.
-let token = stored() || (import.meta.env.VITE_ASSISTANT_TOKEN ?? '')
+// The page's own token wins: it is this launch's. A stored one is from the Connect screen;
+// VITE_ASSISTANT_TOKEN is a development convenience for a fixed ASSISTANT_TOKEN.
+let token = fromPage(document) || stored() || (import.meta.env.VITE_ASSISTANT_TOKEN ?? '')
+
+/**
+ * The backend refused our token -- almost always because it restarted with a new one. The
+ * web app's server knows the new one, so ask it for a fresh copy of this page and take the
+ * token from there. Reload only if it changed; otherwise it is genuinely unknown.
+ */
+let recovering: Promise<boolean> | null = null
+function recoverToken(): Promise<boolean> {
+  recovering ??= (async () => {
+    try {
+      const page = await fetch(location.pathname, { cache: 'no-store' })
+      const fresh = fromPage(new DOMParser().parseFromString(await page.text(), 'text/html'))
+      if (fresh && fresh !== token) {
+        location.reload() // every part of the app, the event stream included, starts clean
+        return true
+      }
+    } catch {
+      // the web app's own server is gone too; nothing to recover from
+    }
+    return false
+  })().finally(() => {
+    recovering = null // one attempt per burst of refusals, but a later restart gets its own
+  })
+  return recovering
+}
 
 export const hasToken = () => token !== ''
 
@@ -62,9 +89,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       ...init.headers,
     },
   })
-  if (response.status === 401) {
-    // No token yet, or the backend restarted with a new one. Either way every call will now
-    // fail, so ask for the token rather than leaving the page quietly frozen.
+  if (response.status === 401 && !(await recoverToken())) {
+    // No token, and none to be had from this page's server: ask the person, rather than
+    // leaving the page quietly frozen.
     window.dispatchEvent(new Event('assistant-needs-token'))
   }
   if (!response.ok) {
@@ -257,7 +284,9 @@ function put<T>(path: string, file: Blob, onProgress?: (sent: number) => void): 
     xhr.upload.onprogress = (e) => onProgress?.(e.loaded)
     xhr.onerror = () => reject(new Error(`Can't reach the backend at ${API_URL}.`))
     xhr.onload = () => {
-      if (xhr.status === 401) window.dispatchEvent(new Event('assistant-needs-token'))
+      if (xhr.status === 401) {
+        void recoverToken().then((ok) => ok || window.dispatchEvent(new Event('assistant-needs-token')))
+      }
       let body: { error?: string } & T
       try {
         body = JSON.parse(xhr.responseText) as { error?: string } & T

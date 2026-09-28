@@ -91,10 +91,16 @@ to find once — an `AttributeError` from the rename above, presenting as a hang
 by its own process on its own port (8751; Vite's dev server on 5173), and calls this API across
 origins. Separated completely on 2026-09-28. What that cost, and what it forced:
 
-- **The token can no longer be injected into the page**, since this server serves no page. It
-  is printed at launch, and the web app's Connect screen asks for it once and keeps it in
-  localStorage. The old "reload" banner for a stale token was removed rather than kept: a
-  reload used to fetch a page with a fresh token baked in, and nothing does that now.
+- **This server can no longer inject the token into the page**, since it serves no page. The
+  first answer was a paste-the-token Connect screen, and it was rejected on sight: a step every
+  launch is a cost nobody should pay for a local app. Now `../start` makes the token (random,
+  per launch) and gives it to both programs, and the *web app's* server injects it at serve time
+  — the same protection as before, moved to the program that serves the page. It must check
+  `Host` itself (Vite's own check may run after it), send `no-store`, and never bake the token
+  into `dist/`. A refused token makes the app re-fetch its own page and reload if the token
+  there changed; the Connect screen remains only for the halves run separately with nothing
+  shared. Google login was considered and is the wrong tool here: it proves *who*, and on one
+  machine with one user the only question is whether a request comes from this app.
 - **CORS is added after the token guard, so it runs outside it.** A browser's preflight
   carries no token and would otherwise be refused before CORS could answer; and the guard's
   own 401 needs CORS headers, or the browser hides the status and the app cannot tell "paste

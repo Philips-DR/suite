@@ -16,6 +16,14 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 # One place for settings. Exported so the backend and every tool it starts inherit them.
 if [[ -f .env ]]; then set -a; source .env; set +a; fi
 
+# One token for this launch, made here and handed to both programs: the backend requires
+# it, and the web app's server writes it into the page it serves. Nobody copies it anywhere.
+# New on every launch unless .env fixes one.
+if [[ -z "${ASSISTANT_TOKEN:-}" ]]; then
+  ASSISTANT_TOKEN="$(.venv/bin/python -c 'import secrets; print(secrets.token_urlsafe(24))')"
+fi
+export ASSISTANT_TOKEN
+
 assistant/assistant-web "$@" &
 backend=$!
 web/serve &
