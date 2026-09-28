@@ -78,6 +78,18 @@ Real, known, not yet fixed. Each is small unless marked.
 - **A CV keeps all its content**, so the tailored one is 3 pages; shortening is a separate request,
   and the draft check will show what was cut.
 
+## To reason through later
+
+Not decided, not scoped — noted here so it isn't lost. To be reasoned through together, since they
+touch the same ground:
+
+- **Agent memory and a database.** Today `assistant/memory.json` is a flat file (see
+  `assistant/CLAUDE.md`, Memory).
+- **Storage for file uploads, and the rest.** Today `assistant/uploads/` is a local folder
+  (`assistant/CLAUDE.md`, Uploads).
+- **User authentication.** Today: one user, one machine, a per-launch token (locked decision 4).
+  Deployment option (c) below touches on accounts.
+
 ## Waiting on the user
 
 Decisions or input only the user can give. Don't guess these.
