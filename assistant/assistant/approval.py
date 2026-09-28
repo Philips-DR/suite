@@ -24,13 +24,17 @@ CONTROL_CHARACTERS = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
 # Long enough for a real email, short enough that a huge body cannot scroll the call being
 # approved off the top of the screen.
 PREVIEW_LIMIT = 4000
+# The browser shows a preview in a box that scrolls, so it has no screen to protect -- and a
+# person approving a document must see all of it. Found live: a tailored CV's approval stopped
+# at 4,000 characters, mid-word, so its Skills, Education and Certifications went unseen.
+WEB_PREVIEW_LIMIT = 200_000
 
 
-def sanitise(text: str) -> str:
+def sanitise(text: str, limit: int = PREVIEW_LIMIT) -> str:
     """Make untrusted text safe to print next to a prompt."""
     cleaned = CONTROL_CHARACTERS.sub("", text)
-    if len(cleaned) > PREVIEW_LIMIT:
-        cleaned = cleaned[:PREVIEW_LIMIT] + "\n  ... (truncated)"
+    if len(cleaned) > limit:
+        cleaned = cleaned[:limit] + "\n  ... (truncated)"
     return cleaned
 
 

@@ -24,6 +24,8 @@ interface BuiltDoc {
 function Batch({ docs }: { docs: UploadedDocs }) {
   const [preview, setPreview] = useState<Preview | null>(null)
   const [title, setTitle] = useState('')
+  // docu-ai's two looks. A CV is one page of one person, so the choice only exists for one file.
+  const [theme, setTheme] = useState<'technical' | 'resume'>(/cv|resume|résumé/i.test(docs.name) ? 'resume' : 'technical')
   const [built, setBuilt] = useState<BuiltDoc | null>(null)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
@@ -63,11 +65,24 @@ function Batch({ docs }: { docs: UploadedDocs }) {
         {!single && (
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={`Title (default: ${docs.name})`} aria-label="Document title" />
         )}
+        {single && (
+          <label className="check">
+            Style
+            <select value={theme} onChange={(e) => setTheme(e.target.value as 'technical' | 'resume')} aria-label="Style">
+              <option value="technical">Document</option>
+              <option value="resume">CV / résumé</option>
+            </select>
+          </label>
+        )}
         <button
           className="primary"
           disabled={busy !== ''}
           onClick={() => void run('build', async () =>
-            setBuilt(await call<BuiltDoc>('docu_ai__build', { path: docs.path, ...(title.trim() ? { title: title.trim() } : {}) })))}
+            setBuilt(await call<BuiltDoc>('docu_ai__build', {
+              path: docs.path,
+              ...(title.trim() ? { title: title.trim() } : {}),
+              ...(single ? { theme } : {}),
+            })))}
         >
           {busy === 'build' ? 'Building the Doc…' : built ? 'Build again' : 'Make a Google Doc'}
         </button>

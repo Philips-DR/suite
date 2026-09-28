@@ -33,10 +33,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from assistant.approval import needs_approval, sanitise
+from assistant.approval import WEB_PREVIEW_LIMIT, needs_approval, sanitise
 from assistant.config import load_tool_servers, model_config_from_environment
 from assistant.session import ApprovalRequest, allow_gate, execute, run_turn
 from assistant import uploads as up
+from assistant.documents import document_tools
 from assistant.setup import current_lexicon, prepare
 from assistant.status import model_status, network_status, tools_status
 from assistant.tools import RemoteTool, ToolRegistry
@@ -62,7 +63,7 @@ def approval_view(request: ApprovalRequest) -> dict[str, Any]:
         "arguments": request.arguments,
         # Untrusted content (an email body, a transcript) on its way to a screen. The
         # browser renders it as text, never HTML; this also caps its length.
-        "preview": sanitise(request.preview) if request.preview else None,
+        "preview": sanitise(request.preview, WEB_PREVIEW_LIMIT) if request.preview else None,
         "preview_expected": request.preview_expected,
     }
 
@@ -192,6 +193,7 @@ def create_app(
     async def lifespan(_app: FastAPI):
         config = model_config_from_environment(provider, model)
         _store, local_tools, context = prepare(memory_path)
+        local_tools = [*local_tools, *document_tools(uploads_root)]
         registry = (registry_factory(local_tools) if registry_factory
                     else ToolRegistry(load_tool_servers(tools_path), local=local_tools))
         # Held open for the life of the server: the tools stay running instead of being
@@ -309,7 +311,7 @@ def create_app(
         if needs_approval(tool) and tool.preview is not None and not body.confirmed:
             preview = await h.registry.preview_of(tool, body.arguments)
             return {"needs_confirmation": True,
-                    "preview": sanitise(preview) if preview else None,
+                    "preview": sanitise(preview, WEB_PREVIEW_LIMIT) if preview else None,
                     "preview_expected": True}
 
         arguments = dict(body.arguments)

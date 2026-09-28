@@ -59,6 +59,10 @@ class ApprovalPreview:
         )
 
 
+# Marks a local tool that renders its own preview; the registry calls its `render` directly.
+LOCAL_RENDER = ApprovalPreview(tool="", argument_map={})
+
+
 @dataclass(frozen=True)
 class LocalTool:
     """A tool the assistant implements itself, for the things no tool should own.
@@ -72,6 +76,10 @@ class LocalTool:
     input_schema: dict[str, Any]
     read_only: bool
     handler: Callable[[dict[str, Any]], str]
+    # What the approval gate shows instead of raw arguments -- a whole document as a JSON
+    # string cannot be reviewed. A remote tool declares its preview in _meta; a local one
+    # simply renders it.
+    render: Callable[[dict[str, Any]], str] | None = None
 
 
 @dataclass(frozen=True)
@@ -123,6 +131,7 @@ class ToolRegistry:
                     description=tool.description,
                     input_schema=tool.input_schema,
                     read_only=tool.read_only,
+                    preview=LOCAL_RENDER if tool.render else None,
                 )
                 for tool in self._local.values()
             )
@@ -189,6 +198,15 @@ class ToolRegistry:
         None means "declared a preview and it could not be produced", which the caller must
         surface rather than quietly showing raw arguments as though nothing were missing.
         """
+        if tool.server == LOCAL_SERVER:
+            local = self._local.get(tool.name)
+            if local is None or local.render is None:
+                return None
+            try:
+                return local.render(arguments)
+            except Exception:
+                return None  # declared and not produced: the gate says so
+
         spec = tool.preview
         if spec is None:
             return None

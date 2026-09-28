@@ -347,3 +347,16 @@ def test_a_page_from_anywhere_else_cannot_read_responses(tmp_path):
         return await client.get("/api/tools", headers={**AUTH, "origin": "http://evil.example"})
     response = run(with_client(app_for(tmp_path), body))
     assert "access-control-allow-origin" not in response.headers
+
+
+def test_the_browser_approval_shows_a_long_preview_whole(tmp_path):
+    """Found live: a tailored CV's approval stopped at 4,000 characters, mid-word -- Skills,
+    Education and Certifications never shown to the person approving it. The terminal keeps
+    its short limit; the browser's box scrolls, so it gets the whole thing."""
+    from assistant.server import approval_view
+    from assistant.session import ApprovalRequest
+    tool = RemoteTool(server="assistant", name="write_draft", qualified_name="assistant__write_draft",
+                      description="", input_schema={}, read_only=False)
+    long = "x" * 9000 + "END"
+    view = approval_view(ApprovalRequest(id="a1", tool=tool, arguments={}, preview=long, preview_expected=True))
+    assert view["preview"].endswith("END") and "truncated" not in view["preview"]

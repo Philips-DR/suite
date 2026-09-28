@@ -110,7 +110,7 @@ main { flex: 1; overflow: hidden; }
 .approval-head { display: flex; flex-direction: column; margin-bottom: 10px; }
 .approval-kicker { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--accent); font-weight: 600; }
 .approval-tool { font-family: ui-monospace, monospace; font-size: 14px; }
-.approval-preview { background: var(--surface-2); border-radius: 8px; padding: 12px; margin-bottom: 10px; max-height: 360px; overflow-y: auto; }
+.approval-preview { background: var(--surface-2); border-radius: 8px; padding: 12px; margin-bottom: 10px; max-height: 60vh; overflow-y: auto; white-space: pre-wrap; }
 .approval-warning { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 10px 12px; margin: 0 0 10px; }
 .approval-args { margin-bottom: 12px; font-size: 13px; }
 .approval-args summary { cursor: pointer; color: var(--muted); }

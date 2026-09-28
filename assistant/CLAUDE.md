@@ -152,6 +152,28 @@ exist. The same file works from a button or from chat.
 - **Each upload is noted for the model** with the next message, like a button press — which is
   what makes "transcribe what I just uploaded" work, from either mode.
 
+## Drafting documents (`documents.py`)
+
+`list_uploads`, `read_document` and `write_draft` let the model change what a document *says* —
+tailor a CV, rewrite a report — which it could not do before: asked to "create a CV for an ML
+engineer role" it formatted the upload as it was and replied as though it had tailored it. Local
+tools, like memory, because the uploads folder is the assistant's own state. Four rules, each
+from something that went wrong live:
+
+- **A draft is always a new file.** The original must survive to be compared against.
+- **The approval shows the draft rendered, whole.** A local tool can now `render` its own
+  preview; a document as a JSON string cannot be reviewed. And the browser's approval preview is
+  no longer cut at the terminal's 4,000 characters (`WEB_PREVIEW_LIMIT`): a CV's approval
+  stopped mid-word there, hiding Skills, Education and Certifications from the person approving.
+- **A rewrite is measured against its original.** With `based_on`, the approval opens with the
+  sections missing and points kept, and the model is told the same. A first "tailored" CV
+  silently ended after its first project — 7 of 18 points — while the model said it had only
+  reordered. The prompt already asked for honesty; the count is what caught it.
+- **Say what was and was not done.** The system prompt now requires it, and forbids inventing
+  experience, employers, dates, qualifications, figures or skills.
+
+A CV is built with `docu_ai__build` and `theme: "resume"`, which docu-ai's model door now offers.
+
 ## Memory and history in the interface
 
 - **Facts in the prompt carry their ids.** `forget` takes an id; a prompt showing facts without
