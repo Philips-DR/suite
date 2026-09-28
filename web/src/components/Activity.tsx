@@ -7,7 +7,7 @@ import { useAppState } from '../state'
 export function Activity() {
   const { events } = useAppState()
   const shown = events
-    .filter((e) => (e.type === 'tool_finished' && !e.read_only) || e.type === 'user_message' || e.type === 'turn_error' || e.type === 'notice')
+    .filter((e) => (e.type === 'tool_finished' && !e.read_only) || e.type === 'user_message' || e.type === 'turn_error' || e.type === 'notice' || e.type === 'upload')
     .slice(-12)
     .reverse()
 
@@ -24,6 +24,7 @@ export function Activity() {
             {e.type === 'user_message' && <> you asked: <em>{(e.text ?? '').slice(0, 60)}</em></>}
             {e.type === 'turn_error' && <span className="warn"> a chat turn failed</span>}
             {e.type === 'notice' && <span className={e.level === 'success' ? '' : 'warn'}> {e.title}</span>}
+            {e.type === 'upload' && <> you uploaded <strong>{e.name}</strong></>}
             {e.type === 'tool_finished' && (
               <>
                 {' '}

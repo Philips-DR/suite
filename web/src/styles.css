@@ -217,15 +217,23 @@ table.history { width: 100%; border-collapse: collapse; font-size: 13px; }
 .dot.error { background: #c9423a; }
 .small { font-size: 12px; }
 
-.transcript { margin: 10px 0; }
-.transcript input { width: 100%; box-sizing: border-box; }
-.transcript-text { max-height: 420px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 12px; background: var(--surface-2); }
-.transcript-text p { margin: 8px 0; line-height: 1.5; }
-.transcript-text .stamp { font-variant-numeric: tabular-nums; color: var(--muted, #777); font-size: 12px; margin-right: 4px; }
-.transcript-text mark { background: #f3d86b; color: inherit; border-radius: 2px; }
+.reader { margin: 10px 0; }
+.reader input { width: 100%; box-sizing: border-box; }
+.reader-text { max-height: 420px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 12px; background: var(--surface-2); }
+.reader-text p { margin: 8px 0; line-height: 1.5; }
+.reader-text .stamp { font-variant-numeric: tabular-nums; color: var(--muted, #777); font-size: 12px; margin-right: 4px; }
+.reader-text mark { background: #f3d86b; color: inherit; border-radius: 2px; }
 
 .connect { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 16px; background: rgba(20, 20, 18, .55); }
 .connect .card { width: min(460px, 100%); display: flex; flex-direction: column; gap: 12px; }
 .connect h2 { margin: 0; }
 .connect p { margin: 0; }
 .connect input { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; }
+
+.upload-progress { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+
+.attachments { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 0 20px 6px; }
+.chip { font-size: 12px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2); }
+.composer .attach { align-self: stretch; }
+.chapters { margin: 6px 0; padding-left: 22px; }
+.chapters li { margin: 2px 0; }

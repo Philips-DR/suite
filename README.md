@@ -4,7 +4,7 @@ An assistant and the tools it runs, in one folder, started with one command.
 
 | Folder | What it does |
 |---|---|
-| `web/` | The web app you open: chat and buttons. A separate program that calls the backend's API. |
+| `web/` | The web app you open: chat and buttons, uploads of audio and markdown. A separate program that calls the backend's API. |
 | `assistant/` | The backend. Starts the tools below, calls them for you, asks before anything that writes. |
 | `meet-ai/` | Records meetings, transcribes them on this machine, writes notes and minutes that cite the recording. |
 | `docu-ai/` | Turns markdown into a properly formatted Google Doc. |

@@ -125,6 +125,27 @@ Four things that only showed up by running it:
   "reconnecting" — corrupting exactly what it is measuring. Drive a real browser session
   (Puppeteer against the installed Chrome) instead.
 
+## Uploads
+
+Audio to transcribe and markdown to build into a Doc arrive at `/api/uploads/*` and land in
+`uploads/` (never committed; `ASSISTANT_UPLOADS` moves it). **An upload ends in a path, and a
+path is all any tool takes** — so meet-ai and docu-ai did not change and do not know uploads
+exist. The same file works from a button or from chat.
+
+- **The request body is the file**, streamed to disk; nothing is buffered whole, and no
+  multipart parser is involved. The web app uses XMLHttpRequest, not fetch, for these: only it
+  reports upload progress.
+- **Every name is hostile.** Each path component is checked, the result must resolve inside
+  `uploads/`, a repeat name becomes `name (2).ext`, and a file is written to `.part` and renamed
+  only once complete — a half-received recording is never listed or transcribed. Tested.
+- **Markdown arrives as a batch** named for the uploaded folder (or file), because docu-ai uses
+  the folder's name as the Doc's default title. One file builds as a file (one tab, no cover);
+  several as a folder. docu-ai reads only a folder's top level, so the web app sends only
+  top-level `.md` files and lists the rest as skipped, rather than uploading files that would
+  silently do nothing.
+- **Each upload is noted for the model** with the next message, like a button press — which is
+  what makes "transcribe what I just uploaded" work, from either mode.
+
 ## Memory and history in the interface
 
 - **Facts in the prompt carry their ids.** `forget` takes an id; a prompt showing facts without

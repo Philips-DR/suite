@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { sendChat, toolLabel, type AssistantEvent } from '../api'
+import { AUDIO_EXTS, isAudio, isMarkdown, sendChat, splitDocs, toolLabel, uploadAudio, uploadDocs, type AssistantEvent } from '../api'
+import { PickFiles, UploadProgress } from './Upload'
 import { useAppState } from '../state'
 import { ApprovalCard } from './ApprovalCard'
 
@@ -23,7 +24,36 @@ export function Chat() {
   const { events, pending, busy, connected } = useAppState()
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
+  const [attached, setAttached] = useState<string[]>([])
+  const [uploading, setUploading] = useState<{ name: string; fraction: number } | null>(null)
   const bottom = useRef<HTMLDivElement>(null)
+
+  // An attachment is an upload like any other: the server tells the model about it with the
+  // next message, so "transcribe this" or "make this a Doc" needs no path typed out.
+  const attach = async (files: File[]) => {
+    setError('')
+    const audio = files.filter((f) => isAudio(f.name))
+    const docs = files.filter((f) => isMarkdown(f.name))
+    const other = files.filter((f) => !isAudio(f.name) && !isMarkdown(f.name))
+    if (other.length) setError(`Not attached — only audio or markdown: ${other.map((f) => f.name).join(', ')}`)
+    try {
+      for (const f of audio) {
+        setUploading({ name: f.name, fraction: 0 })
+        const saved = await uploadAudio(f, (fraction) => setUploading({ name: f.name, fraction }))
+        setAttached((a) => [...a, saved.name])
+      }
+      if (docs.length) {
+        const { top, name } = splitDocs(docs)
+        setUploading({ name, fraction: 0 })
+        const saved = await uploadDocs(top, name, (fraction) => setUploading({ name, fraction }))
+        setAttached((a) => [...a, ...saved.files])
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setUploading(null)
+    }
+  }
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -37,6 +67,7 @@ export function Chat() {
     try {
       await sendChat(message)
       setDraft('')
+      setAttached([])
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
@@ -91,7 +122,21 @@ export function Chat() {
         <div ref={bottom} />
       </div>
 
+      {(attached.length > 0 || uploading) && (
+        <div className="attachments">
+          {attached.map((name, i) => <span key={`${name}-${i}`} className="chip">📎 {name}</span>)}
+          {uploading && <UploadProgress name={uploading.name} fraction={uploading.fraction} />}
+        </div>
+      )}
       <form className="composer" onSubmit={(e) => void submit(e)}>
+        <PickFiles
+          label="Attach"
+          accept={[...AUDIO_EXTS, '.md'].join(',') + ',audio/*'}
+          multiple
+          disabled={!connected || uploading !== null}
+          onPick={(files) => void attach(files)}
+          className="attach"
+        />
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}

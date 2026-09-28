@@ -10,11 +10,12 @@ import { History } from './components/History'
 import { Mail } from './components/Mail'
 import { Memory } from './components/Memory'
 import { Meetings } from './components/Meetings'
+import { Documents } from './components/Documents'
 import { Settings } from './components/Settings'
 
 type Mode = 'chat' | 'buttons'
-type Section = 'meetings' | 'mail' | 'memory' | 'history' | 'settings'
-const SECTIONS: Section[] = ['meetings', 'mail', 'memory', 'history', 'settings']
+type Section = 'meetings' | 'documents' | 'mail' | 'memory' | 'history' | 'settings'
+const SECTIONS: Section[] = ['meetings', 'documents', 'mail', 'memory', 'history', 'settings']
 
 function savedMode(): Mode {
   // The URL wins, so a view can be bookmarked or linked; then the last mode used.
@@ -115,6 +116,7 @@ export function App() {
             </nav>
             <div className="buttons-grid">
               {section === 'meetings' && <Meetings />}
+              {section === 'documents' && <Documents />}
               {section === 'mail' && <Mail />}
               {section === 'memory' && <Memory />}
               {section === 'history' && <History />}

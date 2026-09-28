@@ -11,6 +11,11 @@ npm run dev      # live reload on http://127.0.0.1:5173
 
 The backend must be running for the app to do anything (`../start` runs both).
 
+**Uploads:** audio from **Meetings → Upload audio**, markdown files or a whole folder from
+**Documents**, or either from the **Attach** button in chat. An upload lands on the backend as a
+path, which the Transcribe box or the Make a Google Doc button then uses — or, from chat, the
+assistant is told about it with your next message.
+
 **The first time, and after each backend restart**, the app asks for the backend's access
 token. Copy it from the terminal where the backend started (the line `access token: …`). The
 browser remembers it until the backend restarts with a new one. To skip that during

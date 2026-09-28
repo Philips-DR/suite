@@ -90,6 +90,7 @@ export type EventType =
   | 'turn_done'
   | 'turn_error'
   | 'notice'
+  | 'upload'
 
 export interface AssistantEvent {
   seq: number
@@ -112,6 +113,8 @@ export interface AssistantEvent {
   level?: 'success' | 'warning' | 'error'
   title?: string
   body?: string
+  kind?: 'audio' | 'docs'
+  path?: string
 }
 
 export interface Approval {
@@ -225,4 +228,81 @@ export function toolLabel(qualified: string | undefined): string {
   if (!qualified) return ''
   const [server, name] = qualified.split('__')
   return `${(server ?? '').replace(/_/g, '-')} · ${(name ?? '').replace(/_/g, ' ')}`
+}
+
+// ---------------------------------------------------------------------------
+// Uploads. The file is the request body, so nothing is held in memory on either side, and
+// XMLHttpRequest rather than fetch because only it reports upload progress -- a two-hour
+// recording is over 100 MB.
+// ---------------------------------------------------------------------------
+
+export const AUDIO_EXTS = ['.m4a', '.mp3', '.wav', '.flac', '.ogg', '.opus', '.webm', '.mp4', '.aac', '.wma']
+const ext = (name: string) => name.slice(name.lastIndexOf('.')).toLowerCase()
+export const isAudio = (name: string) => AUDIO_EXTS.includes(ext(name))
+export const isMarkdown = (name: string) => ext(name) === '.md'
+
+export interface UploadedAudio { name: string; path: string; bytes: number }
+export interface UploadedDocs { name: string; path: string; files: string[] }
+export interface Uploads {
+  audio: (UploadedAudio & { at: number })[]
+  docs: (UploadedDocs & { at: number })[]
+}
+
+function put<T>(path: string, file: Blob, onProgress?: (sent: number) => void): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('PUT', `${API_URL}${path}`)
+    xhr.setRequestHeader('x-assistant-token', token)
+    xhr.setRequestHeader('content-type', 'application/octet-stream')
+    xhr.upload.onprogress = (e) => onProgress?.(e.loaded)
+    xhr.onerror = () => reject(new Error(`Can't reach the backend at ${API_URL}.`))
+    xhr.onload = () => {
+      if (xhr.status === 401) window.dispatchEvent(new Event('assistant-needs-token'))
+      let body: { error?: string } & T
+      try {
+        body = JSON.parse(xhr.responseText) as { error?: string } & T
+      } catch {
+        return reject(new Error(`Upload failed (${xhr.status}).`))
+      }
+      if (xhr.status >= 400 || body.error) return reject(new Error(body.error ?? `Upload failed (${xhr.status}).`))
+      resolve(body)
+    }
+    xhr.send(file)
+  })
+}
+
+export const getUploads = () => request<Uploads>('/api/uploads')
+
+export const uploadAudio = (file: File, onProgress?: (fraction: number) => void) =>
+  put<UploadedAudio>(`/api/uploads/audio?name=${encodeURIComponent(file.name)}`, file,
+    (sent) => onProgress?.(file.size ? sent / file.size : 1))
+
+/** docu-ai reads only the top level of a folder, so that is all that is sent; anything
+ * deeper, or not markdown, is reported as skipped rather than uploaded to do nothing. */
+export function splitDocs(files: File[]): { top: File[]; skipped: string[]; name: string } {
+  const top: File[] = []
+  const skipped: string[] = []
+  const folder = files[0]?.webkitRelativePath.split('/')[0] ?? ''
+  for (const f of files) {
+    const rel = f.webkitRelativePath ? f.webkitRelativePath.split('/').slice(1).join('/') : f.name
+    if (!isMarkdown(f.name)) skipped.push(`${rel} (not markdown)`)
+    else if (rel.includes('/')) skipped.push(`${rel} (in a subfolder)`)
+    else top.push(f)
+  }
+  const name = folder || (top.length === 1 ? top[0]!.name : 'Documents')
+  return { top, skipped, name }
+}
+
+export async function uploadDocs(files: File[], name: string, onProgress?: (fraction: number) => void) {
+  const total = files.reduce((n, f) => n + f.size, 0) || 1
+  const { batch } = await request<{ batch: string; error?: string }>('/api/uploads/docs', {
+    method: 'POST', body: JSON.stringify({ name }),
+  })
+  let done = 0
+  for (const f of files) {
+    await put(`/api/uploads/docs/${encodeURIComponent(batch)}?name=${encodeURIComponent(f.name)}`, f,
+      (sent) => onProgress?.((done + sent) / total))
+    done += f.size
+  }
+  return request<UploadedDocs>(`/api/uploads/docs/${encodeURIComponent(batch)}/done`, { method: 'POST' })
 }

@@ -2,7 +2,8 @@
 // chat, called directly -- no model, no waiting on one.
 
 import { useEffect, useState, type ReactElement } from 'react'
-import { runAction } from '../api'
+import { AUDIO_EXTS, getUploads, runAction, uploadAudio } from '../api'
+import { PickFiles, UploadProgress } from './Upload'
 import { useAppState } from '../state'
 import { clock, fileName, usePoll } from '../usePoll'
 
@@ -34,9 +35,12 @@ interface Recordings {
   transcripts: { markdown: string; timeline: string | null; notes: string | null; minutes?: string | null }[]
 }
 
-async function call<T>(tool: string, args: Record<string, unknown> = {}): Promise<T> {
+export async function call<T>(tool: string, args: Record<string, unknown> = {}): Promise<T> {
   const result = await runAction<T & { error?: string }>(tool, args)
   const output = result.output
+  // A tool that failed outright comes back as plain text with outcome "failed"; returning
+  // that text as though it were a result would show a blank card instead of the reason.
+  if (result.outcome && result.outcome !== 'ok') throw new Error(String(output))
   if (output && typeof output === 'object' && 'error' in output && output.error) {
     throw new Error(String(output.error))
   }
@@ -138,7 +142,25 @@ function Transcriber({ audio, setAudio }: { audio: string; setAudio: (a: string)
 
   const status = usePoll(() => call<{ job: Job | null }>('meet_ai__transcription_status'), 5000)
   const recordings = usePoll(() => call<Recordings>('meet_ai__list_recordings'), 30000)
+  const uploads = usePoll(getUploads, 30000)
+  const [uploading, setUploading] = useState<{ name: string; fraction: number } | null>(null)
   const job = status.data?.job ?? null
+
+  // An uploaded file is a path like any recording: it lands in the box, ready to transcribe.
+  const upload = async ([file]: File[]) => {
+    if (!file) return
+    setError('')
+    setUploading({ name: file.name, fraction: 0 })
+    try {
+      const saved = await uploadAudio(file, (fraction) => setUploading({ name: file.name, fraction }))
+      setAudio(saved.path)
+      await uploads.reload()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setUploading(null)
+    }
+  }
   const running = job?.state === 'running'
 
   const start = async () => {
@@ -195,8 +217,11 @@ function Transcriber({ audio, setAudio }: { audio: string; setAudio: (a: string)
             />
             <datalist id="audio-files">
               {recordings.data?.audio.map((a) => <option key={a} value={a}>{fileName(a)}</option>)}
+              {uploads.data?.audio.map((a) => <option key={a.path} value={a.path}>{a.name} (uploaded)</option>)}
             </datalist>
+            <PickFiles label="Upload audio…" accept={AUDIO_EXTS.join(',') + ',audio/*'} disabled={uploading !== null} onPick={(files) => void upload(files)} />
           </div>
+          {uploading && <UploadProgress name={uploading.name} fraction={uploading.fraction} />}
           <div className="row">
             <label className="check">
               <input type="checkbox" checked={speakers} onChange={(e) => setSpeakers(e.target.checked)} />
@@ -289,7 +314,7 @@ function TranscriptReader({ path }: { path: string }) {
   }
 
   return (
-    <div className="transcript">
+    <div className="reader">
       <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search the transcript" aria-label="Search the transcript" />
       {error && <p className="error">{error}</p>}
       {!paragraphs && !error && <p className="muted">Loading…</p>}
@@ -299,7 +324,7 @@ function TranscriptReader({ path }: { path: string }) {
           {truncated && ' · very long transcript: only the first part is shown'}
         </p>
       )}
-      <div className="transcript-text">
+      <div className="reader-text">
         {shown.map((p, i) => {
           const match = /^\[(\d\d:\d\d:\d\d)\]\s*(.*)$/s.exec(p)
           return (
