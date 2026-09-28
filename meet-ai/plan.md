@@ -35,6 +35,7 @@ assistant decides when to call either. Neither tool knows the other's internals.
 | M4 | Notes that carry spans, and the lint | Done |
 | M5 | MCP front door beside the CLI | Done |
 | M6 | Transcription as a background job | Done — removes the 15-minute limit for real meetings |
+| M7 | Formal minutes, and `read_transcript` for a caller to read a meeting | Done — minutes held to the notes' quote rule; see CLAUDE.md |
 
 ### M3b, what is left of layer 1
 

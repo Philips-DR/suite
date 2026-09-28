@@ -2,6 +2,9 @@
 
 An assistant and the tools it runs, in one folder, started with one command.
 
+Where it stands and what comes next: [`plan.md`](plan.md). Rules for working on it:
+[`CLAUDE.md`](CLAUDE.md).
+
 | Folder | What it does |
 |---|---|
 | `web/` | The web app you open: chat and buttons, uploads of audio and markdown. A separate program that calls the backend's API. |
