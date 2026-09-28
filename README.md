@@ -13,6 +13,33 @@ Where it stands and what comes next: [`plan.md`](plan.md). Rules for working on 
 | `docu-ai/` | Turns markdown into a properly formatted Google Doc. |
 | `mail-ai/` | Reads, searches, drafts and sends Gmail. |
 
+## Architecture
+
+Five programs, not one. They share a folder, an install and a start command — nothing else.
+
+- **The web app and the backend are separate programs.** `web/` is a frontend: its own build, its
+  own server, port 8751. `assistant/` is an API with no page of its own, port 8750. They only ever
+  meet over HTTP, across origins — never an import, a shared build, or a page one hands the other.
+  `./start` makes a fresh access token each launch and gives it to both; the web app's server writes
+  it into the page as it serves it, so nothing is pasted by hand.
+- **The backend starts the three tools as its own child processes**, talking to each over MCP on
+  stdio — the same protocol a model uses to call them. `meet-ai`, `docu-ai` and `mail-ai` each also
+  work standalone, from their own folder, with nothing else running.
+- **No tool imports another, and no tool imports the backend.** They meet only through the
+  backend's tool calls. A crash or a multi-hour transcription in one tool cannot take down another,
+  or the backend, or the web app.
+- **Every write is gated.** The backend classifies a tool's own call as read-only or not (from the
+  tool's own annotation, never a list it keeps itself) and asks a person before anything else runs —
+  sending mail, building a Doc, changing a recording. A poll or a read needs no approval; a write
+  does, every time, and every call is written to an audit log.
+- **Credentials stay with their tool.** docu-ai's Google login and mail-ai's Gmail login live in
+  their own `~/.config` folders; the backend holds only its own model login and reads a tool's
+  health from how its calls went, never from its token files.
+
+The rules behind each of these, and why they're rules, are in [`CLAUDE.md`](CLAUDE.md); each
+tool's own architecture — its layers, its verified API facts, its gotchas — is in that tool's own
+`CLAUDE.md`.
+
 ## First time
 
 ```bash
