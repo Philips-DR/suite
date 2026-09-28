@@ -36,6 +36,7 @@ from pydantic import BaseModel
 from assistant.approval import needs_approval, sanitise
 from assistant.config import load_tool_servers, model_config_from_environment
 from assistant.session import ApprovalRequest, allow_gate, execute, run_turn
+from assistant import uploads as up
 from assistant.setup import current_lexicon, prepare
 from assistant.status import model_status, network_status, tools_status
 from assistant.tools import RemoteTool, ToolRegistry
@@ -141,6 +142,11 @@ class Hub:
             self.notes = held + self.notes
             await self.emit({"type": "turn_error", "error": str(error)[:500]})
 
+    def note_text(self, text: str) -> None:
+        """Something that happened outside any tool call -- an upload -- told to the model the
+        same way a button press is, with the next message."""
+        self.notes.append(text[:NOTE_LIMIT])
+
     def note(self, tool: RemoteTool, arguments: dict[str, Any], outcome: str, output: str) -> None:
         compact = json.dumps(arguments, ensure_ascii=False, separators=(",", ":"))
         self.notes.append(
@@ -171,7 +177,9 @@ def create_app(
     token: str | None = None,
     registry_factory: Callable[[list[Any]], ToolRegistry] | None = None,
     watch_jobs: bool = True,
+    uploads_path: Path | None = None,
 ) -> FastAPI:
+    uploads_root = uploads_path or ROOT / "uploads"
     token = token or secrets.token_urlsafe(24)
     holder: dict[str, Hub] = {}
 
@@ -342,6 +350,62 @@ def create_app(
             out["network"], out["model"] = network, model
         return out
 
+    # -----------------------------------------------------------------------
+    # Uploads. The body is the file itself, streamed to disk -- a four-hour recording is
+    # never held in memory. Each ends in a path, which is all any tool needs.
+    # -----------------------------------------------------------------------
+
+    def refuse(error: up.UploadError) -> JSONResponse:
+        return JSONResponse({"error": str(error)}, status_code=400)
+
+    @app.get("/api/uploads")
+    async def list_uploads() -> dict[str, Any]:
+        return up.listing(uploads_root)
+
+    @app.put("/api/uploads/audio")
+    async def upload_audio(request: Request, name: str):
+        h = hub()
+        try:
+            target = up.audio_target(uploads_root, name)
+            size = await up.receive(target, request.stream(), up.MAX_AUDIO_BYTES)
+        except up.UploadError as error:
+            return refuse(error)
+        h.note_text(f"The user uploaded audio {target.name} ({size} bytes), saved at {target}.")
+        await h.emit({"type": "upload", "kind": "audio", "name": target.name, "path": str(target)})
+        return {"name": target.name, "path": str(target), "bytes": size}
+
+    @app.post("/api/uploads/docs")
+    async def start_docs(body: dict[str, Any]):
+        try:
+            return {"batch": up.new_batch(uploads_root, str(body.get("name", "")))}
+        except up.UploadError as error:
+            return refuse(error)
+
+    @app.put("/api/uploads/docs/{batch}")
+    async def upload_doc(batch: str, request: Request, name: str):
+        try:
+            target = up.doc_target(uploads_root, batch, name)
+            size = await up.receive(target, request.stream(), up.MAX_DOC_BYTES)
+        except up.UploadError as error:
+            return refuse(error)
+        return {"name": target.name, "bytes": size}
+
+    @app.post("/api/uploads/docs/{batch}/done")
+    async def finish_docs(batch: str):
+        h = hub()
+        batch_dir = (uploads_root / "docs" / batch).resolve()
+        if not batch_dir.is_relative_to(uploads_root.resolve()) or not batch_dir.is_dir():
+            return refuse(up.UploadError(f"no upload batch {batch!r}"))
+        files = sorted(p.name for p in batch_dir.glob("*.md"))
+        if not files:
+            batch_dir.rmdir()
+            return refuse(up.UploadError("none of those files were markdown (.md)"))
+        path = up.doc_path(batch_dir)
+        h.note_text(f"The user uploaded markdown for a document: {', '.join(files)}, "
+                    f"ready to build from {path}.")
+        await h.emit({"type": "upload", "kind": "docs", "name": batch_dir.name, "path": str(path)})
+        return {"name": batch_dir.name, "path": str(path), "files": files}
+
     @app.get("/api/history")
     async def audit_history(limit: int = 200) -> list[dict[str, Any]]:
         """The durable record of every tool call, newest first -- the live event stream only
@@ -391,7 +455,8 @@ def main() -> None:
 
     quieten_libraries()
     # Random per launch unless set, which is for scripts. The page gets it injected either way.
-    app = create_app(Path(args.tools), Path(args.memory), Path(args.audit),
+    uploads = Path(os.environ["ASSISTANT_UPLOADS"]) if os.environ.get("ASSISTANT_UPLOADS") else None
+    app = create_app(Path(args.tools), Path(args.memory), Path(args.audit), uploads_path=uploads,
                      provider=args.provider, model=args.model,
                      token=os.environ.get("ASSISTANT_TOKEN") or None)
     print(f"assistant on http://127.0.0.1:{args.port}/  (localhost only)")
