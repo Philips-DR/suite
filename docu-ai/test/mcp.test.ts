@@ -63,6 +63,13 @@ describe('the MCP front door', () => {
     expect(build?.annotations?.readOnlyHint).toBe(false)
   })
 
+  it('lets a caller choose the résumé look by name', async () => {
+    const client = await connect()
+    const build = (await client.listTools()).tools.find((t) => t.name === 'build')
+    const theme = (build?.inputSchema.properties as Record<string, { enum?: string[] }>).theme
+    expect(theme?.enum).toEqual(['technical', 'resume'])
+  })
+
   it('previews a folder without ever touching auth', async () => {
     await writeFile(join(dir, '01-intro.md'), '# Intro\n\nBody text.\n', 'utf8')
     await writeFile(join(dir, '02-next.md'), '# Next\n\n- one\n- two\n', 'utf8')

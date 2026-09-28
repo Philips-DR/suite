@@ -3,7 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { GoogleOAuthProvider } from '../auth/google.js'
 import type { AuthProvider } from '../auth/types.js'
-import { buildDocument, lintDocument, preview } from '../operations.js'
+import { THEMES, buildDocument, lintDocument, preview, type ThemeName } from '../operations.js'
 import { tolerateSlowConnections } from '../network.js'
 
 /**
@@ -86,12 +86,20 @@ export function createDocuAiServer(auth: AuthProvider): McpServer {
           .string()
           .optional()
           .describe("The document title, shown on the cover. Defaults to the folder's name."),
+        theme: z
+          .enum(Object.keys(THEMES) as [ThemeName, ...ThemeName[]])
+          .optional()
+          .describe(
+            "How it looks. 'technical' (the default): a specification or handbook style. " +
+              "'resume': a CV — one page of one person, tighter type, no cover; the path must be a " +
+              'single .md file whose heading is the person’s name.',
+          ),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
-    async ({ path, title }) => {
+    async ({ path, title, theme }) => {
       try {
-        return ok(await buildDocument(auth, { path, title }))
+        return ok(await buildDocument(auth, { path, title, theme: theme ? THEMES[theme] : undefined }))
       } catch (error) {
         return failed(error)
       }

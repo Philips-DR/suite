@@ -128,3 +128,9 @@ Three layers of checking, each catching something the layer before it can't:
 For the full engineering details — the exact API mechanics, every gotcha discovered along the way,
 and the rules that keep the codebase honest — see `CLAUDE.md`. For the milestone-by-milestone build
 history, see `plan.md`.
+
+## Looks
+
+Two, chosen by name: `technical` (the default — specifications, handbooks) and `resume` (a CV:
+one file, one person, no cover). The CLI's `resume` command uses the second; over MCP, pass
+`theme: "resume"` to `build`.

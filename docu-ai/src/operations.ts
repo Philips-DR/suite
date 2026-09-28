@@ -5,9 +5,18 @@ import { loadChapters } from './parse/loadDir.js'
 import { parseMarkdown } from './parse/toAst.js'
 import { planChapter, planDocument } from './plan/fromAst.js'
 import type { Block } from './plan/types.js'
+import { resume } from './theme/presets/resume.js'
 import { technical } from './theme/presets/technical.js'
 import type { Theme } from './theme/types.js'
 import { countParagraphs, fetchDocument, residueFindings } from './verify/readback.js'
+
+/**
+ * The looks a caller may ask for by name. A front door takes a name, never a Theme object: a
+ * model choosing from two words cannot hand over a half-built theme, and a new preset becomes
+ * available everywhere by being added here.
+ */
+export const THEMES = { technical, resume } as const
+export type ThemeName = keyof typeof THEMES
 
 /**
  * What docu-ai can be asked to do, as data in and data out.
@@ -94,6 +103,13 @@ export async function buildDocument(
   const theme = opts.theme ?? technical
   const { files, single } = await loadChapters(opts.path)
   if (files.length === 0) throw new Error(`no .md files found in ${opts.path}`)
+  // The résumé look is one page of one person, the same rule `npm start -- resume` holds.
+  if (theme === resume && files.length > 1) {
+    throw new Error(
+      `a résumé is one document, but ${opts.path} holds ${files.length} .md files: ` +
+        `${files.map((f) => basename(f.path)).join(', ')}. Build it from the one file.`,
+    )
+  }
 
   const chapters = files.map((file) =>
     planChapter(parseMarkdown(file.source), file.slug, basename(file.path)),
