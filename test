@@ -9,7 +9,7 @@ run assistant bash -c "cd assistant && ../$PY -m pytest tests -q"
 run meet-ai   bash -c "cd meet-ai && ../$PY -m pytest tests -q"
 run mail-ai   bash -c "cd mail-ai && ../$PY -m pytest tests -q"
 run docu-ai   bash -c "cd docu-ai && npm test --silent"
-run web       bash -c "cd assistant/web && npx tsc --noEmit"
+run web       bash -c "cd web && npx tsc --noEmit"
 echo
 if ((${#failed[@]})); then echo "FAILED: ${failed[*]}"; exit 1; fi
 echo "All passed."

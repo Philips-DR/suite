@@ -29,8 +29,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from assistant.approval import needs_approval, sanitise
@@ -43,10 +43,13 @@ from assistant.tools import RemoteTool, ToolRegistry
 from assistant.watchers import watch, watch_login
 
 ROOT = Path(__file__).resolve().parent.parent
-WEB_DIST = ROOT / "web" / "dist"
 HISTORY_LIMIT = 1000
 KEEPALIVE_SECONDS = 15
 LOCAL_HOSTS = {"127.0.0.1", "localhost"}
+# Where the web app is served from: its own server (8751) and Vite's development server.
+# Only these origins may read responses; the token is still required on every call.
+DEFAULT_ORIGINS = ("http://127.0.0.1:8751", "http://localhost:8751",
+                   "http://127.0.0.1:5173", "http://localhost:5173")
 NOTE_LIMIT = 400
 
 
@@ -178,6 +181,8 @@ def create_app(
     registry_factory: Callable[[list[Any]], ToolRegistry] | None = None,
     watch_jobs: bool = True,
     uploads_path: Path | None = None,
+    origins: tuple[str, ...] = DEFAULT_ORIGINS,
+    on_ready: Callable[[], None] | None = None,
 ) -> FastAPI:
     uploads_root = uploads_path or ROOT / "uploads"
     token = token or secrets.token_urlsafe(24)
@@ -200,6 +205,10 @@ def create_app(
             asyncio.create_task(watch(registry, holder["hub"].emit)),
             asyncio.create_task(watch_login(config, holder["hub"].emit)),
         ] if watch_jobs else []
+        # Only now -- tools started, hub up -- is the server really accepting calls. Announcing
+        # earlier sent people (and a browser tab) to a port that refused the connection.
+        if on_ready is not None:
+            on_ready()
         try:
             yield
         finally:
@@ -227,6 +236,17 @@ def create_app(
             if not secrets.compare_digest(supplied, token):
                 return JSONResponse({"error": "missing or wrong token"}, status_code=401)
         return await call_next(request)
+
+    # Added after the guard, so it runs outside it: a browser's preflight carries no token
+    # and must be answered here, and the guard's own 401 needs these headers too -- without
+    # them the web app sees "network error" and cannot tell a stale token from a dead server.
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=list(origins),
+        allow_methods=["GET", "POST", "PUT"],
+        allow_headers=["content-type", "x-assistant-token"],
+        allow_credentials=False,  # nothing here uses cookies; the token travels in a header
+    )
 
     @app.get("/api/tools")
     async def tools() -> list[dict[str, Any]]:
@@ -422,19 +442,11 @@ def create_app(
                 continue  # one corrupt line must not hide the rest
         return rows
 
-    @app.get("/", response_class=HTMLResponse)
-    async def index() -> HTMLResponse:
-        page = WEB_DIST / "index.html"
-        if not page.exists():
-            return HTMLResponse(
-                "<p>The interface has not been built yet. Run <code>npm run build</code> "
-                "in <code>web/</code>.</p>", status_code=503)
-        html = page.read_text(encoding="utf-8").replace(
-            "</head>", f'<meta name="assistant-token" content="{token}"></head>', 1)
-        return HTMLResponse(html, headers={"Cache-Control": "no-store"})
-
-    if (WEB_DIST / "assets").is_dir():
-        app.mount("/assets", StaticFiles(directory=WEB_DIST / "assets"), name="assets")
+    @app.get("/")
+    async def root() -> dict[str, Any]:
+        # The API only. The web app is its own program (suite/web) on its own port, and this
+        # server knows nothing about it beyond which origins may call it.
+        return {"service": "assistant", "api": "/api"}
 
     return app
 
@@ -454,12 +466,28 @@ def main() -> None:
     from assistant.cli import quieten_libraries
 
     quieten_libraries()
-    # Random per launch unless set, which is for scripts. The page gets it injected either way.
+    # The token is random per launch unless ASSISTANT_TOKEN fixes it.
     uploads = Path(os.environ["ASSISTANT_UPLOADS"]) if os.environ.get("ASSISTANT_UPLOADS") else None
+    origins = tuple(o.strip() for o in os.environ.get("ASSISTANT_ORIGINS", "").split(",") if o.strip())
+    fixed = bool(os.environ.get("ASSISTANT_TOKEN"))
+    holder: dict[str, FastAPI] = {}
+
+    def announce() -> None:
+        # The web app no longer receives the token from this server, so the person carries it
+        # across once: printed here, pasted there, remembered by the browser until a restart.
+        # flush: when stdout is a file or a pipe rather than a terminal, Python holds these
+        # back, and the one line a person needs to connect never appears in the log.
+        print(f"assistant API on http://127.0.0.1:{args.port}/  (localhost only)", flush=True)
+        print(f"access token: {holder['app'].state.token}", flush=True)
+        if not fixed:
+            print("  (new on every launch; set ASSISTANT_TOKEN in .env to keep one across restarts)",
+                  flush=True)
+
     app = create_app(Path(args.tools), Path(args.memory), Path(args.audit), uploads_path=uploads,
                      provider=args.provider, model=args.model,
-                     token=os.environ.get("ASSISTANT_TOKEN") or None)
-    print(f"assistant on http://127.0.0.1:{args.port}/  (localhost only)")
+                     token=os.environ.get("ASSISTANT_TOKEN") or None,
+                     origins=origins or DEFAULT_ORIGINS, on_ready=announce)
+    holder["app"] = app
     # Never 0.0.0.0. This process can send email as you.
     #
     # timeout_graceful_shutdown is not optional. uvicorn waits for open connections to drain

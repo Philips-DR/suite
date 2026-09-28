@@ -7,8 +7,17 @@ changing the tool.
 ## Commands
 
     ./setup    # idempotent: shared .venv, npm ci for docu-ai and the web app, speaker models
-    ./start    # the assistant server; it launches every tool as a child over MCP stdio
+    ./start    # backend (API, :8750; launches every tool over MCP stdio) + web app (:8751)
     ./test     # all five test suites. Must pass with no credentials, no model, no network
+
+## The web app and the backend are separate programs
+
+`web/` is the frontend: its own folder, packages, build and server (`web/serve`, port 8751).
+`assistant/` is the backend: an API on port 8750 that serves no page. They meet only over HTTP,
+across origins, with the access token the backend prints at launch — never an import, a shared
+build, a proxy, or a page the backend hands out. `./start` runs both side by side and stops
+both when either stops. See `assistant/CLAUDE.md` for what the split forced (token hand-over,
+CORS ordering).
 
 ## One folder, not one program
 

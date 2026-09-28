@@ -16,9 +16,12 @@ MCP door, where it is tested and cannot drift.
 ## In a browser
 
 ```bash
-cd web && npm install && npm run build      # once, and after changing the interface
-./assistant-web                             # http://127.0.0.1:8750/
+./assistant-web                             # the API, on http://127.0.0.1:8750/
+../web/serve                                # the web app, on http://127.0.0.1:8751/
 ```
+
+The web app is a separate program in `../web` (the suite's `./start` runs both). This server
+is the API only and serves no page.
 
 **Chat** and **Buttons** are a toggle at the top. Buttons mode is a Meetings panel today —
 record, transcribe with live progress, write notes — calling the same tools the model calls,
@@ -34,11 +37,12 @@ view as it happens.
 The chat gate works the same here as in the terminal, except that a turn *suspends* on an
 approval card instead of blocking on a prompt, and resumes when you answer it.
 
-**It binds to 127.0.0.1 only, and every API request needs a token issued at launch** and
-injected into the page. Localhost alone is not enough: any site open in another tab can make
-your browser send a request to localhost, and this process can send email as you. The token
-is what that site cannot know. Requests whose `Host` is not localhost are refused too, which
-closes DNS rebinding.
+**It binds to 127.0.0.1 only, and every API request needs a token issued at launch.** The
+server prints it on start; the web app asks for it once and the browser keeps it until the
+next restart. Localhost alone is not enough: any site open in another tab can make your
+browser send a request to localhost, and this process can send email as you. The token is
+what that site cannot know. Requests whose `Host` is not localhost are refused too, which
+closes DNS rebinding, and only the web app's own origins may read responses.
 
 ## How it reaches the tools
 

@@ -2,7 +2,7 @@
 // recording stopped with a button be the one the model writes up in chat.
 
 import { createContext, useCallback, useContext, useEffect, useReducer, type ReactNode } from 'react'
-import { getState, getTools, openEvents, type Approval, type AssistantEvent } from './api'
+import { getState, getTools, hasToken, openEvents, type Approval, type AssistantEvent } from './api'
 
 interface State {
   events: AssistantEvent[]
@@ -109,8 +109,9 @@ export function StateProvider({ children }: { children: ReactNode }) {
       source = openEvents()
       source.onopen = () => {
         dispatch({ type: 'connected', value: true })
-        // Anything that happened while disconnected arrives in the snapshot.
-        void refresh()
+        // Anything that happened while disconnected arrives in the snapshot. A refusal here
+        // means a stale token, which has already raised the Connect screen.
+        refresh().catch(() => {})
       }
       source.onmessage = (message: MessageEvent<string>) => {
         dispatch({ type: 'event', event: JSON.parse(message.data) as AssistantEvent })
@@ -121,9 +122,17 @@ export function StateProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    void refresh().finally(() => {
-      if (!cancelled) connect()
-    })
+    // Without a token every call is refused; the Connect screen is showing, and on success
+    // it reloads the page, which lands back here with one.
+    if (!hasToken()) return
+    refresh()
+      .catch(() => {
+        // A refusal has already raised the Connect screen; anything else, the event stream's
+        // own reconnect will retry.
+      })
+      .finally(() => {
+        if (!cancelled) connect()
+      })
     return () => {
       cancelled = true
       source?.close()

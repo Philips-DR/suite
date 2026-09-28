@@ -3,6 +3,8 @@ import { useAppState } from './state'
 import { ApprovalCard } from './components/ApprovalCard'
 import { Activity } from './components/Activity'
 import { Notices } from './components/Notices'
+import { Connect } from './components/Connect'
+import { hasToken } from './api'
 import { Chat } from './components/Chat'
 import { History } from './components/History'
 import { Mail } from './components/Mail'
@@ -60,21 +62,17 @@ export function App() {
     }
   }, [mode, section])
 
-  const [stale, setStale] = useState(false)
+  // No token yet, or a stale one: the whole app waits behind the Connect screen.
+  const [needsToken, setNeedsToken] = useState(() => !hasToken())
   useEffect(() => {
-    const onStale = () => setStale(true)
-    window.addEventListener('assistant-stale', onStale)
-    return () => window.removeEventListener('assistant-stale', onStale)
+    const onNeedsToken = () => setNeedsToken(true)
+    window.addEventListener('assistant-needs-token', onNeedsToken)
+    return () => window.removeEventListener('assistant-needs-token', onNeedsToken)
   }, [])
 
   return (
     <div className="app">
-      {stale && (
-        <div className="stale" role="alert">
-          The assistant was restarted, so this page has stopped updating.
-          <button className="primary" onClick={() => window.location.reload()}>Reload</button>
-        </div>
-      )}
+      {needsToken && <Connect />}
       <header className="top">
         <h1>Assistant</h1>
 

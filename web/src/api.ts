@@ -1,9 +1,46 @@
 // The only module that talks to the server.
+//
+// The web app is its own program: it is served from its own port and reaches the backend
+// across origins. Nothing is injected into this page, so the token is carried over by the
+// person -- printed by the backend when it starts, pasted into the Connect screen once, and
+// remembered by this browser until the backend restarts with a new one.
 
-const token =
-  document.querySelector<HTMLMetaElement>('meta[name="assistant-token"]')?.content ??
-  import.meta.env.VITE_ASSISTANT_TOKEN ??
-  ''
+export const API_URL = (import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8750').replace(/\/$/, '')
+
+const TOKEN_KEY = 'assistant-token'
+
+function stored(): string {
+  try {
+    return localStorage.getItem(TOKEN_KEY) ?? ''
+  } catch {
+    return '' // storage blocked: the Connect screen asks every time instead
+  }
+}
+
+// A development convenience only: a token fixed with ASSISTANT_TOKEN on the backend can be
+// baked in with VITE_ASSISTANT_TOKEN, and the Connect screen never appears.
+let token = stored() || (import.meta.env.VITE_ASSISTANT_TOKEN ?? '')
+
+export const hasToken = () => token !== ''
+
+/** Try a token against the backend before keeping it, so a typo is caught on the spot. */
+export async function connect(candidate: string): Promise<void> {
+  const trimmed = candidate.trim()
+  let response: Response
+  try {
+    response = await fetch(`${API_URL}/api/tools`, { headers: { 'x-assistant-token': trimmed } })
+  } catch {
+    throw new Error(`Can't reach the backend at ${API_URL}. Is ./start running?`)
+  }
+  if (response.status === 401) throw new Error('That token was not accepted. Copy it again from the backend’s terminal.')
+  if (!response.ok) throw new Error(`The backend answered ${response.status}.`)
+  token = trimmed
+  try {
+    localStorage.setItem(TOKEN_KEY, trimmed)
+  } catch {
+    // kept for this tab only
+  }
+}
 
 export class ApiError extends Error {
   constructor(
@@ -15,7 +52,7 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
+  const response = await fetch(`${API_URL}${path}`, {
     ...init,
     headers: {
       'content-type': 'application/json',
@@ -26,9 +63,9 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     },
   })
   if (response.status === 401) {
-    // The server restarted and issued a new token; this tab still holds the old one and
-    // every call will now fail. Say so, rather than leaving the page quietly frozen.
-    window.dispatchEvent(new Event('assistant-stale'))
+    // No token yet, or the backend restarted with a new one. Either way every call will now
+    // fail, so ask for the token rather than leaving the page quietly frozen.
+    window.dispatchEvent(new Event('assistant-needs-token'))
   }
   if (!response.ok) {
     let detail = response.statusText
@@ -181,7 +218,7 @@ export const runAction = <T = unknown>(
   })
 
 /** EventSource cannot send headers, so this one request carries the token in its URL. */
-export const openEvents = () => new EventSource(`/api/events?token=${encodeURIComponent(token)}`)
+export const openEvents = () => new EventSource(`${API_URL}/api/events?token=${encodeURIComponent(token)}`)
 
 /** "meet_ai__start_recording" → "meet-ai · start recording" */
 export function toolLabel(qualified: string | undefined): string {

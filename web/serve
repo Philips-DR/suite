@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# The web app's own front door: build it if its source changed, then serve it on
+# http://127.0.0.1:8751. Needs the backend running (assistant/assistant-web) to be useful,
+# but not to start -- until the backend is up, the page says it can't reach it.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
+[[ -d node_modules ]] || npm ci --silent
+if [[ ! -f dist/index.html ]] || [[ -n "$(find src index.html vite.config.ts -newer dist/index.html -print -quit)" ]]; then
+  echo "Building the web app..."
+  npm run --silent build >/dev/null
+fi
+echo "web app on http://127.0.0.1:8751/"
+exec npx vite preview --logLevel warn

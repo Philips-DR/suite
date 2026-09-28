@@ -85,10 +85,25 @@ to find once — an `AttributeError` from the rename above, presenting as a hang
   Host must be localhost. The token may appear in a URL only for `/api/events`, because
   EventSource cannot send headers.
 
-## The interface (`web/`)
+## The interface is a separate program (`../web`)
 
-Vite + React + strict TypeScript, built to `web/dist` and served by the same process. One
-state for both modes (`state.tsx`), fed by one event stream; the modes are views, never
+**This server is the API only.** The web app lives in the suite's top-level `web/`, is served
+by its own process on its own port (8751; Vite's dev server on 5173), and calls this API across
+origins. Separated completely on 2026-09-28. What that cost, and what it forced:
+
+- **The token can no longer be injected into the page**, since this server serves no page. It
+  is printed at launch, and the web app's Connect screen asks for it once and keeps it in
+  localStorage. The old "reload" banner for a stale token was removed rather than kept: a
+  reload used to fetch a page with a fresh token baked in, and nothing does that now.
+- **CORS is added after the token guard, so it runs outside it.** A browser's preflight
+  carries no token and would otherwise be refused before CORS could answer; and the guard's
+  own 401 needs CORS headers, or the browser hides the status and the app cannot tell "paste
+  the new token" from "the server is down". Both are tested. Only `ASSISTANT_ORIGINS` (default:
+  the web app's two origins) may read responses; the token is still required regardless.
+- **No proxy.** Vite used to forward `/api` to this server, which quietly kept the two joined;
+  the app now calls `VITE_API_URL` directly, the same in development as in use.
+
+The web app itself: Vite + React + strict TypeScript. One state for both modes (`state.tsx`), fed by one event stream; the modes are views, never
 separate stores. Assistant replies render as Markdown through react-markdown, which does not
 render raw HTML — and approval previews are rendered as text, never markup, because they are
 email bodies and transcripts someone else wrote.

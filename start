@@ -1,21 +1,28 @@
 #!/usr/bin/env bash
-# The whole suite, as one command: the assistant's server, which starts meet-ai, docu-ai and
-# mail-ai as its own child processes and stops them when it stops. Ctrl-C ends everything
-# except work built to outlive a restart -- a running transcription or recording carries on,
-# and the app picks it up again next time.
+# The whole suite, as one command -- two separate programs, started side by side:
+#
+#   backend   assistant/assistant-web   http://127.0.0.1:8750  (API; starts meet-ai, docu-ai
+#                                                               and mail-ai as its children)
+#   web app   web/serve                 http://127.0.0.1:8751  (the page you open)
+#
+# Either can be run alone with its own command. Ctrl-C stops both; if either one stops,
+# so does the other, rather than leaving half the suite running. A transcription or
+# recording in progress is built to outlive this and is picked up again next time.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 [[ -x .venv/bin/python ]] || { echo "Not set up yet. Run ./setup first." >&2; exit 1; }
 
-# One place for settings. Exported so every tool the server starts inherits them.
+# One place for settings. Exported so the backend and every tool it starts inherit them.
 if [[ -f .env ]]; then set -a; source .env; set +a; fi
 
-# Rebuild the web app if any of its source is newer than the last build.
-web=assistant/web
-if [[ ! -f $web/dist/index.html ]] || [[ -n "$(find $web/src $web/index.html -newer $web/dist/index.html -print -quit)" ]]; then
-  echo "Rebuilding the web app..."
-  (cd $web && npm run --silent build >/dev/null)
-fi
+assistant/assistant-web "$@" &
+backend=$!
+web/serve &
+web=$!
 
-exec assistant/assistant-web "$@"
+stop() { kill "$backend" "$web" 2>/dev/null || true; wait 2>/dev/null || true; }
+trap stop INT TERM EXIT
+
+# Returns when the first of the two exits; the trap then stops the other.
+wait -n "$backend" "$web"

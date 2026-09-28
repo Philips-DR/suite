@@ -11,6 +11,3 @@ audit.jsonl
 # What people upload: audio to transcribe, markdown to turn into Docs.
 uploads/
 
-# The interface: dependencies, and its build output (the server serves web/dist).
-web/node_modules/
-web/dist/

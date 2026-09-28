@@ -4,7 +4,8 @@ An assistant and the tools it runs, in one folder, started with one command.
 
 | Folder | What it does |
 |---|---|
-| `assistant/` | The web app and chat. Starts the tools below, calls them for you, asks before anything that writes. |
+| `web/` | The web app you open: chat and buttons. A separate program that calls the backend's API. |
+| `assistant/` | The backend. Starts the tools below, calls them for you, asks before anything that writes. |
 | `meet-ai/` | Records meetings, transcribes them on this machine, writes notes and minutes that cite the recording. |
 | `docu-ai/` | Turns markdown into a properly formatted Google Doc. |
 | `mail-ai/` | Reads, searches, drafts and sends Gmail. |
@@ -23,13 +24,20 @@ mail-ai (`mail-ai/mail auth`, plus `--compose` to draft and send), and AWS for t
 ## Every day
 
 ```bash
-./start          # then open http://127.0.0.1:8750/
+./start          # then open http://127.0.0.1:8751/
 ```
 
-One process to start and stop. The assistant's server launches the three tools as its own
-children and they end with it — except a transcription or recording in progress, which is built
-to outlive a restart and is picked up again next time. **Buttons → Settings** shows whether the
-model login, the network and each tool are working.
+One command, two programs: the backend (API on port 8750, which launches the three tools as
+its own children) and the web app (port 8751). Stopping either stops both. A transcription or
+recording in progress is built to outlive a restart and is picked up again next time.
+
+The first time you open the app, and after each restart, it asks for the backend's **access
+token** — copy it from the `access token: …` line `./start` prints. Set `ASSISTANT_TOKEN` in
+`.env` to keep one token across restarts. **Buttons → Settings** shows whether the model login,
+the network and each tool are working.
+
+Each half also runs alone: `assistant/assistant-web` for the backend, `web/serve` for the app
+(or `cd web && npm run dev` for live reload).
 
 ```bash
 ./test           # every tool's tests; none needs a login, a model or the network

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Install everything the suite needs, once: one Python environment shared by the three
-# Python tools, docu-ai's Node packages, the web app's build, and meet-ai's speaker models.
+# Python tools, docu-ai's Node packages, the web app's packages and build, and meet-ai's
+# speaker models.
 # Safe to re-run; each step skips what is already done. Touches nothing outside this folder
 # except where npm and pip keep their caches.
 set -euo pipefail
@@ -26,8 +27,8 @@ step "Python environment (.venv), shared by assistant, meet-ai and mail-ai"
 step "docu-ai (Node)"
 (cd docu-ai && npm ci --silent)
 
-step "Web app"
-(cd assistant/web && npm ci --silent && npm run --silent build)
+step "Web app (its own program, in web/)"
+(cd web && npm ci --silent && npm run --silent build)
 
 step "meet-ai speaker models"
 meet-ai/fetch-models.sh

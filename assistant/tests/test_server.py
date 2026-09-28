@@ -299,3 +299,51 @@ def test_status_reports_tools_from_the_audit_without_touching_the_network(tmp_pa
     assert status["model"]["model"]
     assert status["mail_compose"] is False
     assert status["tools"] == []  # only the built-in memory tools, which are not a server
+
+
+# ---------------------------------------------------------------------------
+# A separate web app
+# ---------------------------------------------------------------------------
+
+WEB = "http://127.0.0.1:8751"
+
+
+def test_the_server_is_an_api_and_serves_no_page(tmp_path):
+    """The web app is its own program now. This server must not hand out a page, and above
+    all must not hand out the token inside one."""
+    async def body(client):
+        return (await client.get("/")).json()
+    root = run(with_client(app_for(tmp_path), body))
+    assert root == {"service": "assistant", "api": "/api"}
+    assert TOKEN not in str(root)
+
+
+def test_the_web_app_may_call_across_origins_with_its_token(tmp_path):
+    async def body(client):
+        preflight = await client.options("/api/tools", headers={
+            "origin": WEB, "access-control-request-method": "GET",
+            "access-control-request-headers": "x-assistant-token"})
+        call = await client.get("/api/tools", headers={**AUTH, "origin": WEB})
+        return preflight, call
+    preflight, call = run(with_client(app_for(tmp_path), body))
+    # The preflight carries no token and must still be answered, or no call can follow it.
+    assert preflight.status_code == 200
+    assert preflight.headers["access-control-allow-origin"] == WEB
+    assert call.status_code == 200 and call.headers["access-control-allow-origin"] == WEB
+
+
+def test_a_wrong_token_is_still_readable_as_a_401_by_the_web_app(tmp_path):
+    """Without CORS headers on the refusal, the browser hides the status and the app cannot
+    tell 'paste the new token' from 'the server is down'."""
+    async def body(client):
+        return await client.get("/api/tools", headers={"x-assistant-token": "old", "origin": WEB})
+    refused = run(with_client(app_for(tmp_path), body))
+    assert refused.status_code == 401
+    assert refused.headers["access-control-allow-origin"] == WEB
+
+
+def test_a_page_from_anywhere_else_cannot_read_responses(tmp_path):
+    async def body(client):
+        return await client.get("/api/tools", headers={**AUTH, "origin": "http://evil.example"})
+    response = run(with_client(app_for(tmp_path), body))
+    assert "access-control-allow-origin" not in response.headers
