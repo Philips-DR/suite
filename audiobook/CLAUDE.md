@@ -74,7 +74,7 @@ be clean, mono, single-speaker WAV with no music or background noise.
 ## Usage
 
 ```bash
-.venv/bin/python -m audiobook serve --library /home/philip/Documents/books   # web app on 127.0.0.1:8000
+.venv/bin/python -m audiobook serve --library /home/philip/Documents/books   # web app on 127.0.0.1:8080
 .venv/bin/python -m audiobook preview book.pdf        # exact spoken text → output/<book>/preview.md
 .venv/bin/python -m audiobook render book.pdf --voice abigail --chapters 1
 .venv/bin/python -m audiobook render book.pdf --voice abigail --m4b

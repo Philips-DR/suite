@@ -152,7 +152,7 @@ def main() -> None:
 
     sv = sub.add_parser("serve", help="Run the web app on this computer")
     sv.add_argument("--library", type=Path, default=Path("library"), help="Folder of PDFs (uploads go here)")
-    sv.add_argument("--port", type=int, default=8000)
+    sv.add_argument("--port", type=int, default=8080)  # 8000 is taken by VS Code on this machine
     sv.set_defaults(func=cmd_serve)
 
     args = parser.parse_args()
