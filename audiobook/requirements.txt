@@ -1,3 +1,6 @@
 pocket-tts
 scipy
 docling
+fastapi
+uvicorn
+python-multipart

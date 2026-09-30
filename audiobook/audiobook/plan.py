@@ -178,7 +178,7 @@ def parse_heading(text: str) -> Heading:
 
 YEAR = r"(?:19|20)\d{2}[a-z]?"
 # (Qin et al., 2024; Sumers et al., 2023) — must start with a capital and end in a year.
-PAREN_CITATION = re.compile(rf"\s*\((?:(?:see|e\.g\.,?|cf\.)\s+)?[A-Z][^()]*?,?\s{YEAR}(?:\s*[;,]\s*[^();]*?{YEAR})*\)")
+PAREN_CITATION = re.compile(rf"\s*\((?:(?:see|e\.g\.,?|cf\.)\s+)?[A-Z][^()]*?,?\s?{YEAR}(?:\s*[;,]\s*[^();]*?{YEAR})*\)")
 # Sumers et al. (2023) → Sumers et al.
 YEAR_ONLY_CITATION = re.compile(rf"\s*\({YEAR}(?:\s*[;,]\s*{YEAR})*\)")
 # [12], [3, 7-9]

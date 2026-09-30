@@ -229,11 +229,11 @@ Each ends with something the user can run and judge.
 | M0 | CLI prototype (PyMuPDF) | ✅ Done — renders a simple PDF to MP3/M4B with a cloned voice, resumable. |
 | M1 | Docling extract + BookPlan + `preview` | ✅ Done (2026-09-30). On the test paper, `preview.md` has the correct 6 main sections + 6 appendices, no tables/formulas/captions/references/citations/page furniture, and no mid-sentence paragraph splits. Golden test in place. |
 | M2 | Book fixture | ✅ Done (2026-09-30) with *The Final Quest* (163 pages): 6 chapters + 30 sections match its contents; Docling 6 min 8 s; memory not measured but no problems on this machine. Fixed: dialogue mislabelled as footnotes/list items, title from PDF metadata, "0f" typo. A public-domain novel previews with correct chapters and no page furniture; measured Docling time and memory for a 300+ page book recorded here. |
-| M3 | Voice management + speech normalisation | `voice add/test/list` work; user listens to a test chapter of the paper and the normalisation list in §4.2 (7) is settled from what actually sounded wrong. |
-| M4 | Render on top of BookPlan | (Partly done 2026-09-30: `render` uses the plan and the PyMuPDF path is removed.) `render` uses the plan, per-chunk cache, ETA, loudness normalisation, M4B chapters. PyMuPDF path removed. |
+| M3 | Voice management + speech normalisation | ✅ Done (2026-09-30): `voice add` (window search), `voice test`, `voice list`; `speech.py` rules (roman numerals after Part/Chapter, Bible references, other n:n, all-caps runs, spaced ellipses, &, underscores, stray symbols), each verified by synthesis + Whisper; per-book corrections file. Extend as the user reports misreadings. |
+| M4 | Render on top of BookPlan | ✅ Done (2026-09-30): renders from the plan, per-chunk cache, progress with time left, WAVs cleaned per chapter. Levelling was tried and rejected (see CLAUDE.md). |
 | M5 | Full-length run | One complete book rendered end to end overnight, resumed at least once after an interruption, with no re-rendered chunks. |
-| M6 | Scanned-PDF support (OCR) | Only if needed. |
-| M7 | Web UI | Upload, voice picker with preview playback, progress, download. FastAPI backend over `operations.py`; frontend framework decided then. |
+| M6 | Scanned-PDF support (OCR) | ✅ Done (2026-09-30): no text layer → Docling re-run with RapidOCR (torch backend); 98% word accuracy on a test scan. |
+| M7 | Web UI | ✅ Done (2026-09-30): `serve` — FastAPI + one-page UI: library/upload, chapter table, exact text, corrections editor, voice samples and cloning (with consent box), render with progress/time left, in-page players and downloads. One job at a time. |
 
 ## 8. Risks
 

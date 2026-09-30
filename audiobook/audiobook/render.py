@@ -202,7 +202,10 @@ def render_book(
         encode_mp3(wav, mp3, chapter.title, album, number, speed)
         if on_chapter_done:
             on_chapter_done(mp3, len(audio) / sr / speed)
-        wavs.append(wav)
+        if m4b:
+            wavs.append(wav)  # joined into the M4B at the end
+        else:
+            wav.unlink()  # don't leave WAVs behind if a long render is stopped
         titles.append(chapter.title)
 
     book = None

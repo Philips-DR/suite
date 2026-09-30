@@ -10,7 +10,8 @@ preset voice or a voice cloned from a short reference clip.
 
 **`plan.md` holds the locked decisions, the design and the milestone order. This file holds the
 engineering rules and the facts learned the hard way.** When the two disagree, fix whichever is
-wrong. Status: M0, M1, M2 done. `preview` and `render` both run on Docling + BookPlan (the PyMuPDF reader
+wrong. Status: M0–M4, M6, M7 done; M3's speech rules are a first pass driven by one book; M5 (a whole
+book in one run) not yet. `preview` and `render` both run on Docling + BookPlan (the PyMuPDF reader
 is gone). Next: M3 (speech clean-up + `voice` commands).
 
 Language is Python, decided deliberately: Pocket TTS and the strong PDF-layout tools (Docling) are
@@ -73,15 +74,19 @@ be clean, mono, single-speaker WAV with no music or background noise.
 ## Usage
 
 ```bash
+.venv/bin/python -m audiobook serve --library /home/philip/Documents/books   # web app on 127.0.0.1:8000
 .venv/bin/python -m audiobook preview book.pdf        # exact spoken text → output/<book>/preview.md
-.venv/bin/python -m audiobook render book.pdf --voice voices/abigail.safetensors --chapters 1
-.venv/bin/python -m audiobook render book.pdf --voice voices/abigail.safetensors --m4b
-.venv/bin/python -m audiobook render book.pdf --voice voices/abigail.safetensors --speed 1.0   # default is 0.95 → *-0.95x.mp3
+.venv/bin/python -m audiobook render book.pdf --voice abigail --chapters 1
+.venv/bin/python -m audiobook render book.pdf --voice abigail --m4b
+.venv/bin/python -m audiobook render book.pdf --voice abigail --speed 1.0   # default is 0.95 → *-0.95x.mp3
+.venv/bin/python -m audiobook voice add NAME CLIP [--start S --end E]      # clone; long clips are searched
+.venv/bin/python -m audiobook voice test NAME        # → output/voices/NAME-test.mp3
+.venv/bin/python -m audiobook voice list
 .venv/bin/python -m pytest -q                         # no models, network or token needed
 ```
 
-`--voice` takes a saved voice (`.safetensors`), an audio file to clone, or a preset like `alba`.
-Output goes to `output/<pdf name>/`. `--chapters` uses the numbers shown by `preview`.
+`--voice` takes a saved voice's name (`abigail`, `tina`), a `.safetensors` path, an audio file to
+clone, or a preset like `alba`. Output goes to `output/<pdf name>/`. `--chapters` uses the numbers shown by `preview`.
 `--speed` (0.5–2.0, **default 0.95** — the user's choice) is ffmpeg `atempo` applied at encode time — pitch
 unchanged, and speech comes from the chunk cache, so a new speed costs seconds, not a re-render.
 
@@ -98,17 +103,24 @@ as clearest.
 
 ## Code layout
 
-- `audiobook/extract.py` — Docling conversion, cached in `.cache/docling/<pdf sha256>.json`.
+- `audiobook/extract.py` — Docling conversion, cached in `.cache/docling/<pdf sha256>.json`; PDFs
+  with no text layer are re-run with OCR (RapidOCR, torch backend).
 - `audiobook/plan.py` — pure `DoclingDocument → BookPlan`: walk (skip labels + their children),
   heading levels from numbering, chapters, section filters, citations, paragraph joining,
-  front matter, empty headings. Every drop is a `Skipped` with a reason.
+  front matter, empty headings, then corrections + `speech.for_speech`. Every drop is a `Skipped`.
+- `audiobook/speech.py` — pure rewrites for what the voice misreads, each verified by synthesis +
+  Whisper (see its docstring); per-book corrections (`book.corrections.txt` next to the PDF).
 - `audiobook/preview.py` — pure `BookPlan → preview.md` (chapter table, exact text, skipped summary).
-- `audiobook/operations.py` — `plan_book`, `preview_book`: what front doors call.
-- `audiobook/__main__.py` — CLI (`preview`, `render`) and `.env` loading.
-- `audiobook/chunk.py` — sentence chunks ≤400 chars. `audiobook/tts.py` — `Narrator` (Pocket TTS,
-  voice cloning/loading). `audiobook/render.py` — speaks a plan `Chapter` with pauses, caches each
-  chunk in `.cache/audio/<voice id>/<text hash>.npy`, encodes MP3/M4B. Its remaining M4 work: ETA,
-  loudness normalisation, splitting speak/assemble into separate modules.
+- `audiobook/operations.py` — `plan_book`, `preview_book`, `render_pdf`: what front doors call.
+- `audiobook/voices.py` — `add_voice` (window search scored by WavLM similarity), `test_voice`,
+  `list_voices`; metadata in `voices/NAME.json`.
+- `audiobook/__main__.py` — CLI and `.env` loading. `audiobook/web/` — FastAPI app (`app.py`), a
+  one-at-a-time `JobQueue` (`jobs.py`), and a single no-build page (`static/index.html`). Binds to
+  127.0.0.1 only: there is no authentication.
+- `audiobook/chunk.py` — sentence chunks ≤400 chars. `audiobook/tts.py` — model loaded once per
+  process, `Narrator`, `resolve_voice`. `audiobook/render.py` — speaks a plan `Chapter` with pauses,
+  caches each chunk in `.cache/audio/<voice id>/<text hash>.npy`, reports `Progress` (with time
+  left) through a callback, encodes MP3/M4B.
 - `tests/` — rule unit tests; golden `tests/golden/paper.preview.md` from
   `tests/fixtures/paper.docling.json.gz`. Accept an intended change with `UPDATE_GOLDEN=1` and
   **read the diff** before committing it.
@@ -136,6 +148,9 @@ as clearest.
 - Title/author come from the PDF's metadata (`pdf_metadata`, via pypdfium2) — ebook title pages are
   often images.
 - Measured on the book (163 pages, calibre ebook): Docling 6 min 8 s (~2.3 s/page), no OCR needed.
+- OCR: RapidOCR's default onnxruntime backend isn't installed — use `backend="torch"`. Measured on
+  2 scanned pages: 98% word accuracy; errors are run-together words ("theagent") and dropped
+  spaces, e.g. "et al.,2024" (citation regex tolerates it). Slow: ~1 min/page under load.
 
 ## Architecture rules
 

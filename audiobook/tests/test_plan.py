@@ -29,6 +29,7 @@ def test_parse_heading(text, number, title, level):
         ("act through tools (Qin et al., 2024; Sumers et al., 2023). Most", "act through tools. Most", 1),
         ("ReAct (Yao et al., 2023b) interleaves", "ReAct interleaves", 1),
         ("Sumers et al. (2023) propose CoALA", "Sumers et al. propose CoALA", 1),
+        ("workflows (Xiao et al.,2024; Zhang et al., 2023). Next", "workflows. Next", 1),  # OCR drops spaces
         ("as shown before [12], and [3, 7-9].", "as shown before, and.", 2),
         # Ordinary parentheses and bracketed numbers survive.
         ("the graph (Section 3.2) is frozen", "the graph (Section 3.2) is frozen", 0),

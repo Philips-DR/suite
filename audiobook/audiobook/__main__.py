@@ -105,6 +105,17 @@ def cmd_voice_list(args: argparse.Namespace) -> None:
     print("Built-in voices:\n  " + ", ".join(v.name for v in voices if v.kind == "preset"))
 
 
+def cmd_serve(args: argparse.Namespace) -> None:
+    import uvicorn
+
+    from .web.app import create_app
+
+    load_env()
+    print(f"Library: {args.library.resolve()}\nOpen http://127.0.0.1:{args.port}")
+    # Localhost only: the app has no authentication.
+    uvicorn.run(create_app(args.library), host="127.0.0.1", port=args.port, log_level="warning")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="audiobook", description="Turn a PDF into an audiobook read in a cloned voice.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -138,6 +149,11 @@ def main() -> None:
     vt.add_argument("--speed", type=parse_speed, default=0.95)
     vt.set_defaults(func=cmd_voice_test)
     v.add_parser("list", help="List voices").set_defaults(func=cmd_voice_list)
+
+    sv = sub.add_parser("serve", help="Run the web app on this computer")
+    sv.add_argument("--library", type=Path, default=Path("library"), help="Folder of PDFs (uploads go here)")
+    sv.add_argument("--port", type=int, default=8000)
+    sv.set_defaults(func=cmd_serve)
 
     args = parser.parse_args()
     try:
