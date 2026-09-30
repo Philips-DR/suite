@@ -10,8 +10,8 @@ preset voice or a voice cloned from a short reference clip.
 
 **`plan.md` holds the locked decisions, the design and the milestone order. This file holds the
 engineering rules and the facts learned the hard way.** When the two disagree, fix whichever is
-wrong. Status: M0–M4, M6, M7 done; M3's speech rules are a first pass driven by one book; M5 (a whole
-book in one run) not yet. `preview` and `render` both run on Docling + BookPlan (the PyMuPDF reader
+wrong. Status: M0–M7 done. M3's speech rules are a first pass driven by one book; extend them as the user
+reports misreadings. `preview` and `render` both run on Docling + BookPlan (the PyMuPDF reader
 is gone). Next: M3 (speech clean-up + `voice` commands).
 
 Language is Python, decided deliberately: Pocket TTS and the strong PDF-layout tools (Docling) are
