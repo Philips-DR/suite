@@ -1,0 +1,214 @@
+"""Render chapters to audio, caching each chunk so interrupted runs resume where they stopped."""
+
+import hashlib
+import re
+import subprocess
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Callable
+
+import numpy as np
+import scipy.io.wavfile
+
+from .chunk import chunk_paragraph
+from .plan import Chapter
+from .preview import CHARS_PER_SECOND, RENDER_SPEED
+from .tts import Narrator
+
+CACHE_DIR = Path(".cache/audio")
+SENTENCE_PAUSE = 0.40
+PARAGRAPH_PAUSE = 0.6
+HEADING_PAUSE_BEFORE = 0.8
+HEADING_PAUSE_AFTER = 0.5
+TITLE_PAUSE = 1.2
+
+
+def slugify(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:60] or "chapter"
+
+
+def _silence(seconds: float, sample_rate: int) -> np.ndarray:
+    return np.zeros(int(seconds * sample_rate), dtype=np.float32)
+
+
+def _to_int16(audio: np.ndarray) -> np.ndarray:
+    return (np.clip(audio, -1.0, 1.0) * 32767).astype(np.int16)
+
+
+def format_clock(seconds: float) -> str:
+    h, rem = divmod(int(seconds), 3600)
+    return f"{h}:{rem // 60:02d}:{rem % 60:02d}"
+
+
+class ChunkRenderer:
+    def __init__(self, narrator: Narrator):
+        self.narrator = narrator
+        self.cache = CACHE_DIR / narrator.voice_id
+        self.cache.mkdir(parents=True, exist_ok=True)
+
+    def _path(self, text: str) -> Path:
+        return self.cache / f"{hashlib.sha256(text.encode()).hexdigest()[:24]}.npy"
+
+    def is_cached(self, text: str) -> bool:
+        return self._path(text).exists()
+
+    def __call__(self, text: str) -> np.ndarray:
+        path = self._path(text)
+        if path.exists():
+            return np.load(path)
+        audio = self.narrator.synthesize(text).astype(np.float32)
+        np.save(path, audio)
+        return audio
+
+
+@dataclass
+class Progress:
+    """Where a render is, for front doors to display. Chunks already cached count as done at once."""
+
+    chapter: int
+    chapter_title: str
+    chunks_done: int
+    chunks_total: int
+    chars_left: int  # still to generate
+    seconds_left: float | None  # None until there's something to estimate from
+
+    @property
+    def fraction(self) -> float:
+        return self.chunks_done / self.chunks_total if self.chunks_total else 1.0
+
+
+class ProgressTracker:
+    def __init__(self, texts: list[str], render: ChunkRenderer, on_progress: Callable[[Progress], None] | None):
+        self.total = len(texts)
+        pending = {t for t in texts if not render.is_cached(t)}
+        self.chars_left = sum(len(t) for t in pending)
+        self.pending = pending
+        self.done = 0
+        self.generated_chars = 0
+        self.generating_seconds = 0.0
+        self.on_progress = on_progress
+        self.chapter, self.chapter_title = 0, ""
+
+    def rate(self) -> float:
+        """Characters generated per second: measured once there's enough to go on, else the estimate."""
+        if self.generated_chars >= 500:
+            return self.generated_chars / self.generating_seconds
+        return CHARS_PER_SECOND * RENDER_SPEED
+
+    def chunk_done(self, text: str, seconds: float) -> None:
+        self.done += 1
+        if text in self.pending:
+            self.pending.discard(text)
+            self.chars_left -= len(text)
+            self.generated_chars += len(text)
+            self.generating_seconds += seconds
+        if self.on_progress:
+            left = self.chars_left / self.rate() if self.chars_left else 0.0
+            self.on_progress(Progress(self.chapter, self.chapter_title, self.done, self.total, self.chars_left, left))
+
+
+def chapter_texts(chapter: Chapter) -> list[str]:
+    """Everything the voice generates for a chapter, in order: the title, then each chunk."""
+    return [chapter.announce or chapter.title] + [chunk for seg in chapter.segments for chunk in chunk_paragraph(seg.text)]
+
+
+def render_chapter(chapter: Chapter, render: ChunkRenderer, sample_rate: int, tracker: ProgressTracker) -> np.ndarray:
+    def speak(text: str) -> np.ndarray:
+        started = time.monotonic()
+        audio = render(text)
+        tracker.chunk_done(text, time.monotonic() - started)
+        return audio
+
+    pieces = [speak(chapter.announce or chapter.title), _silence(TITLE_PAUSE, sample_rate)]
+    for seg in chapter.segments:
+        is_heading = seg.kind in ("heading", "title")
+        if is_heading:
+            pieces.append(_silence(HEADING_PAUSE_BEFORE, sample_rate))
+        for chunk in chunk_paragraph(seg.text):
+            pieces += [speak(chunk), _silence(SENTENCE_PAUSE, sample_rate)]
+        after = HEADING_PAUSE_AFTER if is_heading else PARAGRAPH_PAUSE
+        pieces.append(_silence(after - SENTENCE_PAUSE, sample_rate))
+    return np.concatenate(pieces)
+
+
+def _tempo(speed: float) -> list[str]:
+    """ffmpeg's atempo changes pace without changing pitch."""
+    return [] if speed == 1 else ["-af", f"atempo={speed}"]
+
+
+def speed_suffix(speed: float) -> str:
+    return "" if speed == 1 else f"-{speed:g}x"
+
+
+def encode_mp3(wav: Path, mp3: Path, title: str, album: str, track: int, speed: float = 1) -> None:
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-i", str(wav), *_tempo(speed), "-c:a", "libmp3lame", "-q:a", "4",
+         "-metadata", f"title={title}", "-metadata", f"album={album}", "-metadata", f"track={track}", str(mp3)],
+        check=True,
+    )
+
+
+def encode_m4b(wavs: list[Path], titles: list[str], sample_rate: int, out: Path, album: str, speed: float = 1) -> None:
+    """Join chapter WAVs into a single M4B audiobook with chapter markers."""
+    work = out.parent
+    concat_list = work / "concat.txt"
+    concat_list.write_text("".join(f"file '{w.resolve()}'\n" for w in wavs))
+
+    metadata = [";FFMETADATA1", f"title={album}"]
+    start = 0
+    for wav, title in zip(wavs, titles):
+        rate, data = scipy.io.wavfile.read(wav)
+        end = start + int(len(data) / rate / speed * 1000)
+        metadata += ["[CHAPTER]", "TIMEBASE=1/1000", f"START={start}", f"END={end}", f"title={title}"]
+        start = end
+    metadata_file = work / "chapters.txt"
+    metadata_file.write_text("\n".join(metadata) + "\n")
+
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(concat_list),
+         "-i", str(metadata_file), "-map_metadata", "1", "-map_chapters", "1", *_tempo(speed),
+         "-c:a", "aac", "-b:a", "64k", str(out)],
+        check=True,
+    )
+    concat_list.unlink()
+    metadata_file.unlink()
+
+
+def render_book(
+    chapters: list[tuple[int, Chapter]],
+    narrator: Narrator,
+    out_dir: Path,
+    album: str,
+    m4b: bool,
+    speed: float = 1,
+    on_progress: Callable[[Progress], None] | None = None,
+    on_chapter_done: Callable[[Path, float], None] | None = None,
+) -> Path | None:
+    """Render chapters to MP3s (and optionally one M4B). Returns the M4B path if built."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    render = ChunkRenderer(narrator)
+    sr = narrator.sample_rate
+    tracker = ProgressTracker([t for _, c in chapters for t in chapter_texts(c)], render, on_progress)
+    wavs, titles = [], []
+
+    for number, chapter in chapters:
+        tracker.chapter, tracker.chapter_title = number, chapter.title
+        audio = render_chapter(chapter, render, sr, tracker)
+        stem = f"{number:02d}-{slugify(chapter.title)}{speed_suffix(speed)}"
+        wav = out_dir / f"{stem}.wav"
+        scipy.io.wavfile.write(wav, sr, _to_int16(audio))
+        mp3 = out_dir / f"{stem}.mp3"
+        encode_mp3(wav, mp3, chapter.title, album, number, speed)
+        if on_chapter_done:
+            on_chapter_done(mp3, len(audio) / sr / speed)
+        wavs.append(wav)
+        titles.append(chapter.title)
+
+    book = None
+    if m4b:
+        book = out_dir / f"{slugify(album)}{speed_suffix(speed)}.m4b"
+        encode_m4b(wavs, titles, sr, book, album, speed)
+    for wav in wavs:
+        wav.unlink()
+    return book
