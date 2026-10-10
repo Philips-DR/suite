@@ -5,7 +5,26 @@
 // server writes it into this page as it serves it -- so normally nothing is typed. When the
 // two are run separately with no shared token, the Connect screen asks for it instead.
 
-export const API_URL = (import.meta.env.VITE_API_URL ?? 'http://127.0.0.1:8750').replace(/\/$/, '')
+const metaContent = (name: string) =>
+  document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`)?.content ?? ''
+
+/**
+ * Where the backend is. Decided in the browser, at run time, so one build serves every host:
+ *  - VITE_API_URL, if a build was made for one place (development);
+ *  - on localhost, 127.0.0.1:8750, as ever;
+ *  - on any other name (a tailnet address), the SAME host the page came from, at the port the web
+ *    server was told the backend answers on. Same host means same site, which a login cookie
+ *    will need; a different port is a different origin, which is why the backend lists origins.
+ */
+function apiUrl(): string {
+  const built = import.meta.env.VITE_API_URL as string | undefined
+  if (built) return built
+  const { protocol, hostname } = location
+  if (hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]') return 'http://127.0.0.1:8750'
+  return `${protocol}//${hostname}:${metaContent('assistant-api-port') || '8750'}`
+}
+
+export const API_URL = apiUrl().replace(/\/$/, '')
 
 const TOKEN_KEY = 'assistant-token'
 

@@ -3,11 +3,27 @@ import { resolve } from 'node:path'
 import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// The web app is its own program. It calls the backend directly at VITE_API_URL (default
-// http://127.0.0.1:8750) -- no proxy -- and the backend allows these two origins. Both
-// listen on 127.0.0.1 only, like the backend: nothing here is for another machine.
+// The web app is its own program. It calls the backend directly -- no proxy -- and the backend
+// allows the origins it is told. Both listen on 127.0.0.1 unless told otherwise, which only the
+// container setup does (WEB_HOST), publishing the port to 127.0.0.1 and to a private Tailscale
+// network, never to the world.
+//
+// Which names may reach this server, and which port the backend is on for them, come from the
+// environment at serve time, not from the build: a build that knew its host's name could not be the
+// same image on a laptop and on a server.
+
+const csv = (value: string | undefined) =>
+  (value ?? '').split(/[,\s]+/).map((s) => s.trim().toLowerCase()).filter(Boolean)
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost'])
+// Exact names only, as in the backend: ASSISTANT_HOSTS is shared with it.
+const ALLOWED_HOSTS = new Set([...LOCAL_HOSTS, ...csv(process.env.ASSISTANT_HOSTS)])
+const BIND_HOST = process.env.WEB_HOST || '127.0.0.1'
+// The port the backend answers on when this page was opened by any name but localhost; the browser
+// takes the host from the address bar. Written into the page, so the same dist serves any host.
+const REMOTE_API_PORT = (process.env.ASSISTANT_REMOTE_API_PORT ?? '').replace(/\D/g, '')
+// Off, the page carries no token at all. For when signing in replaces it (a Google login).
+const INJECT_TOKEN = (process.env.WEB_INJECT_TOKEN ?? '1') !== '0'
 
 /**
  * Hand the page the backend's token as it is served, so nobody has to paste it.
@@ -22,9 +38,12 @@ const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost'])
  * is the one response that carries the token.
  */
 function injectToken(): Plugin {
-  const token = process.env.ASSISTANT_TOKEN ?? ''
-  const meta = () => `<meta name="assistant-token" content="${token.replace(/[^A-Za-z0-9_-]/g, '')}">`
-  const local = (host: string | undefined) => LOCAL_HOSTS.has((host ?? '').replace(/:\d+$/, '').replace(/^\[|\]$/g, ''))
+  const token = INJECT_TOKEN ? (process.env.ASSISTANT_TOKEN ?? '') : ''
+  const meta = () =>
+    `<meta name="assistant-token" content="${token.replace(/[^A-Za-z0-9_-]/g, '')}">` +
+    (REMOTE_API_PORT ? `<meta name="assistant-api-port" content="${REMOTE_API_PORT}">` : '')
+  const allowed = (host: string | undefined) =>
+    ALLOWED_HOSTS.has((host ?? '').replace(/:\d+$/, '').replace(/^\[|\]$/g, '').toLowerCase())
 
   return {
     name: 'inject-assistant-token',
@@ -38,7 +57,7 @@ function injectToken(): Plugin {
       server.middlewares.use(async (req, res, next) => {
         const path = (req.url ?? '/').split('?')[0]
         if (!token || (path !== '/' && path !== '/index.html')) return next()
-        if (!local(req.headers.host)) {
+        if (!allowed(req.headers.host)) {
           res.statusCode = 403
           return res.end('forbidden host')
         }
@@ -54,5 +73,6 @@ function injectToken(): Plugin {
 export default defineConfig({
   plugins: [react(), injectToken()],
   server: { host: '127.0.0.1', port: 5173, strictPort: true },   // npm run dev
-  preview: { host: '127.0.0.1', port: 8751, strictPort: true },  // npm run serve
+  // allowedHosts is Vite's own Host check; the plugin above checks again for the page that carries the token.
+  preview: { host: BIND_HOST, port: 8751, strictPort: true, allowedHosts: [...ALLOWED_HOSTS] },  // npm run serve
 })
