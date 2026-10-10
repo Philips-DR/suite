@@ -5,7 +5,8 @@ rough, what is waiting on a decision, and the next steps in order. Update it whe
 change — a new session should be able to pick up from here without the conversation that got us
 here. Each tool keeps its own `plan.md` or `CLAUDE.md` for its internals; this covers the whole.
 
-As of **2026-09-28**. Latest commit when written: `90adb70`.
+As of **2026-10-10**. audiobook is in the suite: merged with its history (`98c60e3`), then its MCP door,
+jobs, web panel, uploads and docs, built, tested, run for real and pushed.
 
 ## What this is
 
@@ -15,11 +16,12 @@ process, a module or a credential (see `CLAUDE.md`).
 
 | Part | Folder | What it does |
 |---|---|---|
-| Web app | `web/` | Chat and Buttons modes over one shared state. Port 8751. |
+| Web app | `web/` | Chat and Buttons modes over one shared state (Meetings, Documents, Audiobooks, Mail, Memory, History, Settings). Port 8751. |
 | Backend | `assistant/` | API on port 8750. Starts the tools as MCP children, runs chat turns on the model, gates every write behind an approval, audits every call. |
 | meet-ai | `meet-ai/` | Record, transcribe locally (faster-whisper), notes and formal minutes where every point must resolve to a verbatim quote. |
 | docu-ai | `docu-ai/` | Markdown → properly formatted Google Doc, zero markdown residue. Looks: `technical`, `resume`. |
 | mail-ai | `mail-ai/` | Gmail: sync, read, search; draft, review and send (send needs two presses over the rendered mail). |
+| audiobook | `audiobook/` | PDF → audiobook in a cloned voice, locally (Docling to read, Pocket TTS to speak). Reading and rendering are background jobs. Own `.venv`. Its UI is the web app's Audiobooks panel. |
 
 ## Locked decisions
 
@@ -29,8 +31,8 @@ Settled; reopen only with new evidence, and say so here when one changes.
    `operations` layer; the assistant only classifies, calls, approves and audits. The design
    record is the "Tools-First Rebuild" plan doc (claude.ai artifact a2ae50bf-…); this file is newer.
 2. **One repo, separate programs** (2026-09-27). Merged with histories rewritten under each folder.
-   The four old GitHub repos (Philips-DR/assistant, meet-ai, mail-ai, docu-ai) stay live and are
-   **not** to be archived — the user said so. `suite` pushes to github.com/Philips-DR/suite (private).
+   The old GitHub repos (Philips-DR/assistant, meet-ai, mail-ai, docu-ai, and audiobook — "keep old
+   repo", 2026-10-10) stay live and are **not** to be archived — the user said so. `suite` pushes to github.com/Philips-DR/suite (private).
 3. **Web app fully separate from the backend** (2026-09-28): own folder, server and port, calling the
    API across origins. No proxy, no page served by the backend.
 4. **No token pasting.** `./start` makes a random token per launch and hands it to both programs;
@@ -42,6 +44,9 @@ Settled; reopen only with new evidence, and say so here when one changes.
 6. **Nothing a model writes is trusted on its word.** Notes and minutes drop any point whose quote is
    not in the transcript; a rewritten document is measured against its original at approval time.
 7. **Localhost only**, for now. Deployment is an open decision (below), not a default.
+8. **audiobook has no interface of its own** (2026-10-10). Its standalone web app was removed and every
+   feature rebuilt in the suite's web app. It has its own `.venv` (weight and PyTorch's CPU index, not
+   a version conflict), and a voice is cloned only with a consent statement the user writes.
 
 ## Built and verified
 
@@ -56,8 +61,9 @@ Each was tested (`./test`) and run for real; the real runs found most of the bug
 | 09-27 | The suite: one repo, `./setup`, `./start`, `./test`, one shared `.venv` | `CLAUDE.md` |
 | 09-28 | Frontend/backend split; automatic token hand-over; uploads (audio, `.md` files, folders) from Meetings, Documents and chat | `assistant/CLAUDE.md`, `web/README.md` |
 | 09-28 | Drafting: the assistant can read an upload and write a tailored version (e.g. a CV for a role), measured against the original; CVs build in the résumé look | `assistant/CLAUDE.md` → Drafting |
+| 10-10 | audiobook joined: merged with history, own `.venv`, MCP door (11 tools), detached background jobs that survive a backend restart, PDF and recording uploads, path-confined audio playback and download, finished-job notices, and the Audiobooks panel (read a book, chapter table and exact text, corrections, voices with consent, render with progress, play and download). Run for real: Whisper heard a sample 100% right; a chapter rendered to MP3 + M4B; a render outlived `pkill` of the backend; the same flows through chat and in Chrome. | `audiobook/CLAUDE.md` → The suite integration; `assistant/CLAUDE.md` → Audio a tool made |
 
-Test counts at `90adb70`: assistant 129, meet-ai 113, mail-ai 75, docu-ai 285, web typecheck.
+Test counts on 2026-10-10: assistant 144, meet-ai 113, mail-ai 75, docu-ai 285, audiobook 77, web typecheck.
 
 ## Known rough edges
 
@@ -77,6 +83,14 @@ Real, known, not yet fixed. Each is small unless marked.
   registered only by the web server, which owns the uploads folder.
 - **A CV keeps all its content**, so the tailored one is 3 pages; shortening is a separate request,
   and the draft check will show what was cut.
+- **Audiobook: no way to cancel a job** from the page or from chat — a wrong multi-hour render is
+  stopped with `pkill -f audiobook-job` (what was spoken stays cached). Small things: one job at a time (reading, rendering and cloning share the CPU). A
+  file plays only once it has been fetched whole (the token travels in a header, so it is a blob, not
+  a streamed URL): a four-hour M4B is ~115 MB before the first second. There is no button to delete
+  finished audio or an uploaded book. A book is opened from an upload or by pasting its path — PDFs
+  already in `~/Documents/books/` are not listed. Corrections are edited per book but not yet taught
+  from chat. A render of a long book is hours (final-quest: ~4 h of audio), which is the machine,
+  not the tool.
 
 ## To reason through later
 
@@ -103,8 +117,9 @@ Decisions or input only the user can give. Don't guess these.
    job queue, and Google's verification for restricted Gmail scopes if used outside the
    ayadata.ai Workspace — a project. Recommended: (a).
 3. **The old folders** `~/Documents/{assistant,meet-ai,mail-ai,docu-ai}` still exist (~1.2 GB, all
-   content now in `suite/`). Delete only when the user says so. Committing in them would push to
-   the old repos — don't.
+   content now in `suite/`), and so does `~/Documents/audiobook` (3.4 GB, mostly its old `.venv` and
+   caches, which were copied here). Delete only when the user says so. Committing in them would push
+   to the old repos — don't.
 4. **`docu-ai/plan.md` has the user's own uncommitted edit.** Never stage it; commit it only if asked.
 5. **Start at login** as a background service, or keep running `./start` by hand. Undecided.
 
@@ -120,6 +135,8 @@ Decisions or input only the user can give. Don't guess these.
    by border inset — both are docu-ai changes, so confirm with the user first (they asked once
    that a minutes problem not be "fixed" in docu-ai when docu-ai wasn't the cause).
 5. meet-ai: speaker enrollment (its `plan.md`, M3b).
+6. audiobook: a way to delete finished audio and uploaded books; list `~/Documents/books/` as a library;
+   let chat teach corrections from what the user says it misread (the tool already has the operation).
 
 ## Picking this up in a new session
 

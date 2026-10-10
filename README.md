@@ -7,24 +7,25 @@ Where it stands and what comes next: [`plan.md`](plan.md). Rules for working on 
 
 | Folder | What it does |
 |---|---|
-| `web/` | The web app you open: chat and buttons, uploads of audio and markdown. A separate program that calls the backend's API. |
+| `web/` | The web app you open: chat and buttons, uploads of audio, markdown, PDFs. A separate program that calls the backend's API. |
 | `assistant/` | The backend. Starts the tools below, calls them for you, asks before anything that writes. |
 | `meet-ai/` | Records meetings, transcribes them on this machine, writes notes and minutes that cite the recording. |
 | `docu-ai/` | Turns markdown into a properly formatted Google Doc. |
 | `mail-ai/` | Reads, searches, drafts and sends Gmail. |
+| `audiobook/` | Turns a PDF into an audiobook, read in a voice cloned from a short recording. Runs entirely on this computer. |
 
 ## Architecture
 
-Five programs, not one. They share a folder, an install and a start command — nothing else.
+Six programs, not one. They share a folder, an install and a start command — nothing else.
 
 - **The web app and the backend are separate programs.** `web/` is a frontend: its own build, its
   own server, port 8751. `assistant/` is an API with no page of its own, port 8750. They only ever
   meet over HTTP, across origins — never an import, a shared build, or a page one hands the other.
   `./start` makes a fresh access token each launch and gives it to both; the web app's server writes
   it into the page as it serves it, so nothing is pasted by hand.
-- **The backend starts the three tools as its own child processes**, talking to each over MCP on
-  stdio — the same protocol a model uses to call them. `meet-ai`, `docu-ai` and `mail-ai` each also
-  work standalone, from their own folder, with nothing else running.
+- **The backend starts the four tools as its own child processes**, talking to each over MCP on
+  stdio — the same protocol a model uses to call them. `meet-ai`, `docu-ai`, `mail-ai` and
+  `audiobook` each also work standalone, from their own folder, with nothing else running.
 - **No tool imports another, and no tool imports the backend.** They meet only through the
   backend's tool calls. A crash or a multi-hour transcription in one tool cannot take down another,
   or the backend, or the web app.
@@ -43,7 +44,7 @@ tool's own architecture — its layers, its verified API facts, its gotchas — 
 ## First time
 
 ```bash
-./setup          # one Python environment, Node packages, the web app, speaker models
+./setup          # the Python environments, Node packages, the web app, speaker models
 ```
 
 Then the logins `./setup` lists: Google for docu-ai (`cd docu-ai && npm run auth`) and for
@@ -57,7 +58,7 @@ mail-ai (`mail-ai/mail auth`, plus `--compose` to draft and send), and AWS for t
 ./start          # then open http://127.0.0.1:8751/
 ```
 
-One command, two programs: the backend (API on port 8750, which launches the three tools as
+One command, two programs: the backend (API on port 8750, which launches the four tools as
 its own children) and the web app (port 8751). Stopping either stops both. A transcription or
 recording in progress is built to outlive a restart and is picked up again next time.
 
@@ -78,4 +79,10 @@ the app asks once for the token the backend prints.
 
 Every tool keeps its own command line, tests and rules (`CLAUDE.md`, `plan.md`), and works
 from its own folder with the assistant not running: `meet-ai/notes`, `mail-ai/mail`,
-`cd docu-ai && npm start`. See each folder's README.
+`cd docu-ai && npm start`, `cd audiobook && .venv/bin/python -m audiobook preview BOOK.pdf`. See each
+folder's README or `CLAUDE.md`.
+
+**Audiobooks** are a long job: reading a book takes minutes and rendering one takes hours. Both run in
+the background, survive restarting the backend, and show their progress under **Buttons → Audiobooks**.
+audiobook is the one tool with its own Python environment (`audiobook/.venv`, ~1.9 GB), and its Hugging
+Face token lives in `audiobook/.env`.

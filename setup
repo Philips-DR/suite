@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install everything the suite needs, once: one Python environment shared by the three
-# Python tools, docu-ai's Node packages, the web app's packages and build, and meet-ai's
-# speaker models.
+# light Python tools, audiobook's own (torch, Docling and Pocket TTS are ~1.9 GB nothing else
+# uses), docu-ai's Node packages, the web app's packages and build, and meet-ai's speaker models.
 # Safe to re-run; each step skips what is already done. Touches nothing outside this folder
 # except where npm and pip keep their caches.
 set -euo pipefail
@@ -23,6 +23,13 @@ step "Python environment (.venv), shared by assistant, meet-ai and mail-ai"
   -r meet-ai/requirements.txt -r meet-ai/requirements-dev.txt \
   -r mail-ai/requirements.txt -r mail-ai/requirements-dev.txt
 .venv/bin/pip check
+
+step "audiobook's own Python environment (audiobook/.venv)"
+[[ -x audiobook/.venv/bin/python ]] || python3 -m venv audiobook/.venv
+audiobook/.venv/bin/pip install -q --upgrade pip
+audiobook/.venv/bin/pip install -q -r audiobook/requirements.txt -r audiobook/requirements-dev.txt
+audiobook/.venv/bin/pip check
+[[ -f audiobook/.env ]] || echo "  audiobook/.env is missing: cloned voices need HF_TOKEN=<a Hugging Face token> in it (see audiobook/CLAUDE.md)."
 
 step "docu-ai (Node)"
 (cd docu-ai && npm ci --silent)

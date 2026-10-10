@@ -9,9 +9,9 @@ changing the tool.
 
 ## Commands
 
-    ./setup    # idempotent: shared .venv, npm ci for docu-ai and the web app, speaker models
+    ./setup    # idempotent: shared .venv, audiobook's own .venv, npm ci for docu-ai and the web app, speaker models
     ./start    # backend (API, :8750; launches every tool over MCP stdio) + web app (:8751)
-    ./test     # all five test suites. Must pass with no credentials, no model, no network
+    ./test     # all six test suites. Must pass with no credentials, no model, no network
 
 ## The web app and the backend are separate programs
 
@@ -33,16 +33,25 @@ module or a credential**, and keeping it that way is the point of the whole rebu
   auth; separate processes are what make that impossible rather than merely discouraged.
 - **A crash or a hang stays inside one tool.** docu-ai is TypeScript and could not share a Python
   process anyway; transcription pins every core for hours and must survive a server restart.
-- **Credentials stay with their tool** (`~/.config/docu-ai`, `~/.config/mail-ai`). The assistant
+- **Credentials stay with their tool** (`~/.config/docu-ai`, `~/.config/mail-ai`, and audiobook's
+  Hugging Face token in `audiobook/.env`, which is not the suite's `.env`). The assistant
   holds only its own model login, and reads a tool's health from how its calls went, never from
   its token files.
 - **Every tool still runs alone.** Its wrappers use the tool's own `.venv` if it has one, and
-  the suite's `../.venv` otherwise — so a tool checked out by itself works unchanged.
+  the suite's `../.venv` otherwise (audiobook has no such fallback: it needs its own) — so a tool
+  checked out by itself works unchanged.
 
 ## The shared Python environment
 
 assistant, meet-ai and mail-ai share `.venv`. `./setup` installs all three tools'
-`requirements.txt` into it and runs `pip check`. **A pin that conflicts across tools is a
+`requirements.txt` into it and runs `pip check`. **audiobook does not** (2026-10-10): it has its own
+`audiobook/.venv`, built from its own pinned `requirements.txt`, because torch, Docling and Pocket
+TTS are 1.9 GB that nothing else uses (the shared one is 696 MB) and torch must come from PyTorch's
+CPU index, not PyPI's CUDA build. It was the weight and the index, not a version conflict — they
+shared only fastapi, uvicorn, starlette, numpy, pydantic and huggingface_hub, at patch-level
+differences. `audiobook/mcp` prefers its own `.venv` and does not fall back to the suite's.
+
+**A pin that conflicts across tools is a
 decision, not a merge accident**: if two tools need different versions of one package, the
 answer is that tool getting its own `.venv` again (its wrappers already prefer one), never a
 loosened pin.
@@ -78,6 +87,12 @@ A tool's own paths stay in `assistant/tools.yaml`, the one file that knows every
   stream (`assistant/CLAUDE.md`).
 - **A live test that builds a Google Doc leaves a real Doc** in the user's Drive: trash it after,
   and delete test uploads from `assistant/uploads/`.
+- **A live audiobook test leaves a book's worth of audio** in `audiobook/output/<pdf name>/`, named
+  for the PDF — so upload a *copy* under a throwaway name (`zz-test-paper.pdf`), never the real
+  book's name, or a test render overwrites the user's finished chapters. Delete the output folder,
+  the upload, and the `.corrections.txt` a test leaves beside it. A render is a detached process:
+  restarting the backend does not stop it (and the restarted backend sees it), so `pkill` it
+  explicitly if a test render must end.
 - **The model login lapses overnight** (AWS SSO). Settings shows it; only the user can renew it
   (`aws sso login --profile ayadata-bedrock`, needs a browser).
 - **Done means run for real and looked at.** Unit tests passed on every change this suite has had;
@@ -87,4 +102,5 @@ A tool's own paths stay in `assistant/tools.yaml`, the one file that knows every
 ## History
 
 Each tool was its own repo until 2026-09-27; their histories were rewritten into these folders
-and merged, so `git log -- docu-ai/src/...` and `git blame` show the real commits.
+and merged, so `git log -- docu-ai/src/...` and `git blame` show the real commits. audiobook joined
+the same way on 2026-10-10 (four commits, `98c60e3`), with its own web app removed afterwards.
