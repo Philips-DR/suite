@@ -61,6 +61,25 @@ Measured when the suite was formed (2026-09-27): the three tools pinned only `an
 common, at the same version; installed transitive deps differed only by patch (`idna`,
 `protobuf`). 696 MB shared versus ~900 MB across three environments.
 
+## The interface (`web/`)
+
+Designed phone-first: sidebar, rail or bottom tab bar by width; light, dark or follow the system; charts
+drawn from the audit log and the tools' own status. **`web/DESIGN.md` is the rulebook** — tokens only (never
+a literal colour, size or duration), a fixed colour per tool, status colour only for status and always with
+an icon and a word, every chart with a table view, motion tokenised and off under reduced motion. Three
+habits that came out of building it:
+
+- **Look at it, at three sizes, in both themes, and run axe.** Screenshots at 390×844, 820×1180 and
+  1440×900; `document.documentElement.scrollWidth <= innerWidth` at 390; an axe-core pass over every page.
+  Axe found real contrast failures a screenshot never would (the muted text token missed 4.5:1 on grey chips).
+- **Test the logic that is easy to get quietly wrong.** `npm test` covers the audit-log arithmetic (local
+  days, month boundaries, medians) and the scales; it caught a chart axis that would have read 0 / 0.5 / 1
+  for a day with one action. Charts show only what the tools returned; a quiet week is a quiet chart.
+- **A dev server against the container backend needs its origin allowed**: compose lists only 8751 and the
+  Tailscale name, so add `http://127.0.0.1:5173` to `ASSISTANT_ORIGINS` in a throwaway override (see
+  `web/README.md`), and put it back (`./start-docker up`) when done. In a headless browser, a clipped
+  screenshot resizes the viewport and cancels a hover: capture with `captureBeyondViewport: false`.
+
 ## In containers (`start-docker`, `compose.yaml`, `docker/`)
 
 The suite also runs in Docker, which is how it is reached from a phone or another computer (Tailscale;

@@ -5,6 +5,7 @@
 #   ./start-docker down                          stop it (your data is in ./data and stays)
 #   ./start-docker logs [service]                follow the logs
 #   ./start-docker status                        what is running and healthy
+#   ./start-docker tailscale                     is the private address working? says what is wrong if not
 #   ./start-docker import                        copy this folder's existing state into ./data, once
 #   ./start-docker test                          run the Python and docu-ai test suites in the image
 #
@@ -65,6 +66,27 @@ case "$cmd" in
     fi
     ;;
   down)   dc down ;;
+  tailscale)
+    profiles=(--profile tailscale)
+    ts() { dc exec -T tailscale tailscale "$@"; }
+    ts status --json >/dev/null 2>&1 || { echo "The Tailscale container is not running. Start it:  ./start-docker up --tailscale" >&2; exit 1; }
+    ts status --json | python3 -c '
+import json, os, sys
+d = json.load(sys.stdin)
+me = d["Self"]; name = me["DNSName"].rstrip(".")
+want = os.environ.get("SUITE_HOST", "")
+print(f"This machine on your tailnet:  {name}   ({", ".join(me.get("TailscaleIPs", []))})")
+print("Your other devices:            " + (", ".join(p["HostName"] for p in d.get("Peer", {}).values()) or "none yet"))
+print(f"SUITE_HOST in .env:            {want or "(not set)"}" + ("" if want == name or not want else "   <-- does not match the name above"))
+print("HTTPS certificates:            " + ("on" if d.get("CertDomains") else "OFF -- the private address cannot work until this is on"))
+'
+    echo; echo "What is being served:"; ts serve status 2>&1 | sed 's/^/  /'
+    if ts serve status 2>&1 | grep -q "No serve config"; then
+      echo; echo "Nothing is being served, so https://<name>/ will not open. Almost always this means HTTPS"
+      echo "certificates are off for your tailnet: login.tailscale.com/admin/dns -> HTTPS Certificates -> Enable."
+      echo "Then restart the container so it tries again:  docker restart suite-tailscale-1   and run this again."
+    fi
+    ;;
   logs)   dc logs -f --tail 100 ${service:-} ;;
   status) dc ps ;;
   import)

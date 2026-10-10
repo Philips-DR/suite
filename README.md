@@ -95,13 +95,20 @@ this computer's microphone.
 your own devices: only devices signed in to your account can reach the suite, and to everyone else
 it does not exist.
 
-1. Install Tailscale on this computer and on each device, signed in to the same account. In the
-   Tailscale admin console, turn on **MagicDNS** and **HTTPS Certificates**.
+1. Make a free Tailscale account (tailscale.com) and install the app on each device you want to
+   reach the suite *from* — your phone, other computers — signed in to that account. This computer
+   does not need it: the suite's own Tailscale container joins your network as a machine called
+   `suite`. In the admin console (login.tailscale.com/admin → DNS), make sure **MagicDNS** is on and
+   enable **HTTPS Certificates**.
 2. `./start-docker up --tailscale`. The first time, `./start-docker logs tailscale` prints a
    sign-in link for the new `suite` machine (or put a `TS_AUTHKEY` in `.env` and nothing is asked).
 3. The admin console now lists `suite` with a name like `suite.tail1234.ts.net`. Put it in `.env` as
    `SUITE_HOST=suite.tail1234.ts.net` and run `./start-docker up --tailscale` again.
 4. On your phone, with Tailscale on: open `https://suite.tail1234.ts.net/`.
+
+If it does not open, run `./start-docker tailscale`: it shows the machine's name, whether HTTPS
+certificates are on, and what is being served, and says what to change. (The usual cause is step 1's
+**HTTPS Certificates** not being enabled; Tailscale then drops the HTTPS address without any error.)
 
 The tailnet is the first lock and the page's access token the second, and the token is handed to
 whatever can open the page: keep the tailnet to your own devices (or restrict it with Tailscale ACLs)
