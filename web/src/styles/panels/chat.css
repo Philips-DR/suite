@@ -1,0 +1,44 @@
+/* Chat. The transcript scrolls inside the page; the composer stays put. */
+
+.chat { position: relative; }
+.transcript { padding-top: 14px; }
+.msg { display: flex; align-items: flex-start; gap: 10px; align-self: flex-start; max-width: 100%; animation: rise var(--dur-3) var(--ease) both; }
+.avatar { flex: none; margin-top: 2px; border-radius: 8px; }
+.avatar.working svg { animation: spin 2.4s linear infinite; }
+.assistant-msg .bubble { position: relative; max-width: min(100%, 680px); padding-right: 40px; animation: none; }
+.bubble.user { max-width: min(86%, 560px); }
+
+.copy { position: absolute; top: 6px; right: 6px; width: 28px; min-height: 28px; padding: 0; color: var(--ink-3); opacity: 0; transition: opacity var(--dur-1); }
+.bubble:hover .copy, .copy:focus-visible { opacity: 1; }
+@media (hover: none) { .copy { opacity: 0.55; } }
+
+.tool-cluster { display: flex; flex-wrap: wrap; gap: 6px; align-self: flex-start; padding-left: 36px; max-width: 100%; }
+.tool-cluster .tool-line { animation-duration: var(--dur-2); }
+.chat-error { align-self: flex-start; margin-left: 36px; padding: 10px 14px; color: var(--bad); background: var(--bad-soft); border-radius: 14px; font-size: var(--fs-sm); }
+.chat-end { height: 1px; flex: none; }
+
+.chat-empty h2 { margin-top: 4px; }
+.chat-empty .suggestions button { min-height: 42px; padding: 0 14px 0 12px; }
+
+.to-latest {
+  position: absolute;
+  left: 50%;
+  bottom: 142px;
+  z-index: 4;
+  transform: translateX(-50%);
+  border-radius: var(--r-pill);
+  box-shadow: var(--shadow-2);
+  animation: pop-in var(--dur-2) var(--ease);
+}
+
+.composer .attach { color: var(--ink-3); }
+.composer .attach:hover:not(:disabled) { color: var(--brand); background: var(--brand-soft); }
+.composer-hint { margin: -6px 6px 14px; text-align: center; }
+@media (max-width: 639px) { .composer-hint { display: none; } }
+
+/* On a phone, typing gives the tab bar's space to the conversation. */
+@media (max-width: 639px) {
+  .shell:has(.composer:focus-within) .tabbar { display: none; }
+  .shell:has(.composer:focus-within) .page.page-chat { height: calc(100dvh - var(--bar-h) - env(safe-area-inset-top, 0px)); padding-bottom: env(safe-area-inset-bottom, 0px); }
+  .to-latest { bottom: 96px; }
+}

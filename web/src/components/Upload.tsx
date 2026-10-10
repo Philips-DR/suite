@@ -3,8 +3,11 @@
 
 import { useRef } from 'react'
 
-export function PickFiles({ label, accept, multiple, folder, disabled, onPick, className }: {
+export function PickFiles({ label, ariaLabel, icon, accept, multiple, folder, disabled, onPick, className }: {
   label: string
+  /** For a button that shows only an icon: what it is called to a screen reader. */
+  ariaLabel?: string
+  icon?: React.ReactNode
   accept?: string
   multiple?: boolean
   folder?: boolean
@@ -29,7 +32,8 @@ export function PickFiles({ label, accept, multiple, folder, disabled, onPick, c
           if (files.length) onPick(files)
         }}
       />
-      <button type="button" className={className} disabled={disabled} onClick={() => input.current?.click()}>
+      <button type="button" className={className} disabled={disabled} aria-label={ariaLabel} onClick={() => input.current?.click()}>
+        {icon}
         {label}
       </button>
     </>

@@ -1,8 +1,13 @@
 # web
 
-The assistant's web app: chat and buttons over one shared state. A separate program from the
-backend (`../assistant`) — its own folder, its own server, its own port — that calls the
-backend's API across origins.
+The assistant's web app: an Overview dashboard, Chat, and a page for each tool, over one shared state
+(something started in chat shows on the tool's page, and the other way round). A separate program from
+the backend (`../assistant`) — its own folder, its own server, its own port — that calls the backend's
+API across origins.
+
+It is designed for a phone first: a sidebar on a desktop, an icon rail on a tablet, a bottom tab bar on a
+phone, light and dark themes, charts drawn from your own activity, and Ctrl+K to jump anywhere. **How it
+is built, and the rules a change must follow, are in [`DESIGN.md`](DESIGN.md).**
 
 ```bash
 ./serve          # build if needed, serve on http://127.0.0.1:8751
@@ -10,6 +15,19 @@ npm run dev      # live reload on http://127.0.0.1:5173
 ```
 
 The backend must be running for the app to do anything (`../start` runs both).
+
+```bash
+npm test         # the tested logic (the Overview's date and count arithmetic), with vitest
+npx tsc --noEmit # strict types
+```
+
+**Working on the look.** `npm run dev` serves on 5173 with live reload. It needs the backend's token
+(`ASSISTANT_TOKEN`, the same value the backend was started with) and calls the backend at
+`VITE_API_URL`; the backend must allow its origin: the host install already does (5173 is in the
+default origins), but the container setup lists only 8751 and its Tailscale name, so add
+`http://127.0.0.1:5173` to `ASSISTANT_ORIGINS` in a throwaway compose override while you work. Then look
+at it: a phone (390×844), a tablet (820×1180) and a desktop (1440×900), in both themes, and check there is
+no horizontal scroll at 390.
 
 **Uploads:** audio from **Meetings → Upload audio**, markdown files or a whole folder from
 **Documents**, a PDF from **Audiobooks → Upload a PDF** (and a voice recording from **Add a voice**),

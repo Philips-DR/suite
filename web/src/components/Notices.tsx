@@ -3,6 +3,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useAppState } from '../state'
+import { IconAlert, IconClose, IconFail, IconOk } from '../ui/icons'
 
 const SHOW_FOR_MS = 20_000
 
@@ -38,12 +39,15 @@ export function Notices() {
     <div className="notices" aria-live="polite">
       {visible.map((e) => (
         <div key={e.seq} className={`notice ${e.level ?? 'success'}`}>
-          <div>
+          <span className="notice-icon" aria-hidden>
+            {e.level === 'error' ? <IconFail size={17} /> : e.level === 'warning' ? <IconAlert size={17} /> : <IconOk size={17} />}
+          </span>
+          <div className="notice-body">
             <strong>{e.title}</strong>
             <p>{e.body}</p>
           </div>
-          <button className="notice-close" aria-label="Dismiss" onClick={() => setDismissed(new Set([...dismissed, e.seq]))}>
-            ×
+          <button className="notice-close ghost" aria-label="Dismiss" onClick={() => setDismissed(new Set([...dismissed, e.seq]))}>
+            <IconClose size={16} aria-hidden />
           </button>
         </div>
       ))}

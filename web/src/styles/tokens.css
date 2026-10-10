@@ -1,0 +1,211 @@
+/*
+ * Design tokens. Every colour, size and duration in the app comes from here.
+ *
+ * Layout concept: a calm instrument panel. Cool slate neutrals with a hint of teal, one brand
+ * accent, and the chart palette (validated with the dataviz validator, see charts/palette.ts) used
+ * only for data and for tool identity. Boldness is kept to the accent and the data.
+ *
+ * Both themes are tokens: bare :root is light; dark is redefined in the media block (guarded so an
+ * explicit light choice wins) and again under [data-theme="dark"] (so the toggle wins both ways).
+ * Components read tokens and never name a theme.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* surfaces */
+  --bg: #f3f5f9;
+  --bg-2: #e9edf3;               /* recessed: inputs, wells, tracks */
+  --surface: #ffffff;            /* cards */
+  --surface-2: #f7f9fc;          /* a step up from a card: hover wash, table stripes */
+  --surface-glass: rgba(255, 255, 255, 0.95);
+  --overlay: rgba(15, 23, 42, 0.45);
+  --line: rgba(15, 23, 42, 0.1);
+  --line-strong: rgba(15, 23, 42, 0.2);
+
+  /* ink */
+  --ink: #0f172a;
+  --ink-2: #475569;
+  --ink-3: #586880;               /* 4.8:1 or better on every light surface, the grey chips included */
+
+  /* brand */
+  --brand: #0f766e;
+  --brand-ink: #ffffff;
+  --brand-soft: rgba(15, 118, 110, 0.1);
+  --brand-line: rgba(15, 118, 110, 0.35);
+  --glow: rgba(15, 118, 110, 0.1);
+
+  /* status: fixed meaning, always paired with an icon and a word */
+  --ok: #006300;
+  --ok-fill: #0ca30c;
+  --ok-soft: rgba(12, 163, 12, 0.12);
+  --warn: #8a5a00;
+  --warn-fill: #fab219;
+  --warn-soft: rgba(250, 178, 25, 0.2);
+  --serious-fill: #ec835a;
+  --bad: #b42318;
+  --bad-fill: #d03b3b;
+  --bad-soft: rgba(208, 59, 59, 0.1);
+
+  /* chart series, in their fixed order (charts/palette.ts) */
+  --s1: #2a78d6;
+  --s2: #eb6834;
+  --s3: #1baf7a;
+  --s4: #eda100;
+  --s5: #e87ba4;
+  --s6: #008300;
+  --s7: #6250d6;
+  --s8: #e34948;
+  --s-other: #98a2b3;
+  /* an ordinal pair on the blue ramp (a strong step and a soft one): "this" and "the other" */
+  --seq-strong: #2a78d6;
+  --seq-soft: #86b6ef;
+  /* chart furniture */
+  --grid: rgba(15, 23, 42, 0.08);
+  --axis: rgba(15, 23, 42, 0.2);
+
+  /* elevation */
+  --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.05), 0 8px 24px -14px rgba(15, 23, 42, 0.18);
+  --shadow-2: 0 2px 6px rgba(15, 23, 42, 0.08), 0 18px 40px -16px rgba(15, 23, 42, 0.3);
+  --highlight: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+
+  /* type */
+  --font-ui: 'Instrument Sans Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Bricolage Grotesque Variable', 'Instrument Sans Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --fs-xs: 0.75rem;
+  --fs-sm: 0.8125rem;
+  --fs-md: 0.9375rem;
+  --fs-lg: 1.0625rem;
+  --fs-xl: 1.375rem;
+  --fs-2xl: 1.875rem;
+  --fs-hero: clamp(2.75rem, 6vw, 3.75rem);
+
+  /* shape and space */
+  --r-card: 16px;
+  --r-control: 10px;
+  --r-pill: 999px;
+  --gutter: 16px;
+  --nav-w: 248px;
+  --rail-w: 72px;
+  --bar-h: 60px;
+  --tab-h: 64px;
+
+  /* motion */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-1: 120ms;
+  --dur-2: 220ms;
+  --dur-3: 420ms;
+  --dur-chart: 650ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #0b0f15;
+    --bg-2: #10161f;
+    --surface: #141a23;
+    --surface-2: #19212c;
+    --surface-glass: rgba(20, 26, 35, 0.94);
+    --overlay: rgba(2, 6, 12, 0.66);
+    --line: rgba(255, 255, 255, 0.09);
+    --line-strong: rgba(255, 255, 255, 0.18);
+    --ink: #e6ebf2;
+    --ink-2: #a7b1c2;
+    --ink-3: #8b96a8;
+    --brand: #3dd6c6;
+    --brand-ink: #06201d;
+    --brand-soft: rgba(61, 214, 198, 0.12);
+    --brand-line: rgba(61, 214, 198, 0.4);
+    --glow: rgba(61, 214, 198, 0.1);
+    --ok: #34d36a;
+    --warn: #f3c150;
+    --bad: #ff8a80;
+    --ok-soft: rgba(12, 163, 12, 0.2);
+    --warn-soft: rgba(250, 178, 25, 0.16);
+    --bad-soft: rgba(208, 59, 59, 0.2);
+    --s1: #3987e5;
+    --s2: #d95926;
+    --s3: #199e70;
+    --s4: #c98500;
+    --s5: #d55181;
+    --s6: #008300;
+    --s7: #9085e9;
+    --s8: #e66767;
+    --s-other: #6b7686;
+    --seq-strong: #3987e5;
+    --seq-soft: #1c5cab;
+    --grid: rgba(255, 255, 255, 0.07);
+    --axis: rgba(255, 255, 255, 0.16);
+    --shadow-1: 0 0 0 1px rgba(255, 255, 255, 0.02);
+    --shadow-2: 0 18px 44px -12px rgba(0, 0, 0, 0.7);
+    --highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0b0f15;
+  --bg-2: #10161f;
+  --surface: #141a23;
+  --surface-2: #19212c;
+  --surface-glass: rgba(20, 26, 35, 0.94);
+  --overlay: rgba(2, 6, 12, 0.66);
+  --line: rgba(255, 255, 255, 0.09);
+  --line-strong: rgba(255, 255, 255, 0.18);
+  --ink: #e6ebf2;
+  --ink-2: #a7b1c2;
+  --ink-3: #8b96a8;
+  --brand: #3dd6c6;
+  --brand-ink: #06201d;
+  --brand-soft: rgba(61, 214, 198, 0.12);
+  --brand-line: rgba(61, 214, 198, 0.4);
+  --glow: rgba(61, 214, 198, 0.1);
+  --ok: #34d36a;
+  --warn: #f3c150;
+  --bad: #ff8a80;
+  --ok-soft: rgba(12, 163, 12, 0.2);
+  --warn-soft: rgba(250, 178, 25, 0.16);
+  --bad-soft: rgba(208, 59, 59, 0.2);
+  --s1: #3987e5;
+  --s2: #d95926;
+  --s3: #199e70;
+  --s4: #c98500;
+  --s5: #d55181;
+  --s6: #008300;
+  --s7: #9085e9;
+  --s8: #e66767;
+  --s-other: #6b7686;
+  --seq-strong: #3987e5;
+  --seq-soft: #1c5cab;
+  --grid: rgba(255, 255, 255, 0.07);
+  --axis: rgba(255, 255, 255, 0.16);
+  --shadow-1: 0 0 0 1px rgba(255, 255, 255, 0.02);
+  --shadow-2: 0 18px 44px -12px rgba(0, 0, 0, 0.7);
+  --highlight: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+@media (min-width: 640px) {
+  :root { --gutter: 24px; }
+}
+@media (min-width: 1024px) {
+  :root { --gutter: 32px; }
+}
+
+/* Nothing moves for people who asked it not to. Transitions that carry meaning (a value changing)
+ * stay instant rather than animated; nothing here is the only way to see a state. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-1: 0ms;
+    --dur-2: 0ms;
+    --dur-3: 0ms;
+    --dur-chart: 0ms;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+}

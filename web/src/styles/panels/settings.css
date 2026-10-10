@@ -1,0 +1,174 @@
+/* Settings: a verdict banner, then cards for the model, the network and the tools. A state is always
+ * an icon and a word; colour only backs it up. Tokens throughout; literals are layout geometry. */
+
+.set { min-width: 0; }
+.set-spin { animation: spin 0.9s linear infinite; }
+
+/* ---- the verdict ---------------------------------------------------------------------------------- */
+
+.set-verdict {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 20px var(--card-pad);
+}
+.set-verdict-mark {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 16px;
+  color: var(--ink-3);
+  background: var(--bg-2);
+  transition: background-color var(--dur-3) var(--ease), color var(--dur-3) var(--ease);
+}
+.set-verdict.is-ok .set-verdict-mark { color: var(--ok); background: var(--ok-soft); }
+.set-verdict.is-bad .set-verdict-mark { color: var(--bad); background: var(--bad-soft); }
+.set-verdict.is-busy .set-verdict-mark { color: var(--brand); background: var(--brand-soft); }
+.set-verdict.is-bad { border-color: color-mix(in srgb, var(--bad-fill) 45%, var(--line)); }
+.set-verdict-text { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.set-verdict-text h2 { font-family: var(--font-display); font-size: var(--fs-xl); letter-spacing: -0.02em; }
+.set-issues { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.set-verdict-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.set-checked { text-align: right; }
+
+/* ---- the model and the network, side by side when there is room -------------------------------------- */
+
+.set-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: stretch; }
+.set-grid > div { min-width: 0; display: flex; }
+.set-grid > div > .card { flex: 1; min-width: 0; }
+@media (min-width: 900px) {
+  .set-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+.set-facts { margin: 0; display: flex; flex-direction: column; }
+.set-facts > div { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; padding: 9px 0; border-top: 1px solid var(--line); }
+.set-facts > div:first-child { border-top: 0; padding-top: 0; }
+.set-facts dt { color: var(--ink-3); font-size: var(--fs-sm); font-weight: 600; }
+.set-facts dd { margin: 0; min-width: 0; font-size: var(--fs-sm); text-align: right; overflow-wrap: anywhere; }
+.set-facts dd.mono { font-size: var(--fs-xs); }
+
+.set-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  color: var(--ink);
+  background: var(--bg-2);
+  border-radius: 12px;
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+.set-note > svg { flex: none; margin-top: 2px; color: var(--ink-3); }
+.set-note.ok { background: var(--ok-soft); }
+.set-note.ok > svg { color: var(--ok); }
+.set-note.bad { background: var(--bad-soft); }
+.set-note.bad > svg { color: var(--bad); }
+.set-note p + p { margin-top: 6px; }
+.set-hintline { overflow-wrap: anywhere; }
+.set-hintline code { background: var(--surface); }
+.set-note .set-copy { margin-top: 8px; }
+
+/* ---- latency: IPv4 and IPv6 as an ordinal pair on one scale -------------------------------------------- */
+
+.set-legend { list-style: none; margin: 0 0 4px; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: var(--fs-sm); color: var(--ink-2); }
+.set-legend li { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.set-legend li.muted { margin-left: auto; font-weight: 450; font-size: var(--fs-xs); }
+.set-services { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.set-service { display: flex; flex-direction: column; gap: 2px; padding: 14px 0; border-top: 1px solid var(--line); }
+.set-service:first-child { border-top: 0; }
+.set-service-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 6px; }
+.set-service-name { display: flex; flex-direction: column; min-width: 0; }
+.set-service-name .mono { overflow-wrap: anywhere; }
+.set-service-state { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.set-pair { display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; gap: 10px; min-height: 28px; }
+.set-pair-label { color: var(--ink-3); font-size: var(--fs-xs); font-weight: 650; letter-spacing: 0.04em; }
+.set-noanswer { color: var(--ink-3); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+
+/* ---- the tools -------------------------------------------------------------------------------------- */
+
+.set-toollist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.set-tool {
+  display: grid;
+  grid-template-columns: 34px minmax(150px, 0.8fr) minmax(0, 1fr) minmax(0, 1.6fr) 150px;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+}
+.set-tool:first-child { border-top: 0; padding-top: 4px; }
+.set-tool:last-child { padding-bottom: 4px; }
+.set-tool .navtile { width: 34px; height: 34px; color: var(--ink); }
+.set-tool-name { display: flex; flex-direction: column; min-width: 0; }
+.set-tool-name b { font-size: var(--fs-lg); font-weight: 650; }
+.set-tool-name .small { overflow-wrap: anywhere; }
+.set-tool-badges { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.set-tool-last { min-width: 0; font-size: var(--fs-sm); }
+.set-eyebrow { display: block; margin-bottom: 3px; color: var(--ink-3); font-size: var(--fs-xs); font-weight: 650; letter-spacing: 0.07em; text-transform: uppercase; }
+.set-last-line { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.set-last-line .mono { font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.set-last-error { margin-top: 4px; overflow-wrap: anywhere; }
+.set-tool-spark { display: flex; flex-direction: column; align-items: flex-end; gap: 0; }
+.set-tool-spark:empty { display: none; }
+
+@media (max-width: 1023px) {
+  .set-tool {
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    grid-template-areas: 'tile name badges' '. last spark';
+    align-items: start;
+  }
+  .set-tool .navtile { grid-area: tile; }
+  .set-tool-name { grid-area: name; }
+  .set-tool-badges { grid-area: badges; justify-content: flex-end; }
+  .set-tool-last { grid-area: last; }
+  .set-tool-spark { grid-area: spark; align-items: flex-end; }
+}
+
+/* the network table: a latency never wraps, an explanation may */
+.set-network td:nth-child(2) { white-space: nowrap; }
+
+/* ---- signing back in: a quiet callout ------------------------------------------------------------------- */
+
+.set-auth {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 14px 18px;
+  background: var(--surface-2);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-card);
+}
+.set-auth > svg { flex: none; color: var(--ink-3); }
+.set-auth p { flex: 1 1 260px; min-width: 0; }
+.set-copy { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.set-copy:has(.muted:empty) { gap: 0; }
+
+/* ---- loading -------------------------------------------------------------------------------------------- */
+
+.set-skel-banner { height: 92px; }
+.set-skel-card { height: 250px; }
+.set-skel-tools { height: 320px; }
+
+/* ---- phone ------------------------------------------------------------------------------------------------ */
+
+@media (max-width: 639px) {
+  .set-verdict { grid-template-columns: auto minmax(0, 1fr); gap: 14px; padding: 16px; }
+  .set-verdict-mark { width: 44px; height: 44px; border-radius: 14px; }
+  .set-verdict-text h2 { font-size: var(--fs-lg); }
+  .set-verdict-side { grid-column: 1 / -1; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+  .set-verdict-side button { flex: 1 1 140px; min-height: 44px; }
+  .set-checked { text-align: left; flex: 1 1 160px; }
+
+  .set-tool {
+    grid-template-columns: 34px minmax(0, 1fr);
+    grid-template-areas: 'tile name' 'tile badges' 'last last' 'spark spark';
+    gap: 6px 12px;
+  }
+  .set-tool-badges { justify-content: flex-start; }
+  .set-tool-spark { flex-direction: row; align-items: center; gap: 10px; }
+  .set-copy button { min-height: 40px; }
+  .set-legend li.muted { margin-left: 0; width: 100%; }
+}

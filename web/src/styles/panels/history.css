@@ -1,0 +1,165 @@
+/* History: filters on top of everything they scope, figures, two charts, then the record itself.
+ * Colours, radii, type and durations are tokens; the only literals are layout geometry. */
+
+.hist { min-width: 0; }
+
+/* ---- the filter card ---------------------------------------------------------------------------- */
+
+.hist-filters { display: flex; flex-direction: column; gap: 14px; }
+.hist-filter-top { display: flex; align-items: center; gap: 10px; }
+
+.hist-search { position: relative; flex: 1 1 auto; min-width: 0; display: block; }
+.hist-search svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--ink-3); pointer-events: none; }
+.hist-search input { width: 100%; padding-left: 38px; }
+.hist-search input::-webkit-search-cancel-button { cursor: pointer; }
+
+.hist-toggle { display: none; flex: none; }
+.hist-toggle .chip { min-height: 20px; padding: 0 7px; }
+.hist-toggle-icon { transition: transform var(--dur-2) var(--ease); transform: rotate(90deg); }
+.hist-toggle[aria-expanded='true'] .hist-toggle-icon { transform: rotate(-90deg); }
+
+.hist-filter-body { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 28px; }
+.hist-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.hist-group h3 { margin: 0; }
+.hist-group-tools { flex: 1 1 100%; }
+.hist-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.hist-chip {
+  min-height: 34px;
+  padding: 0 12px 0 10px;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+}
+.hist-chip b { color: var(--ink-3); font-weight: 650; font-variant-numeric: tabular-nums; }
+.hist-chip:hover:not(:disabled) { background: var(--bg-2); border-color: var(--line-strong); }
+.hist-chip[aria-pressed='true'] { color: var(--ink); background: var(--brand-soft); border-color: var(--brand-line); }
+.hist-chip[aria-pressed='true'] b { color: var(--ink-2); }
+
+/* the line that says what the filters add up to, and what a chart has narrowed */
+.hist-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  min-height: 32px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+}
+.hist-status b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.hist-status .ghost { margin-left: auto; }
+.hist-scope { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.hist-pill {
+  min-height: 28px;
+  padding: 0 8px 0 12px;
+  gap: 6px;
+  color: var(--ink);
+  background: var(--brand-soft);
+  border: 1px solid var(--brand-line);
+  border-radius: var(--r-pill);
+  font-weight: 600;
+}
+.hist-pill:hover:not(:disabled) { background: var(--brand-soft); border-color: var(--brand); }
+
+/* ---- figures and charts ---------------------------------------------------------------------------- */
+
+.hist-kpis { margin-bottom: 0; }
+.hist-charts { align-items: start; }
+.hist-charts > .card { min-width: 0; }
+.hist-skel-tile { min-height: 132px; }
+.hist-skel-row { height: 46px; margin-bottom: 10px; }
+.hist-skeleton { display: flex; flex-direction: column; gap: 16px; }
+
+/* ---- the record ------------------------------------------------------------------------------------- */
+
+.hist-record .card-head { margin-bottom: 8px; }
+.hist-live { white-space: nowrap; }
+
+.hist-table table { border-collapse: separate; border-spacing: 0; }
+.hist-table td { vertical-align: top; }
+.hist-when { color: var(--ink-2); white-space: nowrap; font-family: var(--font-mono); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; padding-top: 12px; }
+.hist-by { color: var(--ink-2); white-space: nowrap; }
+.hist-took { white-space: nowrap; color: var(--ink-2); }
+.hist-what { min-width: 0; }
+.hist-tool { display: inline-flex; align-items: baseline; gap: 9px; min-width: 0; }
+.hist-tool .mono { font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.hist-dot { flex: none; width: 9px; height: 9px; border-radius: 3px; transform: translateY(0.05em); }
+.hist-err {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  margin: 3px 0 0 18px;
+  max-width: 56ch;
+  color: var(--ink-3);
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.hist-more { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+
+@media (min-width: 640px) {
+  /* the header stays put while a long page of rows scrolls under it */
+  .hist-table.table-wrap { max-height: min(640px, 72dvh); overflow: auto; }
+  .hist-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--surface);
+    box-shadow: 0 1px 0 var(--line-strong);
+    border-bottom: 0;
+  }
+  .hist-table tbody tr:last-child td { border-bottom: 0; }
+  .hist-table td { padding-block: 11px; }
+  .hist-table td.hist-when { padding-top: 13px; }
+}
+
+/* ---- phone ---------------------------------------------------------------------------------------- */
+
+@media (max-width: 639px) {
+  .hist-toggle { display: inline-flex; }
+  .hist-filter-body { display: none; }
+  .hist-filter-body.is-open { display: flex; flex-direction: column; align-items: stretch; gap: 16px; }
+  .hist-filter-body .seg { display: flex; }
+  .hist-filter-body .seg button { flex: 1 1 0; min-height: 40px; padding: 0 8px; }
+  .hist-chip { min-height: 40px; }
+  .hist-pill { min-height: 36px; }
+  .hist-status .ghost { margin-left: 0; }
+
+  .hist-kpis .stat { min-height: 0; padding: 14px; }
+  .hist-kpis .stat-value { font-size: 1.75rem; }
+  .hist-kpis .stat.hero .stat-value { font-size: 2.5rem; }
+  .hist-skel-tile { min-height: 96px; }
+
+  /* a row becomes a small card: what and how it ended on top, when / by / how long beneath */
+  .hist-table tbody { display: block; }
+  .hist-table tbody tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    column-gap: 12px;
+    row-gap: 4px;
+    align-items: center;
+    padding: 12px 0;
+  }
+  .hist-table td { padding: 0; text-align: left; justify-content: flex-start; }
+  .hist-table td::before { display: none; }
+  .hist-table td.hist-what { grid-column: 1 / 3; grid-row: 1; flex-direction: column; align-items: flex-start; gap: 2px; }
+  .hist-table td[data-label='Result'] { grid-column: 3; grid-row: 1; justify-self: end; }
+  .hist-table td.hist-when { grid-column: 1; grid-row: 2; padding: 0; }
+  .hist-table td.hist-by { grid-column: 2; grid-row: 2; font-size: var(--fs-xs); }
+  .hist-table td.hist-by::before { display: inline; content: 'by '; color: var(--ink-3); font-size: inherit; font-weight: 500; text-transform: none; letter-spacing: 0; padding: 0; margin-right: 3px; }
+  .hist-table td.hist-took { grid-column: 3; grid-row: 2; justify-self: end; font-size: var(--fs-xs); }
+  .hist-table td.hist-took::before { display: inline; content: 'took '; color: var(--ink-3); font-size: inherit; font-weight: 500; text-transform: none; letter-spacing: 0; padding: 0; margin-right: 3px; }
+  .hist-err { margin-left: 18px; max-width: none; }
+  .hist-more button { flex: 1 1 auto; min-height: 44px; }
+}
+
+/* tablet: four tiles read best as two by two */
+@media (min-width: 640px) and (max-width: 1023px) {
+  .hist-kpis.kpis .stat.hero, .hist-kpis.kpis .stat:last-child:nth-child(even) { grid-column: auto; }
+}

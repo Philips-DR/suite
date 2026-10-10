@@ -2,32 +2,34 @@
 // forget tools the model uses, so they are audited -- and the model sees the change on its
 // very next turn.
 
-import { useState } from 'react'
-import { runAction } from '../api'
+import { useMemo, useState, type ComponentType } from 'react'
+import { call } from '../call'
+import { CardHead } from '../ui/CardHead'
+import { Empty } from '../ui/Empty'
+import { IconFact, IconMemory, IconPerson, IconPlus, IconPreference, IconProject, IconSearch, IconSpelling } from '../ui/icons'
+import { ago } from '../ui/time'
 import { usePoll } from '../usePoll'
+import '../styles/panels/memory.css'
 
 interface Fact { id: string; kind: string; subject: string; content: string; created: string }
 
-const KINDS: { kind: string; label: string; hint: string }[] = [
-  { kind: 'person', label: 'People', hint: 'Who someone is.' },
-  { kind: 'project', label: 'Projects', hint: 'What you are working on.' },
-  { kind: 'preference', label: 'Preferences', hint: 'How you like things done.' },
-  { kind: 'spelling', label: 'Spellings', hint: 'Correct spelling, then the misheard forms, comma-separated. Used to fix transcripts.' },
-  { kind: 'fact', label: 'Other', hint: 'Anything else worth knowing.' },
+type Icon = ComponentType<{ size?: number; strokeWidth?: number; 'aria-hidden'?: boolean }>
+const KINDS: { kind: string; label: string; hint: string; icon: Icon }[] = [
+  { kind: 'person', label: 'People', hint: 'Who someone is.', icon: IconPerson },
+  { kind: 'project', label: 'Projects', hint: 'What you are working on.', icon: IconProject },
+  { kind: 'preference', label: 'Preferences', hint: 'How you like things done.', icon: IconPreference },
+  { kind: 'spelling', label: 'Spellings', hint: 'Correct spelling, then the misheard forms, comma-separated. Used to fix transcripts.', icon: IconSpelling },
+  { kind: 'fact', label: 'Other', hint: 'Anything else worth knowing.', icon: IconFact },
 ]
-
-async function call<T>(tool: string, args: Record<string, unknown> = {}): Promise<T> {
-  const result = await runAction<T & { error?: string }>(tool, args)
-  const output = result.output
-  if (output && typeof output === 'object' && 'error' in output && output.error) throw new Error(String(output.error))
-  return output as T
-}
+const kindInfo = (kind: string) => KINDS.find((k) => k.kind === kind) ?? KINDS[KINDS.length - 1]!
 
 export function Memory() {
   const facts = usePoll(() => call<{ facts: Fact[] }>('assistant__recall'), 20000)
   const [kind, setKind] = useState('person')
   const [subject, setSubject] = useState('')
   const [content, setContent] = useState('')
+  const [filter, setFilter] = useState<string>('all')
+  const [query, setQuery] = useState('')
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
 
@@ -55,56 +57,89 @@ export function Memory() {
   })
 
   const all = facts.data?.facts ?? []
-  const hint = KINDS.find((k) => k.kind === kind)?.hint
+  const counts = useMemo(() => Object.fromEntries(KINDS.map((k) => [k.kind, all.filter((f) => f.kind === k.kind).length])), [all])
+  const needle = query.trim().toLowerCase()
+  const shown = all.filter((f) => (filter === 'all' || f.kind === filter) && (!needle || `${f.subject} ${f.content}`.toLowerCase().includes(needle)))
+  const hint = kindInfo(kind).hint
+  const loaded = facts.data !== null
 
   return (
     <div className="panel">
       <div className="card">
-        <h2>Remember something</h2>
+        <CardHead icon={IconMemory} tool="assistant" title="Remember something" sub="The assistant reads this at the start of every turn." />
         <form className="stack" onSubmit={(e) => { e.preventDefault(); void add() }}>
-          <div className="row">
-            <select value={kind} onChange={(e) => setKind(e.target.value)} aria-label="Kind">
-              {KINDS.map((k) => <option key={k.kind} value={k.kind}>{k.label}</option>)}
-            </select>
-            <input value={subject} onChange={(e) => setSubject(e.target.value)}
-              placeholder={kind === 'spelling' ? 'Correct spelling — e.g. AyaData' : 'About — e.g. Kwame'} aria-label="Subject" />
+          <div className="seg kindpick wrap" role="radiogroup" aria-label="Kind">
+            {KINDS.map((k) => {
+              const Icon = k.icon
+              return (
+                <button type="button" key={k.kind} role="radio" aria-checked={kind === k.kind} onClick={() => setKind(k.kind)}>
+                  <Icon size={15} aria-hidden />{k.label}
+                </button>
+              )
+            })}
           </div>
           <div className="row">
+            <input value={subject} onChange={(e) => setSubject(e.target.value)}
+              placeholder={kind === 'spelling' ? 'Correct spelling — e.g. AyaData' : 'About — e.g. Kwame'} aria-label="Subject" />
             <input value={content} onChange={(e) => setContent(e.target.value)}
               placeholder={kind === 'spelling' ? 'Misheard as — e.g. aya data, ayadata' : 'What to remember'} aria-label="Content" />
-            <button className="primary" type="submit" disabled={!subject.trim() || !content.trim() || busy === 'add'}>Remember</button>
+            <button className="primary" type="submit" disabled={!subject.trim() || !content.trim() || busy === 'add'}>
+              <IconPlus size={16} aria-hidden />{busy === 'add' ? 'Saving…' : 'Remember'}
+            </button>
           </div>
           {hint && <p className="hint">{hint} Saving the same kind and subject again replaces the old note.</p>}
         </form>
         {(error || facts.error) && <p className="error">{error || facts.error}</p>}
       </div>
 
-      {KINDS.map(({ kind: k, label }) => {
-        const group = all.filter((f) => f.kind === k)
-        if (group.length === 0) return null
-        return (
-          <div className="card" key={k}>
-            <h2>{label}</h2>
-            <ul className="list facts">
-              {group.map((f) => (
-                <li key={f.id}>
-                  <div className="fact">
-                    <div>
-                      <strong>{f.subject}</strong>
-                      <p className="muted">{f.content}</p>
-                    </div>
-                    <button disabled={busy === f.id} onClick={() => void forget(f.id)}>Forget</button>
-                  </div>
-                </li>
-              ))}
-            </ul>
+      {loaded && all.length > 0 && (
+        <div className="memory-filters">
+          <div className="seg kindpick" role="radiogroup" aria-label="Show">
+            <button role="radio" aria-checked={filter === 'all'} onClick={() => setFilter('all')}>All <b>{all.length}</b></button>
+            {KINDS.filter((k) => counts[k.kind]).map((k) => (
+              <button key={k.kind} role="radio" aria-checked={filter === k.kind} onClick={() => setFilter(k.kind)}>{k.label} <b>{counts[k.kind]}</b></button>
+            ))}
           </div>
-        )
-      })}
-
-      {facts.data && all.length === 0 && (
-        <div className="card"><p className="muted">Nothing remembered yet.</p></div>
+          <label className="searchbox">
+            <IconSearch size={16} aria-hidden />
+            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search what is remembered" aria-label="Search memory" />
+          </label>
+        </div>
       )}
+
+      {!loaded && <div className="skeleton" style={{ height: 120 }} aria-hidden />}
+
+      {loaded && all.length === 0 && (
+        <div className="card"><Empty icon={IconMemory} title="Nothing remembered yet">Add who someone is, what you are working on, or how a name is spelled. The assistant will use it from the next message on.</Empty></div>
+      )}
+
+      {loaded && all.length > 0 && shown.length === 0 && (
+        <div className="card"><Empty icon={IconSearch} title="Nothing matches">Try a different word, or show all kinds.</Empty></div>
+      )}
+
+      <div className="facts-grid stagger">
+        {shown.map((f, i) => {
+          const info = kindInfo(f.kind)
+          const Icon = info.icon
+          return (
+            <article key={f.id} className="card fact-card" style={{ '--i': Math.min(i, 12) } as React.CSSProperties}>
+              <div className="fact-top">
+                <span className="navtile"><Icon size={16} strokeWidth={2} aria-hidden /></span>
+                <div className="fact-head">
+                  <strong>{f.subject}</strong>
+                  <span className="muted small">{info.label}{f.created ? ` · ${ago(f.created)}` : ''}</span>
+                </div>
+                <button className="ghost" disabled={busy === f.id} onClick={() => void forget(f.id)} aria-label={`Forget ${f.subject}`}>
+                  {busy === f.id ? 'Forgetting…' : 'Forget'}
+                </button>
+              </div>
+              {f.kind === 'spelling'
+                ? <ul className="chips">{f.content.split(',').map((s) => s.trim()).filter(Boolean).map((s) => <li key={s} className="badge">{s}</li>)}</ul>
+                : <p className="fact-body">{f.content}</p>}
+            </article>
+          )
+        })}
+      </div>
     </div>
   )
 }

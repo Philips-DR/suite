@@ -1,0 +1,116 @@
+/* Charts. Colours come from tokens (--s1..), never a literal, so both themes work. Marks are thin, the
+ * grid is a solid hairline, and the data is the only loud thing on the page. */
+
+.chart { position: relative; display: flex; flex-direction: column; gap: 10px; transition: opacity var(--dur-3) var(--ease); }
+.chart.is-loading { opacity: 0.55; }  /* a refetch keeps the frame: no skeleton, no jump */
+.chart svg { display: block; overflow: visible; max-width: none; }
+.chart-plot { position: relative; outline-offset: 4px; border-radius: 8px; }
+.chart-plot:focus-visible { outline: 2px solid var(--brand); }
+
+.grid-line { stroke: var(--grid); stroke-width: 1; shape-rendering: crispEdges; }
+.axis-line { stroke: var(--axis); stroke-width: 1; shape-rendering: crispEdges; }
+.tick { fill: var(--ink-3); font-size: 11px; font-family: var(--font-ui); font-variant-numeric: tabular-nums; }
+.hover-band { fill: var(--ink); opacity: 0.05; pointer-events: none; }
+.col .seg { transform-box: fill-box; transform-origin: 50% 100%; animation: grow-y var(--dur-chart) var(--ease) both; transition: opacity var(--dur-2); }
+.col { transition: opacity var(--dur-2) var(--ease); }
+
+.chart-empty { position: absolute; inset: 0 0 30px 34px; display: grid; place-items: center; color: var(--ink-3); font-size: var(--fs-sm); pointer-events: none; }
+
+/* legend: it names the series and carries each one's total, so identity is never colour alone */
+.legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 8px; }
+.legend-item {
+  min-height: 30px;
+  padding: 0 10px 0 8px;
+  gap: 8px;
+  font-weight: 600;
+  font-size: var(--fs-sm);
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-pill);
+}
+.legend-item:hover:not(:disabled) { background: var(--bg-2); border-color: transparent; }
+.legend-item[aria-pressed='true'] { background: var(--bg-2); border-color: var(--line-strong); color: var(--ink); }
+.legend-item b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+
+/* the one tooltip: every series at the pointed-at day, the value first */
+.tip {
+  position: absolute;
+  top: 0;
+  z-index: 6;
+  min-width: 168px;
+  max-width: 240px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  box-shadow: var(--shadow-2);
+  pointer-events: none;
+  font-size: var(--fs-xs);
+  animation: fade-in var(--dur-1) var(--ease);
+}
+.tip-title { margin-bottom: 6px; color: var(--ink-3); font-weight: 650; }
+.tip-row { display: flex; align-items: center; gap: 8px; padding: 2px 0; }
+.tip-row b { min-width: 2ch; color: var(--ink); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
+.tip-row span { color: var(--ink-2); }
+.tip-key { flex: none; width: 12px; height: 3px; border-radius: 2px; }
+.tip-row.total { margin-top: 5px; padding-top: 6px; border-top: 1px solid var(--line); justify-content: space-between; }
+.tip-row.total b { margin-left: auto; }
+
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* sparkline */
+.spark { display: block; overflow: visible; }
+.spark-line { fill: none; stroke: var(--ink-3); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; animation: draw 0.9s var(--ease) both; --len: 1; }
+
+/* horizontal bars */
+.hbars { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.hbar-row {
+  display: grid;
+  grid-template-columns: minmax(84px, 36%) minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 34px;
+  padding: 2px 6px;
+  font-weight: 400;
+  text-align: left;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+}
+button.hbar-row:hover:not(:disabled) { background: var(--bg-2); border: 0; }
+.hbar-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); color: var(--ink-2); }
+.hbar-plot { position: relative; height: 22px; display: block; border-left: 1px solid var(--axis); }
+.hbar-fill { position: absolute; left: 0; top: 6px; height: 10px; border-radius: 0 4px 4px 0; transform-origin: left; animation: grow-x var(--dur-chart) var(--ease) both; transition: background-color var(--dur-2), opacity var(--dur-2); }
+.hbar-value { position: absolute; top: 50%; transform: translateY(-50%); font-size: var(--fs-xs); font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* share bar */
+.share { display: flex; flex-direction: column; gap: 14px; }
+.share-bar { display: flex; gap: 2px; height: 14px; }
+.share-seg { min-width: 4px; transform-origin: left; animation: grow-x var(--dur-chart) var(--ease) both; }
+.share-seg:last-child { border-radius: 0 4px 4px 0; }
+.share-empty { flex: 1; background: var(--bg-2); border-radius: 0 4px 4px 0; }
+.share-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: var(--fs-sm); }
+.share-legend li { display: flex; align-items: center; gap: 9px; }
+.share-legend b { margin-left: auto; font-variant-numeric: tabular-nums; }
+.share-legend .muted { min-width: 3.4ch; text-align: right; font-variant-numeric: tabular-nums; }
+.share-icon { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; color: #fff; }
+
+/* ring */
+.ring { position: relative; flex: none; }
+.ring-track { stroke: var(--bg-2); }
+.ring-arc { stroke: var(--brand); transition: stroke-dasharray 0.8s var(--ease); }
+.ring.indeterminate svg { animation: spin 1.4s linear infinite; }
+.ring-label { position: absolute; inset: 0; display: grid; place-items: center; font-size: var(--fs-sm); font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* print and forced colours: the marks keep their identity through pattern, not hue alone */
+@media (forced-colors: active) {
+  .seg, .hbar-fill, .share-seg { forced-color-adjust: none; outline: 1px solid CanvasText; }
+}
+@media print {
+  .tip, .legend-item[aria-pressed] { display: none; }
+  .seg { filter: grayscale(0.2); }
+}

@@ -4,6 +4,7 @@
 
 import { useState } from 'react'
 import { API_URL, connect, hasToken } from '../api'
+import { BrandMark } from '../ui/Shell'
 
 export function Connect() {
   const [value, setValue] = useState('')
@@ -28,6 +29,7 @@ export function Connect() {
   return (
     <div className="connect" role="dialog" aria-labelledby="connect-title">
       <form className="card" onSubmit={(e) => void submit(e)}>
+        <BrandMark size={40} />
         <h2 id="connect-title">{hasToken() ? 'The assistant restarted' : 'Connect to the assistant'}</h2>
         <p>
           Paste the <strong>access token</strong> printed where the backend started — the line that reads

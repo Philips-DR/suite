@@ -1,0 +1,25 @@
+.dropbox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 16px;
+  text-align: center;
+  background: var(--bg-2);
+  border: 1.5px dashed var(--line-strong);
+  border-radius: 14px;
+  transition: border-color var(--dur-2) var(--ease), background-color var(--dur-2) var(--ease);
+}
+.dropzone.over .dropbox { border-color: var(--brand); background: var(--brand-soft); }
+.dropbox-icon { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; color: var(--brand); background: var(--brand-soft); }
+.dropbox .row.center { justify-content: center; margin-top: 6px; }
+
+.batch .card-head { margin-bottom: 10px; }
+.batch-preview { margin: 14px 0; }
+.batch-preview h3 { margin-bottom: 8px; }
+.batch-preview .hint { margin-top: 10px; }
+.chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.batch-actions { margin-top: 14px; }
+.built { display: flex; align-items: flex-start; gap: 12px; margin-top: 16px; padding: 12px 14px; background: var(--ok-soft); border-radius: 12px; animation: pop-in var(--dur-3) var(--ease); }
+.built-icon { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; color: #fff; background: var(--ok-fill); }
+.built a { display: inline-flex; align-items: center; gap: 6px; font-weight: 650; }

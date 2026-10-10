@@ -1,0 +1,18 @@
+.kindpick { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.kindpick::-webkit-scrollbar { display: none; }
+.kindpick button { flex: none; }
+.kindpick b { margin-left: 2px; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.memory-filters { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+.searchbox { position: relative; flex: 1 1 220px; max-width: 340px; display: block; }
+.searchbox svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--ink-3); pointer-events: none; }
+.searchbox input { width: 100%; padding-left: 36px; }
+.facts-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 899px) { .facts-grid { grid-template-columns: minmax(0, 1fr); } }
+.fact-card { display: flex; flex-direction: column; gap: 10px; padding: 16px; }
+.fact-top { display: flex; align-items: center; gap: 12px; }
+.fact-top .navtile { color: var(--ink); background: var(--brand-soft); }
+.fact-head { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.fact-head strong { overflow-wrap: anywhere; }
+.fact-body { color: var(--ink-2); overflow-wrap: anywhere; white-space: pre-wrap; }
+.fact-card .chips { margin: 0; }
+@media (max-width: 639px) { .kindpick.wrap { flex-wrap: wrap; border-radius: 18px; overflow: visible; } }

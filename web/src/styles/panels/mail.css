@@ -1,0 +1,303 @@
+/* Mail: a list and a conversation. Where the page is wide they sit side by side, the list kept in view
+ * while a long conversation scrolls; where it is narrow the list comes first and a conversation takes
+ * the screen, with a Back button. The layout follows the room the panel has (a container query), not
+ * the window, because the sidebar changes how much that is.
+ * Colours, radii, type and durations are tokens; the only literals are layout geometry. */
+
+.mbox-page {
+  container: mbox / inline-size;
+  --mbox-top: var(--gutter);
+  --mbox-h: calc(100dvh - 150px);
+}
+@media (max-width: 1023px) {
+  .mbox-page {
+    --mbox-top: calc(var(--bar-h) + env(safe-area-inset-top, 0px) + 12px);
+    --mbox-h: calc(100dvh - 232px);
+  }
+}
+
+.mbox-spin { animation: spin 0.9s linear infinite; }
+
+/* ---- the two panes ------------------------------------------------------------------------------------- */
+
+.mbox { display: grid; grid-template-columns: minmax(0, clamp(300px, 36%, 360px)) minmax(0, 1fr); gap: 16px; align-items: start; }
+.mbox-side {
+  position: sticky;
+  top: var(--mbox-top);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  height: max(440px, var(--mbox-h));
+}
+
+/* ---- the mailbox card --------------------------------------------------------------------------------- */
+
+.mbox-head { flex: none; display: flex; flex-direction: column; gap: 14px; padding: 16px; container: mhead / inline-size; }
+.mbox-head-top { display: flex; align-items: center; gap: 12px; }
+.mbox-head-top .navtile { color: var(--ink); }
+.mbox-head-title { flex: 1; min-width: 0; }
+.mbox-head-title h2 { font-size: var(--fs-md); }
+.mbox-head-title .sub { color: var(--ink-3); font-size: var(--fs-xs); }
+.mbox-stats { margin: 0; display: flex; justify-content: space-between; gap: 8px 12px; }
+.mbox-stats dt { color: var(--ink-3); font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; }
+.mbox-stats dd { margin: 2px 0 0; font-size: 1.25rem; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.2; white-space: nowrap; }
+.mbox-skel-num { display: block; width: 3.2ch; height: 1.25rem; }
+.mbox-newest { margin: -6px 0 0; }
+.mbox-volume { margin: 0; display: flex; align-items: center; gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.mbox-volume .spark { flex: none; }
+.mbox-volume figcaption { flex: 1; min-width: 0; line-height: 1.35; }
+/* a narrow side column keeps the figures and drops the explanations */
+@container mhead (max-width: 300px) {
+  .mbox-head-title .sub { display: none; }
+  .mbox-volume { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
+
+.mbox-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 12px;
+  color: var(--ink);
+  background: var(--bg-2);
+  border-radius: 10px;
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+.mbox-note > svg { flex: none; margin-top: 2px; }
+.mbox-note.ok { background: var(--ok-soft); }
+.mbox-note.ok > svg { color: var(--ok); }
+.mbox-note.bad { background: var(--bad-soft); }
+.mbox-note.bad > svg { color: var(--bad); }
+
+/* ---- the list ----------------------------------------------------------------------------------------- */
+
+.mbox-listcard { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.mbox-searchbar { flex: none; padding: 14px 14px 6px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.mbox-search { display: flex; gap: 8px; }
+.mbox-field { position: relative; flex: 1; min-width: 0; display: block; }
+.mbox-field svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--ink-3); pointer-events: none; }
+.mbox-field input { width: 100%; padding-left: 36px; }
+.mbox-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; margin-top: 4px; color: var(--ink-3); font-size: var(--fs-xs); }
+.mbox-meta .ghost { min-height: 28px; padding: 0 8px; font-size: var(--fs-xs); }
+
+.mbox-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; list-style: none; margin: 0; padding: 6px 8px 8px; }
+.mbox-list > li { margin: 0; padding: 0; border: 0; }
+.mbox-listcard > .empty { margin: auto; }
+
+.mbox-item {
+  position: relative;
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 10px;
+  text-align: left;
+  font-weight: 400;
+  background: transparent;
+  border: 0;
+  border-radius: 12px;
+}
+.mbox-item:hover:not(:disabled) { background: var(--bg-2); border: 0; }
+.mbox-item.is-on { background: var(--brand-soft); }
+.mbox-item.is-on::before { content: ''; position: absolute; left: 0; top: 14px; bottom: 14px; width: 3px; border-radius: 3px; background: var(--brand); animation: grow-y var(--dur-3) var(--ease); }
+.mbox-item-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mbox-item-top, .mbox-item-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+.mbox-from { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 650; }
+.mbox-when { flex: none; color: var(--ink-3); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.mbox-subject { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-2); font-size: var(--fs-sm); }
+.mbox-count {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  background: var(--bg-2);
+  color: var(--ink-2);
+  font-size: var(--fs-xs);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.mbox-item.is-on .mbox-count { background: var(--surface); }
+.mbox-item-sub .mbox-spin { flex: none; color: var(--brand); }
+
+.mbox-avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: var(--ink);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  font-size: var(--fs-md);
+  font-weight: 650;
+  line-height: 1;
+}
+.mbox-avatar[data-tint='1'] { background: var(--brand-soft); }
+.mbox-avatar[data-tint='2'] { background: color-mix(in srgb, var(--ink-3) 20%, transparent); }
+.mbox-avatar[data-tint='3'] { background: color-mix(in srgb, var(--brand) 22%, var(--bg-2)); }
+
+.mbox-skel-item { display: flex; align-items: center; gap: 12px; padding: 10px; }
+.mbox-skel-avatar { flex: none; width: 40px; height: 40px; border-radius: 50%; }
+.mbox-skel-lines { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+.mbox-skel-lines .skeleton { display: block; height: 12px; }
+.mbox-skel-lines .skeleton:last-child { width: 68%; }
+
+/* ---- the conversation ----------------------------------------------------------------------------------- */
+
+.mbox-thread { display: flex; flex-direction: column; min-width: 0; padding: 0; min-height: max(440px, var(--mbox-h)); overflow: hidden; }
+.mbox-thread > .empty { margin: auto; }
+.mbox-opening { padding: 28px var(--card-pad); display: flex; flex-direction: column; gap: 14px; }
+.mbox-opening .skeleton { display: block; height: 18px; }
+.mbox-opening .skeleton:nth-child(1) { width: 55%; height: 26px; }
+.mbox-opening .skeleton:nth-child(3) { width: 80%; }
+
+.mbox-thread-head { display: flex; flex-direction: column; gap: 4px; padding: 18px var(--card-pad) 14px; border-bottom: 1px solid var(--line); }
+.mbox-thread-head h2 { font-family: var(--font-display); font-size: var(--fs-xl); letter-spacing: -0.02em; overflow-wrap: anywhere; }
+.mbox-thread-head h2:focus { outline: none; }
+.mbox-back { display: none; align-self: flex-start; margin: -4px 0 6px -8px; padding-left: 10px; }
+
+.mbox-messages { padding: 0 var(--card-pad); }
+.mbox-msg { padding: 18px 0; border-bottom: 1px solid var(--line); }
+.mbox-msg:last-child { border-bottom: 0; }
+.mbox-msg > header { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 12px; margin-bottom: 10px; }
+.mbox-msg .mbox-avatar { width: 36px; height: 36px; font-size: var(--fs-sm); }
+.mbox-msg-who { display: flex; flex-direction: column; min-width: 0; }
+.mbox-msg-who strong, .mbox-msg-who .small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mbox-msg > header time { text-align: right; }
+.mbox-body { padding-left: 48px; }
+.mbox-body pre { margin: 0; font-family: var(--font-ui); font-size: var(--fs-md); line-height: 1.6; overflow-wrap: anywhere; }
+.mbox-body pre.is-folded { max-height: 15rem; overflow: hidden; -webkit-mask-image: linear-gradient(var(--ink) 62%, transparent); mask-image: linear-gradient(var(--ink) 62%, transparent); }
+.mbox-body .ghost { margin: 6px 0 0 -10px; }
+
+/* ---- replying: the ladder, and the one thing that cannot be undone ------------------------------------------- */
+
+.mbox-reply {
+  margin: 4px var(--card-pad) var(--card-pad);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--line-strong);
+  border-top: 3px solid var(--brand);
+  border-radius: 14px;
+}
+.mbox-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.mbox-steps li { position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; color: var(--ink-3); font-size: var(--fs-xs); font-weight: 600; }
+.mbox-steps li + li::before { content: ''; position: absolute; top: 11px; right: 50%; width: 100%; height: 2px; background: var(--line-strong); }
+.mbox-steps li.is-done + li::before, .mbox-steps li.is-now::before { background: var(--brand); }
+.mbox-step-dot {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: var(--ink-3);
+  background: var(--surface);
+  border: 2px solid var(--line-strong);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  transition: background-color var(--dur-2) var(--ease), border-color var(--dur-2) var(--ease);
+}
+.mbox-steps li.is-now { color: var(--ink); font-weight: 700; }
+.mbox-steps li.is-now .mbox-step-dot { color: var(--brand-ink); background: var(--brand); border-color: var(--brand); }
+.mbox-steps li.is-done { color: var(--ink-2); }
+.mbox-steps li.is-done .mbox-step-dot { color: var(--brand); background: var(--brand-soft); border-color: var(--brand-line); }
+
+.mbox-label { font-size: var(--fs-sm); font-weight: 650; color: var(--ink-2); }
+.mbox-reply textarea { width: 100%; min-height: 128px; background: var(--surface); }
+.mbox-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.mbox-actions .hint { flex: 1 1 200px; }
+
+.mbox-draft { display: flex; flex-direction: column; gap: 12px; }
+.mbox-draftline { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-weight: 650; overflow-wrap: anywhere; }
+.mbox-draftline > svg { flex: none; color: var(--ok); }
+.mbox-quote {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--brand-line);
+  border-radius: 10px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+}
+
+.mbox-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: linear-gradient(180deg, var(--bad-soft), transparent 70%), var(--surface);
+  border: 1.5px solid color-mix(in srgb, var(--bad-fill) 65%, transparent);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-1);
+  animation: pop-in var(--dur-3) var(--ease);
+}
+.mbox-confirm:focus { outline: none; }
+.mbox-confirm-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.mbox-confirm-kicker { display: inline-flex; align-items: center; gap: 7px; color: var(--bad); font-size: var(--fs-xs); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.mbox-confirm-sub { color: var(--bad); font-size: var(--fs-sm); font-weight: 650; }
+.mbox-confirm-to { color: var(--ink-2); font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.mbox-confirm-to b { color: var(--ink); }
+.mbox-preview {
+  max-height: min(52vh, 420px);
+  overflow: auto;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  font-family: var(--font-ui);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+}
+.mbox-confirm-warning { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; color: var(--ink); background: var(--bad-soft); border-radius: 10px; font-size: var(--fs-sm); font-weight: 650; }
+.mbox-confirm-warning > svg { flex: none; margin-top: 1px; color: var(--bad); }
+.mbox-confirm-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+.mbox-off { display: flex; align-items: flex-start; gap: 8px; margin: 4px var(--card-pad) var(--card-pad); padding: 12px 14px; background: var(--bg-2); border-radius: 12px; }
+.mbox-off > svg { flex: none; margin-top: 2px; }
+
+/* ---- not enough room for two panes: list first, then the conversation, with a Back button ----------------- */
+
+@container mbox (max-width: 710px) {
+  .mbox { grid-template-columns: minmax(0, 1fr); }
+  .mbox-side { position: static; height: auto; }
+  .mbox-listcard { overflow: visible; }
+  .mbox-list { overflow: visible; }
+  /* the search stays under the top bar while the list scrolls past it */
+  .mbox-searchbar {
+    position: sticky;
+    top: calc(var(--bar-h) + env(safe-area-inset-top, 0px));
+    z-index: 3;
+    border-radius: var(--r-card) var(--r-card) 0 0;
+  }
+  .mbox.is-open .mbox-side { display: none; }
+  .mbox:not(.is-open) .mbox-thread { display: none; }
+  .mbox-thread { min-height: 0; overflow: visible; scroll-margin-top: calc(var(--bar-h) + env(safe-area-inset-top, 0px) + 8px); }
+  .mbox-back { display: inline-flex; min-height: 40px; }
+  .mbox-body { padding-left: 0; }
+}
+
+@media (max-width: 639px) {
+  .mbox-head { padding: 14px; }
+  .mbox-head-top button { min-height: 40px; }
+  .mbox-meta .ghost { min-height: 36px; }
+  .mbox-actions > button { flex: 1 1 140px; min-height: 44px; }
+  .mbox-confirm-actions > button { flex: 1 1 0; min-height: 44px; }
+  .mbox-reply { padding: 14px; }
+  .mbox-msg > header { grid-template-columns: 36px minmax(0, 1fr); }
+  .mbox-msg > header time { grid-column: 2; text-align: left; }
+}

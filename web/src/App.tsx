@@ -1,68 +1,59 @@
-import { useEffect, useState } from 'react'
-import { useAppState } from './state'
+// The app: a shell (sidebar, rail, top bar, tab bar) around one page at a time, chosen by the URL
+// hash. Chat and the tool pages share one state, so something started in chat shows on the page for
+// it and the other way round; and an approval waiting on you shows wherever you are.
+
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { ApprovalCard } from './components/ApprovalCard'
-import { Activity } from './components/Activity'
-import { Notices } from './components/Notices'
 import { Connect } from './components/Connect'
+import { Notices } from './components/Notices'
 import { hasToken } from './api'
-import { Chat } from './components/Chat'
-import { History } from './components/History'
-import { Mail } from './components/Mail'
-import { Memory } from './components/Memory'
-import { Meetings } from './components/Meetings'
-import { Documents } from './components/Documents'
-import { Audiobooks } from './components/Audiobooks'
-import { Settings } from './components/Settings'
+import { Overview } from './pages/Overview'
+import { useAppState } from './state'
+import { CommandPalette } from './ui/CommandPalette'
+import { IconAlert } from './ui/icons'
+import { PageHead } from './ui/PageHead'
+import type { Section } from './ui/sections'
+import { MoreSheet, Sidebar, TabBar, TopBar } from './ui/Shell'
+import { useRoute } from './ui/useRoute'
+import { useTheme } from './ui/useTheme'
 
-type Mode = 'chat' | 'buttons'
-type Section = 'meetings' | 'documents' | 'audiobooks' | 'mail' | 'memory' | 'history' | 'settings'
-const SECTIONS: Section[] = ['meetings', 'documents', 'audiobooks', 'mail', 'memory', 'history', 'settings']
+// Every page but the first is fetched when it is opened, so the app starts on a phone with only what the
+// Overview needs (the markdown renderer behind Chat alone is a large part of the code).
+const page = <K extends string>(load: () => Promise<Record<K, React.ComponentType>>, name: K) =>
+  lazy(() => load().then((m) => ({ default: m[name] })))
+const Chat = page(() => import('./components/Chat'), 'Chat')
+const Documents = page(() => import('./components/Documents'), 'Documents')
+const History = page(() => import('./components/History'), 'History')
+const Mail = page(() => import('./components/Mail'), 'Mail')
+const Meetings = page(() => import('./components/Meetings'), 'Meetings')
+const Memory = page(() => import('./components/Memory'), 'Memory')
+const Audiobooks = page(() => import('./components/Audiobooks'), 'Audiobooks')
+const Settings = page(() => import('./components/Settings'), 'Settings')
 
-function savedMode(): Mode {
-  // The URL wins, so a view can be bookmarked or linked; then the last mode used.
-  if (location.hash.startsWith('#buttons')) return 'buttons'
-  if (location.hash === '#chat') return 'chat'
-  try {
-    return localStorage.getItem('assistant-mode') === 'buttons' ? 'buttons' : 'chat'
-  } catch {
-    return 'chat'
+function Loading() {
+  return <div className="panel" aria-busy="true" aria-label="Loading the page"><div className="skeleton" style={{ height: 160 }} /><div className="skeleton" style={{ height: 240 }} /></div>
+}
+
+function Page({ section, go }: { section: Section; go: (to: Section) => void }) {
+  switch (section) {
+    case 'overview': return <Overview go={go} />
+    case 'chat': return <Chat />
+    case 'meetings': return <><PageHead section="meetings" /><Meetings /></>
+    case 'documents': return <><PageHead section="documents" /><Documents /></>
+    case 'audiobooks': return <><PageHead section="audiobooks" /><Audiobooks /></>
+    case 'mail': return <><PageHead section="mail" /><Mail /></>
+    case 'memory': return <><PageHead section="memory" /><Memory /></>
+    case 'history': return <><PageHead section="history" /><History /></>
+    case 'settings': return <><PageHead section="settings" /><Settings /></>
   }
 }
 
 export function App() {
-  const { pending, busy, connected, model } = useAppState()
-  const [mode, setMode] = useState<Mode>(savedMode)
-  const [section, setSection] = useState<Section>(() => {
-    const named = location.hash.replace('#buttons/', '') as Section
-    return SECTIONS.includes(named) ? named : 'meetings'
-  })
-
-  // The hash is read on load AND whenever it changes. Reading it only once meant the back
-  // button, a bookmark, or an edited URL changed the address but left the old section showing
-  // -- a hash change does not reload the page. (replaceState below does not fire hashchange,
-  // so this cannot loop.)
-  useEffect(() => {
-    const follow = () => {
-      if (location.hash === '#chat') {
-        setMode('chat')
-      } else if (location.hash.startsWith('#buttons')) {
-        setMode('buttons')
-        const named = location.hash.replace('#buttons/', '') as Section
-        setSection(SECTIONS.includes(named) ? named : 'meetings')
-      }
-    }
-    window.addEventListener('hashchange', follow)
-    return () => window.removeEventListener('hashchange', follow)
-  }, [])
-
-  useEffect(() => {
-    history.replaceState(null, '', mode === 'buttons' && section !== 'meetings' ? `#buttons/${section}` : `#${mode}`)
-    try {
-      localStorage.setItem('assistant-mode', mode)
-    } catch {
-      // private window or blocked storage: the mode just won't be remembered
-    }
-  }, [mode, section])
+  const { pending } = useAppState()
+  const [section, go] = useRoute()
+  const [theme, cycleTheme, setTheme] = useTheme()
+  const [palette, setPalette] = useState(false)
+  const [more, setMore] = useState(false)
 
   // No token yet, or a stale one: the whole app waits behind the Connect screen.
   const [needsToken, setNeedsToken] = useState(() => !hasToken())
@@ -72,62 +63,40 @@ export function App() {
     return () => window.removeEventListener('assistant-needs-token', onNeedsToken)
   }, [])
 
+  // Ctrl+K (or Cmd+K) from anywhere.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPalette((open) => !open)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  const openPalette = useCallback(() => setPalette(true), [])
+  const inChat = section === 'chat'
+
   return (
-    <div className="app">
+    <div className="shell" data-section={section}>
       {needsToken && <Connect />}
-      <header className="top">
-        <h1>Assistant</h1>
-
-        <div className="modes" role="tablist" aria-label="Mode">
-          <button role="tab" aria-selected={mode === 'chat'} className={mode === 'chat' ? 'on' : ''} onClick={() => setMode('chat')}>
-            Chat
-            {mode !== 'chat' && pending.length > 0 && <span className="dot-count">{pending.length}</span>}
-          </button>
-          <button role="tab" aria-selected={mode === 'buttons'} className={mode === 'buttons' ? 'on' : ''} onClick={() => setMode('buttons')}>
-            Buttons
-          </button>
-        </div>
-
-        <div className="status">
-          <span className={`conn ${connected ? 'up' : 'down'}`} aria-hidden />
-          <span className="muted">{connected ? model || 'connected' : 'reconnecting…'}</span>
-        </div>
-      </header>
-
-      <main>
-        {mode === 'chat' ? (
-          <Chat />
-        ) : (
-          <div className="buttons-mode">
-            {pending.length > 0 && (
-              <div className="banner">
-                <p>The assistant is waiting for your answer:</p>
-                {pending.map((p) => (
-                  <ApprovalCard key={p.id} approval={p} />
-                ))}
-              </div>
-            )}
-            {busy && pending.length === 0 && <p className="muted working-note">The assistant is working on a chat message.</p>}
-            <nav className="sections" aria-label="Section">
-              {SECTIONS.map((s) => (
-                <button key={s} className={section === s ? 'on' : ''} onClick={() => setSection(s)}>
-                  {s[0]?.toUpperCase() + s.slice(1)}
-                </button>
-              ))}
-            </nav>
-            <div className="buttons-grid">
-              {section === 'meetings' && <Meetings />}
-              {section === 'documents' && <Documents />}
-              {section === 'audiobooks' && <Audiobooks />}
-              {section === 'mail' && <Mail />}
-              {section === 'memory' && <Memory />}
-              {section === 'history' && <History />}
-              {section === 'settings' && <Settings />}
-              <Activity />
+      <Sidebar section={section} go={go} theme={theme} setTheme={setTheme} openPalette={openPalette} />
+      <div className="content">
+        <TopBar section={section} openPalette={openPalette} cycleTheme={cycleTheme} theme={theme} />
+        <main className={`page ${inChat ? 'page-chat' : ''}`} key={section} id="main">
+          {pending.length > 0 && !inChat && (
+            <div className="tray" role="region" aria-label="Waiting for your answer">
+              <span className="tray-label"><IconAlert size={16} aria-hidden />The assistant is waiting for your answer</span>
+              {pending.map((p) => <ApprovalCard key={p.id} approval={p} />)}
             </div>
-          </div>
-        )}
-      </main>
+          )}
+          <Suspense fallback={<Loading />}><Page section={section} go={go} /></Suspense>
+        </main>
+      </div>
+      <TabBar section={section} go={go} openMore={() => setMore(true)} />
+      <MoreSheet open={more} onClose={() => setMore(false)} section={section} go={go} theme={theme} setTheme={setTheme} onSearch={openPalette} />
+      <CommandPalette open={palette} onClose={() => setPalette(false)} go={go} setTheme={setTheme} pending={pending.length} />
       <Notices />
     </div>
   )
