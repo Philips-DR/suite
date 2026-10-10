@@ -139,12 +139,19 @@ def test_long_audio_is_refused_before_anything_is_decoded(tmp_path, monkeypatch)
 
 
 def test_short_audio_passes_the_duration_gate(tmp_path, monkeypatch):
-    """The gate must not be so blunt that a voice note cannot be transcribed. Stops before
-    the model loads -- proving the gate opened, without decoding anything."""
+    """The gate must not be so blunt that a voice note cannot be transcribed. Stops at the decode --
+    proving the gate opened, without decoding anything.
+
+    The model is stubbed as well as the decode: transcribe_audio builds the real WhisperModel BEFORE
+    it reaches transcribe_file, so stubbing only the decode (as this once did) quietly loaded the
+    1.5 GB model, and downloaded it on any machine that did not already have it -- a test that
+    passed on a developer's cache and needed the network anywhere else."""
+    import faster_whisper
     import transcribe
 
     audio = tmp_path / "short.wav"
     audio.write_bytes(b"not really audio")
+    monkeypatch.setattr(faster_whisper, "WhisperModel", lambda *_a, **_k: object())
     monkeypatch.setattr(transcribe, "probe_duration", lambda _p: 60.0)
     monkeypatch.setattr(
         transcribe, "transcribe_file", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("reached decode"))

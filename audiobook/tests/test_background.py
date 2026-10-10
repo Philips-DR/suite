@@ -45,7 +45,10 @@ def test_a_finished_job_reports_done_and_what_it_made(tmp_path):
     job = background.start("render", "book.pdf", tmp_path, [], command=standin(script))
     job = wait_until_finished(tmp_path, job)
     assert (job.state, job.phase, job.percent, job.eta) == ("done", "done", 100.0, None)
-    assert job.outputs == [str(ROOT / "output/book/01-a-0.95x.mp3"), str(ROOT / "output/book/book.m4b")]
+    # Resolved, as the job reports them: where output/ is a symlink (the container's data volume) the
+    # real location is what a file can be found and served by.
+    assert job.outputs == [str((ROOT / "output/book/01-a-0.95x.mp3").resolve()),
+                           str((ROOT / "output/book/book.m4b").resolve())]
 
 
 def test_a_failed_job_says_why(tmp_path):
