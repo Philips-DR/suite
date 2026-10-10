@@ -82,9 +82,12 @@ to find once — an `AttributeError` from the rename above, presenting as a hang
   later turn.
 - **Status polls from buttons are not noted.** Only calls that change something are; a poll
   every few seconds would bury the model's context.
-- **Security:** 127.0.0.1 only, never 0.0.0.0; a per-launch token on every `/api` request;
-  Host must be localhost. The token may appear in a URL only for `/api/events`, because
-  EventSource cannot send headers.
+- **Security:** 127.0.0.1 unless `ASSISTANT_HOST` says otherwise (only the container setup does, inside
+  its own network, with the port published to 127.0.0.1 and a Tailscale sidecar, never to the world; it
+  prints that it is not localhost-only); a token on every `/api` request; Host must be localhost or an
+  exact name in `ASSISTANT_HOSTS` (parsed by `parse_hosts`: names only, never patterns). The token may
+  appear in a URL only for `/api/events`, because EventSource cannot send headers. Who may use the API
+  is decided in one function, `authenticate()`.
 
 ## The interface is a separate program (`../web`)
 
@@ -201,6 +204,38 @@ tool keeps anything. Five rules, the first four tested in `tests/test_uploads.py
   `src`, where it is kept in logs and history. So the web app `fetch`es the file with the header and
   plays a blob (`web/src/api.ts` → `fetchMedia`). The cost is that a file loads whole before it
   plays: a four-hour M4B is ~115 MB. Taking that over a token in a URL was deliberate.
+
+## Authentication: what a Google sign-in changes
+
+The next big feature, scoped here so the container and Tailscale setup would not have to be redone for
+it. **Not built.** Today `authenticate(request)` accepts the launch's token; signing in adds a second way
+to be recognised there.
+
+- **The shape.** OpenID Connect (authorization code + PKCE) done by *this* backend: `/auth/login`,
+  `/auth/callback`, `/auth/logout`, and `/api/me` for the page to ask "who am I". Verify the ID token's
+  signature, `iss`, `aud`, `exp` and `email_verified`, then require the email to be in
+  `ASSISTANT_ALLOWED_EMAILS` (one address to begin with). The session is a random id in a server-side
+  store, sent as `HttpOnly; Secure; SameSite=Lax`, with an expiry.
+- **Its own Google OAuth client, scopes `openid email` only.** Not the clients docu-ai and mail-ai use:
+  credentials stay with their tool, and the sign-in belongs to the assistant. Those scopes are
+  non-sensitive, so no Google verification is needed. (The existing OAuth app is in "Testing", which is
+  why the Docs and Gmail tokens expire weekly; that does not touch signing in.)
+- **The topology is already right.** The page is at `https://<SUITE_HOST>` (443) and the API at
+  `https://<SUITE_HOST>:8443`: one host, so one *site* and a `SameSite=Lax` cookie goes to both; two
+  ports, so two *origins*, which means `allow_credentials=True` with the exact origin list (never `*`),
+  `credentials: 'include'` on every fetch, and `withCredentials` on the EventSource. With that the
+  `?token=` exception for `/api/events` can go. Keep requiring a custom header on state-changing
+  calls so a cookie alone cannot be replayed by another site.
+- **The page stops carrying a secret.** `WEB_INJECT_TOKEN=0` (already supported) and the app shows
+  "Sign in with Google" when `/api/me` says 401. Decide at build time whether the token still works for
+  `127.0.0.1` as a break-glass; it should not work over the tailnet once sign-in exists.
+- **First step, before any code: does Google accept `https://<SUITE_HOST>:8443/auth/callback`?** Google
+  wants redirect URIs on a public top-level domain and `*.ts.net` has not been tried. Register it in a
+  test OAuth client and see. If it is refused, the options are a custom domain pointing at the tailnet
+  node with its own certificate, or Tailscale's own verified identity headers (which `tailscale serve`
+  adds for tailnet users) in place of Google. Don't build the rest until this is known.
+- **One allowed account, not accounts.** Per-user data (`memory.json`, uploads, each tool's credentials)
+  is the larger option (c) in `plan.md` and is not part of this.
 
 ## Memory and history in the interface
 

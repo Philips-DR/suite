@@ -8,7 +8,7 @@ shows up in the buttons view with a live status. One state, one event stream, on
 
 Security, because this process can send email as you:
 
-  * it binds to 127.0.0.1 only;
+  * it binds to 127.0.0.1 unless told otherwise (ASSISTANT_HOST: a container's private network);
   * every /api request must carry a random token issued at launch and injected into the
     page -- a site in another tab can make your browser POST to localhost, but it cannot
     read the page to learn the token;
@@ -47,6 +47,14 @@ ROOT = Path(__file__).resolve().parent.parent
 HISTORY_LIMIT = 1000
 KEEPALIVE_SECONDS = 15
 LOCAL_HOSTS = {"127.0.0.1", "localhost"}
+LOOPBACK_BINDS = {"127.0.0.1", "::1", "localhost"}
+
+
+def parse_hosts(value: str | None) -> frozenset[str]:
+    """Names the API may be reached by, beyond localhost: ASSISTANT_HOSTS, comma separated. Exact
+    names only, never patterns -- the Host check is what stops a hostile page pointing its own name at
+    this machine, and a pattern is a bigger door than a name."""
+    return frozenset(part.strip().lower() for part in (value or "").replace(" ", ",").split(",") if part.strip())
 # Where the web app is served from: its own server (8751) and Vite's development server.
 # Only these origins may read responses; the token is still required on every call.
 DEFAULT_ORIGINS = ("http://127.0.0.1:8751", "http://localhost:8751",
@@ -187,6 +195,7 @@ def create_app(
     watch_jobs: bool = True,
     uploads_path: Path | None = None,
     origins: tuple[str, ...] = DEFAULT_ORIGINS,
+    hosts: frozenset[str] = frozenset(),
     on_ready: Callable[[], None] | None = None,
 ) -> FastAPI:
     uploads_root = uploads_path or ROOT / "uploads"
@@ -228,19 +237,28 @@ def create_app(
     def hub() -> Hub:
         return holder["hub"]
 
+    allowed_hosts = LOCAL_HOSTS | hosts
+
+    def authenticate(request: Request) -> bool:
+        """Is this request from someone who may use the API? The one place that decides.
+
+        Today that is the launch's token. It is a function of its own so that signing in with Google,
+        the next feature, adds a second way to be recognised here -- a session cookie -- instead of
+        touching the guard. See "Authentication" in CLAUDE.md for what else that changes."""
+        supplied = request.headers.get("x-assistant-token") or ""
+        # EventSource cannot send headers, so the event stream alone takes the token as
+        # a query parameter. Everywhere else it stays out of URLs, and out of logs.
+        if not supplied and request.url.path == "/api/events":
+            supplied = request.query_params.get("token", "")
+        return secrets.compare_digest(supplied, token)
+
     @app.middleware("http")
     async def guard(request: Request, call_next):
-        host = (request.headers.get("host") or "").rsplit(":", 1)[0].strip("[]")
-        if host not in LOCAL_HOSTS:
+        host = (request.headers.get("host") or "").rsplit(":", 1)[0].strip("[]").lower()
+        if host not in allowed_hosts:
             return JSONResponse({"error": "forbidden host"}, status_code=403)
-        if request.url.path.startswith("/api/"):
-            supplied = request.headers.get("x-assistant-token") or ""
-            # EventSource cannot send headers, so the event stream alone takes the token as
-            # a query parameter. Everywhere else it stays out of URLs, and out of logs.
-            if not supplied and request.url.path == "/api/events":
-                supplied = request.query_params.get("token", "")
-            if not secrets.compare_digest(supplied, token):
-                return JSONResponse({"error": "missing or wrong token"}, status_code=401)
+        if request.url.path.startswith("/api/") and not authenticate(request):
+            return JSONResponse({"error": "missing or wrong token"}, status_code=401)
         return await call_next(request)
 
     # Added after the guard, so it runs outside it: a browser's preflight carries no token
@@ -504,6 +522,8 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="The assistant, in a browser.")
     parser.add_argument("--port", type=int, default=int(os.environ.get("ASSISTANT_PORT", 8750)))
+    parser.add_argument("--host", default=os.environ.get("ASSISTANT_HOST", "127.0.0.1"),
+                        help="address to bind; 127.0.0.1 unless this runs in a container's own network")
     parser.add_argument("-t", "--tools", default=str(ROOT / "tools.yaml"))
     parser.add_argument("-m", "--memory", default=os.environ.get("ASSISTANT_MEMORY", str(ROOT / "memory.json")))
     parser.add_argument("-a", "--audit", default=os.environ.get("ASSISTANT_AUDIT", str(ROOT / "audit.jsonl")))
@@ -517,6 +537,7 @@ def main() -> None:
     # The token is random per launch unless ASSISTANT_TOKEN fixes it.
     uploads = Path(os.environ["ASSISTANT_UPLOADS"]) if os.environ.get("ASSISTANT_UPLOADS") else None
     origins = tuple(o.strip() for o in os.environ.get("ASSISTANT_ORIGINS", "").split(",") if o.strip())
+    hosts = parse_hosts(os.environ.get("ASSISTANT_HOSTS"))
     fixed = bool(os.environ.get("ASSISTANT_TOKEN"))
     holder: dict[str, FastAPI] = {}
 
@@ -525,7 +546,14 @@ def main() -> None:
         # started separately); ../start gives both the same one and nobody needs this line.
         # flush: when stdout is a file or a pipe rather than a terminal, Python holds these
         # back, and the one line a person needs to connect never appears in the log.
-        print(f"assistant API on http://127.0.0.1:{args.port}/  (localhost only)", flush=True)
+        if args.host in LOOPBACK_BINDS:
+            print(f"assistant API on http://{args.host}:{args.port}/  (localhost only)", flush=True)
+        else:
+            # Said out loud, because it is the one setting that changes who can knock. Whatever
+            # reaches this port still needs the token and a Host from the allowed list.
+            print(f"assistant API listening on {args.host}:{args.port} -- NOT localhost-only. Reachable by "
+                  f"whatever can reach this port; publish it to 127.0.0.1 or a private network only.", flush=True)
+            print(f"  allowed Host names beyond localhost: {', '.join(sorted(hosts)) or '(none)'}", flush=True)
         print(f"access token: {holder['app'].state.token}", flush=True)
         if not fixed:
             print("  (new on every launch; set ASSISTANT_TOKEN in .env to keep one across restarts)",
@@ -534,15 +562,18 @@ def main() -> None:
     app = create_app(Path(args.tools), Path(args.memory), Path(args.audit), uploads_path=uploads,
                      provider=args.provider, model=args.model,
                      token=os.environ.get("ASSISTANT_TOKEN") or None,
-                     origins=origins or DEFAULT_ORIGINS, on_ready=announce)
+                     origins=origins or DEFAULT_ORIGINS, hosts=hosts, on_ready=announce)
     holder["app"] = app
-    # Never 0.0.0.0. This process can send email as you.
+    # Loopback unless ASSISTANT_HOST says otherwise, and it says otherwise only in the container
+    # setup, whose compose file publishes the port to 127.0.0.1 and to a private Tailscale
+    # network, never to the world. Never bind 0.0.0.0 on a machine on a network you do not
+    # control: this process can send email as you.
     #
     # timeout_graceful_shutdown is not optional. uvicorn waits for open connections to drain
     # before stopping, and the event stream never drains on its own -- so any browser tab left
     # open blocked shutdown forever, and the three tool processes with it. Found by trying to
     # restart the server with a stream still connected.
-    uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning",
+    uvicorn.run(app, host=args.host, port=args.port, log_level="warning",
                 timeout_graceful_shutdown=3)
 
 
