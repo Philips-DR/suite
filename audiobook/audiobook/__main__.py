@@ -1,9 +1,10 @@
-"""Command line: python -m audiobook {preview,render} BOOK.pdf ..."""
+"""Command line: python -m audiobook {preview,render,voice} ..."""
 
 import argparse
 import os
 from pathlib import Path
 
+from .operations import parse_selection
 from .preview import chapter_label, format_duration, speech_seconds
 
 
@@ -14,18 +15,6 @@ def load_env(path: Path = Path(".env")) -> None:
         key, sep, value = line.strip().partition("=")
         if sep and not key.startswith("#"):
             os.environ.setdefault(key.strip(), value.strip().strip("'\""))
-
-
-def parse_selection(spec: str, count: int) -> list[int]:
-    """Parse '1-3,5' into 1-based chapter numbers; every number must exist."""
-    numbers: set[int] = set()
-    for part in spec.split(","):
-        first, _, last = part.partition("-")
-        numbers.update(range(int(first), int(last or first) + 1))
-    bad = sorted(n for n in numbers if not 1 <= n <= count)
-    if bad:
-        raise ValueError(f"no chapter {bad[0]}: this book has {count} (see preview)")
-    return sorted(numbers)
 
 
 def parse_speed(value: str) -> float:
@@ -73,7 +62,7 @@ def cmd_voice_add(args: argparse.Namespace) -> None:
     load_env()
     print("Only clone voices you own or have the speaker's permission to use.", flush=True)
     result = add_voice(args.name, args.clip, args.start, args.end, search=not args.no_search, overwrite=args.overwrite,
-                       on_status=print)
+                       consent=args.consent, on_status=print)
     for w in result.warnings:
         print(f"warning: {w}")
     v = result.voice
@@ -105,17 +94,6 @@ def cmd_voice_list(args: argparse.Namespace) -> None:
     print("Built-in voices:\n  " + ", ".join(v.name for v in voices if v.kind == "preset"))
 
 
-def cmd_serve(args: argparse.Namespace) -> None:
-    import uvicorn
-
-    from .web.app import create_app
-
-    load_env()
-    print(f"Library: {args.library.resolve()}\nOpen http://127.0.0.1:{args.port}")
-    # Localhost only: the app has no authentication.
-    uvicorn.run(create_app(args.library), host="127.0.0.1", port=args.port, log_level="warning")
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(prog="audiobook", description="Turn a PDF into an audiobook read in a cloned voice.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -142,6 +120,7 @@ def main() -> None:
     va.add_argument("--end", type=float, help="...to this second (max 30 s of reference is used)")
     va.add_argument("--no-search", action="store_true", help="Don't try several windows of a long recording")
     va.add_argument("--overwrite", action="store_true", help="Replace an existing voice with this name")
+    va.add_argument("--consent", help="Who agreed to this voice being cloned, e.g. 'my own voice'; kept with the voice")
     va.set_defaults(func=cmd_voice_add)
     vt = v.add_parser("test", help="Hear a voice read a sample paragraph")
     vt.add_argument("name")
@@ -149,11 +128,6 @@ def main() -> None:
     vt.add_argument("--speed", type=parse_speed, default=0.95)
     vt.set_defaults(func=cmd_voice_test)
     v.add_parser("list", help="List voices").set_defaults(func=cmd_voice_list)
-
-    sv = sub.add_parser("serve", help="Run the web app on this computer")
-    sv.add_argument("--library", type=Path, default=Path("library"), help="Folder of PDFs (uploads go here)")
-    sv.add_argument("--port", type=int, default=8080)  # 8000 is taken by VS Code on this machine
-    sv.set_defaults(func=cmd_serve)
 
     args = parser.parse_args()
     try:

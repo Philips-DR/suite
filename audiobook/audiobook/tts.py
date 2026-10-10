@@ -33,7 +33,7 @@ def prepare_reference(src: Path, dest: Path, start: float | None = None, end: fl
 
 @cache
 def load_model():
-    """Load Pocket TTS once per process (the web server renders many times)."""
+    """Load Pocket TTS once per process (a render and a voice test each run in one process)."""
     from pocket_tts import TTSModel
 
     print("Loading Pocket TTS...")

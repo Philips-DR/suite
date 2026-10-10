@@ -1,0 +1,2 @@
+# Test-only dependencies. The tests need no model, audio, or network.
+pytest==9.1.1

@@ -6,4 +6,4 @@ output/
 voices/
 voice/
 tests/fixtures/local/
-library/
+.jobs/

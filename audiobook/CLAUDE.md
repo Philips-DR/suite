@@ -1,22 +1,30 @@
 # CLAUDE.md
 
-Guidance for Claude Code when working in this repository.
+Guidance for Claude Code when working in this folder. It is one tool of the suite (`../CLAUDE.md`
+holds the rules that cover all of them) and also runs alone from here.
 
 ## Project
 
-An audiobook generator: the user uploads a PDF, the text is extracted and cleaned, and it is
-narrated in English by a local TTS engine using a voice the user chooses — either a built-in
-preset voice or a voice cloned from a short reference clip.
+An audiobook generator: a PDF is extracted and cleaned, and narrated in English by a local TTS
+engine using a voice the user chooses — either a built-in preset voice or a voice cloned from a
+short reference clip.
 
 **`plan.md` holds the locked decisions, the design and the milestone order. This file holds the
 engineering rules and the facts learned the hard way.** When the two disagree, fix whichever is
-wrong. Status: M0–M7 done. M3's speech rules are a first pass driven by one book; extend them as the user
+wrong. Status: M0–M8 done. M3's speech rules are a first pass driven by one book; extend them as the user
 reports misreadings. `preview` and `render` both run on Docling + BookPlan (the PyMuPDF reader
-is gone). Next: M3 (speech clean-up + `voice` commands).
+is gone).
+
+**Two front doors, no interface of its own.** The CLI (`python -m audiobook`) and the MCP door
+(`./mcp`, which the suite's assistant launches) both sit on `operations.py`; neither wraps the
+other. The standalone web app this tool once had was removed on 2026-10-10: its features (read a
+book, check what will be spoken, corrections, voices, render with progress, play and download) are
+the **Audiobooks** panel of the suite's web app (`../web`), which reaches them through the
+assistant. Don't add a UI here.
 
 Language is Python, decided deliberately: Pocket TTS and the strong PDF-layout tools (Docling) are
 Python-only, and time is spent in model inference, not the host language. Don't propose a
-TypeScript rewrite; a TS web UI may sit in front later (plan.md M7).
+TypeScript rewrite; the interface is TypeScript already, in the suite's `../web`.
 
 ## Target hardware (matters for engine choice)
 
@@ -24,8 +32,15 @@ TypeScript rewrite; a TS web UI may sit in front later (plan.md M7).
 - GPUs present are an Intel UHD 620 and an AMD Radeon PRO WX 3200 (Polaris, 4 GB) — neither is
   usable for PyTorch acceleration (no CUDA, Polaris is not supported by ROCm). Assume `device="cpu"`.
 - A full book is hours of audio, so the engine must run at or above real-time on CPU.
-- Python 3.14 in a project venv at `.venv/` (created with `python3 -m venv .venv`; `uv` is not
-  installed). PyTorch is the CPU-only build from `https://download.pytorch.org/whl/cpu`.
+- Python 3.14 in **this tool's own venv**, `.venv/` — never the suite's shared one. `./setup` at the
+  suite's top builds it from `requirements.txt` (every version pinned, with PyTorch's CPU index
+  declared in the file) and `requirements-dev.txt` (pytest); alone: `python3 -m venv .venv &&
+  .venv/bin/pip install -r requirements.txt -r requirements-dev.txt`. Why separate (measured
+  2026-10-10): it is 1.9 GB against the shared 696 MB, nothing else in the suite uses torch, Docling
+  or Pocket TTS, and torch has to come from PyTorch's CPU index (PyPI's default is a multi-GB CUDA
+  build). Packages in common are only fastapi, uvicorn, starlette, numpy, pydantic and
+  huggingface_hub, at patch-level differences — it is the weight and the index, not a conflict,
+  that decided it. `./mcp` and the job launcher both use this venv.
 - `ffmpeg` is installed and is used for audio concatenation and encoding.
 
 ## Chosen engine: Pocket TTS, with voice cloning
@@ -74,7 +89,6 @@ be clean, mono, single-speaker WAV with no music or background noise.
 ## Usage
 
 ```bash
-.venv/bin/python -m audiobook serve --library /home/philip/Documents/books   # web app on 127.0.0.1:8080
 .venv/bin/python -m audiobook preview book.pdf        # exact spoken text → output/<book>/preview.md
 .venv/bin/python -m audiobook render book.pdf --voice abigail --chapters 1
 .venv/bin/python -m audiobook render book.pdf --voice abigail --m4b
@@ -84,6 +98,9 @@ be clean, mono, single-speaker WAV with no music or background noise.
 .venv/bin/python -m audiobook voice list
 .venv/bin/python -m pytest -q                         # no models, network or token needed
 ```
+
+Run everything from this folder: `output/`, `voices/`, `.cache/` and `.env` are relative to it (`./mcp`
+and the background jobs do this themselves).
 
 `--voice` takes a saved voice's name (`abigail`, `tina`), a `.safetensors` path, an audio file to
 clone, or a preset like `alba`. Output goes to `output/<pdf name>/`. `--chapters` uses the numbers shown by `preview`.
@@ -111,12 +128,14 @@ as clearest.
 - `audiobook/speech.py` — pure rewrites for what the voice misreads, each verified by synthesis +
   Whisper (see its docstring); per-book corrections (`book.corrections.txt` next to the PDF).
 - `audiobook/preview.py` — pure `BookPlan → preview.md` (chapter table, exact text, skipped summary).
-- `audiobook/operations.py` — `plan_book`, `preview_book`, `render_pdf`: what front doors call.
+- `audiobook/operations.py` — `plan_book`, `preview_book`, `render_pdf`, and what the MCP door needs on
+  top: `book_overview`, `chapter_text`, corrections, `list_audiobooks`, `start_*`, `job_status`. What
+  both front doors call.
+- `audiobook/background.py` — analysing, rendering and voice work as detached background jobs.
+- `audiobook/mcp_server.py` — the MCP door (11 tools); `./mcp` launches it.
 - `audiobook/voices.py` — `add_voice` (window search scored by WavLM similarity), `test_voice`,
   `list_voices`; metadata in `voices/NAME.json`.
-- `audiobook/__main__.py` — CLI and `.env` loading. `audiobook/web/` — FastAPI app (`app.py`), a
-  one-at-a-time `JobQueue` (`jobs.py`), and a single no-build page (`static/index.html`). Binds to
-  127.0.0.1 only: there is no authentication.
+- `audiobook/__main__.py` — CLI and `.env` loading.
 - `audiobook/chunk.py` — sentence chunks ≤400 chars. `audiobook/tts.py` — model loaded once per
   process, `Narrator`, `resolve_voice`. `audiobook/render.py` — speaks a plan `Chapter` with pauses,
   caches each chunk in `.cache/audio/<voice id>/<text hash>.npy`, reports `Progress` (with time
@@ -160,7 +179,59 @@ Stages: extract → plan → voice → speak → assemble (details in plan.md §
   audio with ffmpeg.
 - `plan` is pure (no I/O, no models) and records every dropped element with a reason, so the
   `preview` command can show exactly what is and isn't spoken.
-- Front doors (CLI now, web UI later) call functions in `operations.py`; neither wraps the other.
+- Front doors (the CLI and the MCP door) call functions in `operations.py`; neither wraps the other.
+
+## The suite integration (2026-10-10)
+
+How it was joined to the suite, and the rules that came out of running it for real:
+
+- **Long work is a detached process, not a thread.** `background.start` launches
+  `python -m audiobook …` inside `bash -c '"$@"; echo "[exit $?]"'` with `start_new_session`, so the
+  backend restarting (or dying) does not stop it. Verified: a render survived `pkill` of the backend
+  and the restarted backend picked up the same job id, mid-render, and saw it finish. The wrapper's
+  `[exit N]` line is how a crash, a finish and a kill are told apart — **`interrupted` means that
+  line never appeared**. Progress is parsed from the CLI's own output (`[ 40%] chapter 2: …`), so
+  changing those print formats in `__main__.py` breaks `background.PROGRESS`; the tests say so.
+- **One job at a time, any kind.** Docling and the voice model each use every core. State is
+  `.jobs/<id>.json` plus `.log` (git-ignored); a pid is trusted only if `/proc/<pid>/cmdline` shows
+  our marker and the job's target.
+- **A stopped render loses nothing:** every spoken chunk is in `.cache/audio/<voice id>/`, so
+  starting it again continues, and a new speed is only a re-encode. Docling's cache is keyed by the
+  PDF's content hash, so a re-uploaded copy of a book is already "read".
+- **Everything that can be wrong is checked before a job exists** (`operations.start_render`: analysed,
+  voice, speed, chapters): a render failing in its first second is a job nobody should have to poll.
+- **The gate is the tools' own annotations.** Six tools only read (`list_*`, `preview_book`,
+  `read_chapter`, `get_corrections`, `job_status`); the five that start work or write a file are not
+  read-only, so chat asks first and `tests/test_mcp_door.py` pins the split.
+- **Cloning needs a consent statement, and the model must not write it.** `start_voice_clone` refuses an
+  empty `consent`, its description tells the model to ask the user, and the text is kept in
+  `voices/NAME.json`. In chat the approval card shows it before anything runs.
+- **Corrections are reported, not guessed at.** `set_corrections` returns every line that did not become
+  a correction (`parse_corrections` skips them silently, so a typo would otherwise do nothing and say
+  nothing). A line with **nothing to find** (`=> PG`) is one of them: applied, `replace("", "PG")`
+  puts PG between every character of the book.
+- **A chapter selection is validated before it is expanded.** A reversed `5-3` selected nothing, and
+  nothing selected means *render everything*; `1-99999999999` built the whole set first. Each part is
+  now checked against the book's chapter count before `range()` sees it (`operations.parse_selection`,
+  shared with the CLI).
+- **A sample is for a voice by name, never a path.** `voice test NAME` writes
+  `output/voices/NAME-test.mp3`; with an absolute path as the name that lands wherever it points. A
+  *render* may still clone from an audio file, and gets it as a full path (a `~` would not be expanded
+  by the job).
+- **Ask whether the process is alive before reading its log** (`background.refresh`). Read in the other
+  order, a job that wrote `[exit 0]` and exited between the two looks gone with no exit line, and is
+  recorded as `interrupted` for good. `interrupted` is final, and jobs are ordered by id, never by
+  file timestamp (re-saving a dead job used to move it ahead of newer ones). Two `start` calls at
+  once were both let through until `_START` made check-and-launch atomic.
+- **No cancel.** Stopping a wrong multi-hour render means `pkill -f audiobook-job`; the cache keeps
+  what was spoken. A `cancel_job` tool is the obvious next addition.
+- **Audio is served by the assistant, from `output/` only** (`tools.yaml`: `files: [output]`; see
+  `assistant/CLAUDE.md`). Nothing here knows about HTTP.
+- **Verified for real (2026-10-10):** a voice sample in `abigail` from the new venv, transcribed with
+  Whisper, matched its text 100%; a chapter rendered to MP3 + M4B (chapter marker present) with live
+  percent and time left; the same through chat (preview, approval card, render) and through the
+  web panel in Chrome. The new venv resolved `transformers` 5.19.0 where the old one had 5.17.0;
+  nothing in the plan rules, the golden tests or the speech changed.
 
 ## Conventions
 

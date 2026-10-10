@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# audiobook's MCP front door, over stdio. Nothing may be written to stdout but protocol.
+set -euo pipefail
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# This tool's own environment: it needs torch, Docling and Pocket TTS, which nothing else in
+# the suite does, so it never shares the suite's. (CLAUDE.md, "The shared Python environment".)
+PY="$DIR/.venv/bin/python"
+if [[ ! -x "$PY" ]]; then
+  echo "No Python environment. In the suite: run ./setup at its top. Alone: see audiobook/README or CLAUDE.md (python3 -m venv .venv && .venv/bin/pip install -r requirements.txt)" >&2
+  exit 1
+fi
+
+# The tool's data (output/, voices/, .cache/) and its .env are relative to this folder, so it
+# must run here regardless of where it was launched from.
+cd "$DIR"
+exec "$PY" -m audiobook.mcp_server "$@"

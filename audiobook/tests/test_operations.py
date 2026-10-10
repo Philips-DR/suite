@@ -1,0 +1,162 @@
+"""What a model (or the suite's web app) can ask of the tool, against the saved test paper."""
+
+import gzip
+from pathlib import Path
+
+import pytest
+from docling_core.types.doc import DoclingDocument
+
+from audiobook import operations
+from audiobook.plan import build_plan
+
+FIXTURE = Path(__file__).parent / "fixtures/paper.docling.json.gz"
+
+
+@pytest.fixture
+def analysed(monkeypatch, tmp_path):
+    """A PDF the tool believes Docling has already read, with the real plan of the test paper."""
+    doc = DoclingDocument.model_validate_json(gzip.decompress(FIXTURE.read_bytes()))
+    plan = build_plan(doc, fallback_title="paper")
+    monkeypatch.setattr("audiobook.extract.is_extracted", lambda pdf: True)
+    monkeypatch.setattr(operations, "plan_book", lambda pdf: plan)
+    pdf = tmp_path / "paper.pdf"
+    pdf.write_bytes(b"%PDF-1.4 stand-in")
+    return pdf
+
+
+def test_selection_of_chapters():
+    assert operations.parse_selection("1-3,5", 6) == [1, 2, 3, 5]
+    assert operations.parse_selection(" 2 ", 6) == [2]
+    with pytest.raises(ValueError, match="no chapter 7: this book has 6"):
+        operations.parse_selection("1,7", 6)
+    with pytest.raises(ValueError, match="chapters must look like"):
+        operations.parse_selection("first", 6)
+
+
+def test_a_chapter_selection_cannot_be_backwards_or_enormous():
+    """A reversed range used to select nothing -- and "nothing selected" means "render everything"."""
+    with pytest.raises(ValueError, match="runs backwards: write it as 3-5"):
+        operations.parse_selection("5-3", 6)
+    with pytest.raises(ValueError, match="no chapter 99999999999"):
+        operations.parse_selection("1-99999999999", 6)  # returns at once; it never builds that range
+    with pytest.raises(ValueError, match="no chapter 0"):
+        operations.parse_selection("0-2", 6)
+
+
+def test_speed_and_pdf_checks(tmp_path):
+    assert operations.check_speed(0.95) == 0.95
+    with pytest.raises(ValueError, match="between 0.5 and 2.0"):
+        operations.check_speed(5)
+    with pytest.raises(ValueError, match="not a PDF"):
+        operations.pdf_file(tmp_path / "notes.txt")
+    with pytest.raises(FileNotFoundError):
+        operations.pdf_file(tmp_path / "missing.pdf")
+
+
+def test_an_unanalysed_pdf_says_what_to_do_instead_of_waiting(monkeypatch, tmp_path):
+    monkeypatch.setattr("audiobook.extract.is_extracted", lambda pdf: False)
+    pdf = tmp_path / "new.pdf"
+    pdf.write_bytes(b"%PDF")
+    overview = operations.book_overview(pdf)
+    assert overview["analysed"] is False and "start_analysis" in overview["hint"]
+    with pytest.raises(ValueError, match="start_analysis"):
+        operations.chapter_text(pdf, 1)
+    with pytest.raises(ValueError, match="start_analysis"):
+        operations.start_render(pdf, "alba", tmp_path / "jobs")
+
+
+def test_overview_of_the_paper(analysed):
+    overview = operations.book_overview(analysed)
+    assert overview["analysed"] and overview["title"].startswith("Procedural Graphs")
+    labels = [c["label"] for c in overview["chapters"]]
+    assert labels[:3] == ["Opening", "1. Introduction", "2. Related Work"]
+    assert overview["chapters"][0]["number"] == 1
+    assert overview["skipped"] and overview["render_time"]
+
+
+def test_reading_a_chapter_pages_through_it(analysed):
+    whole = operations.chapter_text(analysed, 2, limit_chars=10**9)
+    assert whole["truncated"] is False and whole["segments"][0]["kind"] in ("heading", "paragraph")
+    first = operations.chapter_text(analysed, 2, limit_chars=500)
+    assert first["truncated"] and first["next_start"] == len(first["segments"])
+    rest = operations.chapter_text(analysed, 2, start=first["next_start"], limit_chars=10**9)
+    assert first["segments"] + rest["segments"] == whole["segments"]
+    with pytest.raises(ValueError, match="no chapter 99"):
+        operations.chapter_text(analysed, 99)
+
+
+def test_corrections_round_trip_and_report_what_was_ignored(analysed):
+    assert operations.get_corrections(analysed)["text"] == ""
+    result = operations.set_corrections(analysed, "# names\nProcedural Graph => PG\nthis line has a typo\n")
+    assert (result["pairs"], result["ignored"]) == (1, ["this line has a typo"])
+    assert "Procedural Graph => PG" in operations.get_corrections(analysed)["text"]
+    assert operations.book_overview(analysed)["corrections"].endswith("paper.corrections.txt")
+
+
+def test_a_correction_with_nothing_to_find_is_ignored_not_applied(analysed):
+    """`=> PG` would replace "" and put PG between every character of the book."""
+    result = operations.set_corrections(analysed, "=> PG\n   => x\nreal => fixed\n")
+    assert (result["pairs"], result["ignored"]) == (1, ["=> PG", "=> x"])
+    from audiobook.speech import apply_corrections, parse_corrections
+    assert apply_corrections("some text", parse_corrections("=> PG")) == "some text"
+
+
+def test_a_sample_is_for_a_voice_by_name_never_a_path(tmp_path, monkeypatch):
+    clip = tmp_path / "me.wav"
+    clip.write_bytes(b"RIFF")
+    monkeypatch.setattr("audiobook.voices.list_voices", lambda: [_voice("alba", "preset")])
+    with pytest.raises(ValueError, match="no voice"):
+        operations.start_voice_sample(str(clip), tmp_path / "jobs")  # would write beside the clip
+    assert operations.check_voice(str(clip)) == str(clip)  # a render may clone from a file...
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert operations.check_voice("~/me.wav") == str(clip)  # ...and gets the path the job can use
+
+
+def test_render_is_refused_before_a_job_exists_for_anything_that_would_fail(analysed, tmp_path, monkeypatch):
+    jobs = tmp_path / "jobs"
+    monkeypatch.setattr("audiobook.voices.list_voices", lambda: [])
+    with pytest.raises(ValueError, match="between 0.5"):
+        operations.start_render(analysed, "alba", jobs, speed=9)
+    with pytest.raises(ValueError, match="no voice 'nobody'"):
+        operations.start_render(analysed, "nobody", jobs)
+    monkeypatch.setattr("audiobook.voices.list_voices", lambda: [_voice("alba", "preset")])
+    with pytest.raises(ValueError, match="no chapter 40"):
+        operations.start_render(analysed, "alba", jobs, chapters="40")
+    assert not jobs.exists() or not list(jobs.glob("*.json"))
+
+
+def _voice(name, kind):
+    from audiobook.voices import Voice
+
+    return Voice(name, kind)
+
+
+def test_a_clone_needs_a_consent_statement_and_a_sound_name(tmp_path):
+    clip = tmp_path / "clip.wav"
+    clip.write_bytes(b"RIFF")
+    jobs = tmp_path / "jobs"
+    with pytest.raises(ValueError, match="consent"):
+        operations.start_voice_clone("tina", clip, "  ", jobs)
+    with pytest.raises(ValueError, match="lowercase"):
+        operations.start_voice_clone("Tina Turner", clip, "my own voice", jobs)
+    with pytest.raises(ValueError, match="built-in"):
+        operations.start_voice_clone("alba", clip, "my own voice", jobs)
+    with pytest.raises(FileNotFoundError):
+        operations.start_voice_clone("tina-2", tmp_path / "nope.wav", "my own voice", jobs)
+    assert not jobs.exists() or not list(jobs.glob("*.json"))
+
+
+def test_finished_audio_is_listed_newest_first(tmp_path):
+    (tmp_path / "old").mkdir()
+    (tmp_path / "old/01.mp3").write_bytes(b"x" * 10)
+    (tmp_path / "new").mkdir()
+    (tmp_path / "new/book.m4b").write_bytes(b"x" * 20)
+    (tmp_path / "new/notes.txt").write_text("not audio")
+    (tmp_path / "empty").mkdir()
+    import os
+    os.utime(tmp_path / "old/01.mp3", (1, 1))
+    books = operations.list_audiobooks(tmp_path)
+    assert [b["book"] for b in books] == ["new", "old"]
+    assert [f["name"] for f in books[0]["files"]] == ["book.m4b"]
+    assert books[0]["files"][0]["modified"] > 0  # lets the page tell a re-rendered file from the old one
+    assert operations.list_audiobooks(tmp_path / "missing") == []

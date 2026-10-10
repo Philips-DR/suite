@@ -90,13 +90,15 @@ def for_speech(text: str) -> str:
 
 
 def parse_corrections(text: str) -> list[tuple[str, str]]:
-    """Lines of `find => replace`; blank lines and # comments ignored."""
+    """Lines of `find => replace`; blank lines and # comments ignored. A line with nothing to find
+    is ignored too: replacing "" would put the replacement between every character of the book."""
     pairs = []
     for line in text.splitlines():
         line = line.strip()
         if line and not line.startswith("#") and "=>" in line:
             find, _, replace = line.partition("=>")
-            pairs.append((find.strip(), replace.strip()))
+            if find.strip():
+                pairs.append((find.strip(), replace.strip()))
     return pairs
 
 

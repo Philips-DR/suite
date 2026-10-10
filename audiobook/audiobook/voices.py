@@ -40,6 +40,7 @@ class Voice:
     window: tuple[float, float] | None = None
     similarity: float | None = None
     added: str | None = None
+    consent: str | None = None  # who agreed to this voice being cloned, as the person said it
 
 
 @dataclass
@@ -128,6 +129,7 @@ def add_voice(
     end: float | None = None,
     search: bool = True,
     overwrite: bool = False,
+    consent: str | None = None,
     on_status: Callable[[str], None] = lambda _: None,
 ) -> AddResult:
     if not NAME.match(name):
@@ -140,7 +142,7 @@ def add_voice(
     VOICES_DIR.mkdir(exist_ok=True)
 
     duration = len(_decode(clip, 16000)) / 16000
-    result = AddResult(Voice(name, "cloned", str(clip), added=date.today().isoformat()))
+    result = AddResult(Voice(name, "cloned", str(clip), added=date.today().isoformat(), consent=consent))
 
     if start is not None or end is not None:
         window = (start or 0.0, min(end if end is not None else duration, (start or 0.0) + MAX_PROMPT_S))

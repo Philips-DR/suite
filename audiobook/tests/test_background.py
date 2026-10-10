@@ -1,0 +1,182 @@
+"""Background jobs, against real stand-in processes: no model, no Docling, no audio.
+
+Each test launches a tiny shell script in place of `python -m audiobook ...`, inside the same
+wrapper the real jobs run in, so what is exercised is the real thing: the wrapper's exit marker,
+the /proc check, and the progress read back from a log.
+"""
+
+import os
+import signal
+import time
+
+import pytest
+
+from audiobook import background
+from audiobook.background import JOB_MARKER, ROOT, WRAPPER, JobError
+
+
+@pytest.fixture(autouse=True)
+def quick_confirm(monkeypatch):
+    # start() waits this long to catch a job that dies at once; the tests need not wait 2 s each.
+    monkeypatch.setattr(background, "START_CONFIRM_SECONDS", 0.3)
+
+
+def standin(script: str, target: str = "book.pdf") -> list[str]:
+    return ["bash", "-c", WRAPPER, JOB_MARKER, "bash", "-c", script, "standin", target]
+
+
+def wait_until_finished(jobs_dir, job, seconds=10.0):
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        job = background.get(jobs_dir, job.id)
+        if job.state != "running":
+            return job
+        time.sleep(0.1)
+    raise AssertionError(f"still {job.state} after {seconds} s")
+
+
+PROGRESS = r"printf '  [ 40%%] chapter 2: A Long Title %20s 12/30 · ~0:05:00 left   \r' ''"
+
+
+def test_a_finished_job_reports_done_and_what_it_made(tmp_path):
+    script = PROGRESS + r"; echo; echo '  -> output/book/01-a-0.95x.mp3 (0:00:10)'; echo 'Audiobook: output/book/book.m4b'"
+    job = background.start("render", "book.pdf", tmp_path, [], command=standin(script))
+    job = wait_until_finished(tmp_path, job)
+    assert (job.state, job.phase, job.percent, job.eta) == ("done", "done", 100.0, None)
+    assert job.outputs == [str(ROOT / "output/book/01-a-0.95x.mp3"), str(ROOT / "output/book/book.m4b")]
+
+
+def test_a_failed_job_says_why(tmp_path):
+    job = background.start("render", "book.pdf", tmp_path, [], command=standin("echo 'it broke'; exit 3"))
+    job = wait_until_finished(tmp_path, job)
+    assert job.state == "failed"
+    assert "it broke" in job.detail
+
+
+def test_a_running_job_reports_its_progress_and_only_one_runs_at_a_time(tmp_path):
+    job = background.start("render", "book.pdf", tmp_path, [], command=standin(PROGRESS + "; sleep 30"))
+    try:
+        job = background.get(tmp_path, job.id)
+        assert job.state == "running"
+        assert (job.phase, job.percent, job.chapter, job.chunks_done, job.chunks_total, job.eta) == (
+            "rendering", 40.0, 2, 12, 30, "0:05:00")
+        assert job.chapter_title == "A Long Title"
+        with pytest.raises(JobError, match="One at a time"):
+            background.start("analyse", "other.pdf", tmp_path, [], command=standin("sleep 30", "other.pdf"))
+        assert background.current(tmp_path).id == job.id
+    finally:
+        os.killpg(job.pid, signal.SIGKILL)
+
+
+def test_a_killed_job_is_interrupted_not_failed(tmp_path):
+    job = background.start("render", "book.pdf", tmp_path, [], command=standin("sleep 30"))
+    os.killpg(job.pid, signal.SIGKILL)
+    job = wait_until_finished(tmp_path, job)
+    assert job.state == "interrupted"
+    assert "resumes" in job.detail
+    # And a new job may now start: an interrupted one is not "running".
+    again = background.start("render", "book.pdf", tmp_path, [], command=standin("sleep 30"))
+    os.killpg(again.pid, signal.SIGKILL)
+
+
+def test_a_job_that_dies_at_once_is_reported_in_the_start_call(tmp_path):
+    job = background.start("render", "book.pdf", tmp_path, [], command=standin("echo nope; exit 2"))
+    assert job.state == "failed"
+
+
+def test_latest_and_get(tmp_path):
+    assert background.latest(tmp_path) is None
+    with pytest.raises(JobError, match="no audiobook job"):
+        background.get(tmp_path, "nope")
+    job = background.start("analyse", "book.pdf", tmp_path, [], command=standin("exit 0"))
+    wait_until_finished(tmp_path, job)
+    assert background.latest(tmp_path).id == job.id
+
+
+def test_a_pid_that_is_not_our_job_is_not_believed():
+    assert not background.is_our_job(None, "book.pdf")
+    assert not background.is_our_job(os.getpid(), "book.pdf")  # alive, but not a job
+    assert not background.is_our_job(2**22 + 12345, "book.pdf")  # not alive
+
+
+def test_progress_is_read_from_each_kind_of_log():
+    assert background.read_progress("analyse", "Analysing book.pdf ...")["phase"] == "analysing"
+    assert background.read_progress("render", "")["phase"] == "starting"
+    assert background.read_progress("render", "Loading Pocket TTS...")["phase"] == "loading the voice model"
+    assert background.read_progress("sample", "")["phase"] == "speaking a sample"
+    cloning = background.read_progress("voice", "  window 1/4: 0-30 s\n  window 3/4: 30-60 s")
+    assert cloning["percent"] == 75
+    # The LAST update wins: a render line is rewritten in place with carriage returns.
+    log = "  [ 10%] chapter 1: One    3/30   \r  [ 20%] chapter 1: One    6/30 · ~1:00:00 left   \r"
+    latest = background.read_progress("render", log)
+    assert (latest["percent"], latest["chunks_done"], latest["eta"]) == (20.0, 6, "1:00:00")
+
+
+def test_an_old_interrupted_job_never_becomes_the_latest(tmp_path):
+    """Polling refreshes every job. An interrupted one used to be re-saved each time, which moved
+    its file's timestamp, and `latest` sorted by timestamp: the oldest dead job would take over
+    from the newest one."""
+    old = background.start("render", "old.pdf", tmp_path, [], command=standin("sleep 30", "old.pdf"))
+    os.killpg(old.pid, signal.SIGKILL)
+    assert wait_until_finished(tmp_path, old).state == "interrupted"
+    time.sleep(1.1)  # job ids carry the second they started in
+    new = background.start("analyse", "new.pdf", tmp_path, [], command=standin("exit 0", "new.pdf"))
+    wait_until_finished(tmp_path, new)
+    for _ in range(3):
+        background.current(tmp_path)  # what every status poll does: refresh every job
+        assert background.latest(tmp_path).id == new.id
+
+
+def test_two_starts_at_once_cannot_both_win(tmp_path):
+    import threading
+
+    results = []
+
+    def attempt(n):
+        try:
+            results.append(background.start("render", f"b{n}.pdf", tmp_path, [], command=standin("sleep 30", f"b{n}.pdf")))
+        except JobError:
+            results.append(None)
+
+    threads = [threading.Thread(target=attempt, args=(n,)) for n in range(4)]
+    [t.start() for t in threads]
+    [t.join() for t in threads]
+    started = [r for r in results if r]
+    try:
+        assert len(started) == 1, f"{len(started)} jobs started"
+    finally:
+        for job in started:
+            os.killpg(job.pid, signal.SIGKILL)
+
+
+def test_a_chapter_title_containing_a_fraction_is_not_read_as_progress():
+    """The counts are the ones followed by the time left or the end of the line, not the first
+    'N/M' the title happens to contain."""
+    line = "  [ 40%] chapter 2: Part 2/3 Notes                        12/30 · ~0:05:00 left   \r"
+    got = background.read_progress("render", line)
+    assert (got["chapter_title"], got["chunks_done"], got["chunks_total"], got["eta"]) == ("Part 2/3 Notes", 12, 30, "0:05:00")
+    no_eta = background.read_progress("render", "  [100%] chapter 1: Questions 1/2 and more    7/7   \n")
+    assert (no_eta["chapter_title"], no_eta["chunks_done"], no_eta["chunks_total"]) == ("Questions 1/2 and more", 7, 7)
+
+
+def test_a_job_that_finishes_between_the_checks_is_not_called_interrupted(tmp_path, monkeypatch):
+    """The process must be asked about BEFORE its log is read. If it exits after the log was read
+    but before it is asked about, a finished job has no exit line yet looks gone."""
+    job = background.start("render", "book.pdf", tmp_path, [], command=standin("sleep 0.5; echo done"))
+    order = []
+    real_alive, real_read = background.is_our_job, background.Path.read_text
+
+    def alive(*args):
+        order.append("asked")
+        return real_alive(*args)
+
+    def read(self, *args, **kwargs):
+        if self.suffix == ".log":
+            order.append("read log")
+        return real_read(self, *args, **kwargs)
+
+    monkeypatch.setattr(background, "is_our_job", alive)
+    monkeypatch.setattr(background.Path, "read_text", read)
+    background.refresh(tmp_path, background.Job(**{**job.__dict__, "state": "running"}))
+    assert order.index("asked") < order.index("read log")
+    wait_until_finished(tmp_path, job)
