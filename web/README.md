@@ -12,9 +12,17 @@ npm run dev      # live reload on http://127.0.0.1:5173
 The backend must be running for the app to do anything (`../start` runs both).
 
 **Uploads:** audio from **Meetings → Upload audio**, markdown files or a whole folder from
-**Documents**, or either from the **Attach** button in chat. An upload lands on the backend as a
-path, which the Transcribe box or the Make a Google Doc button then uses — or, from chat, the
-assistant is told about it with your next message.
+**Documents**, a PDF from **Audiobooks → Upload a PDF** (and a voice recording from **Add a voice**),
+or audio and markdown from the **Attach** button in chat. An upload lands on the backend as a
+path, which the Transcribe box, the Make a Google Doc button or the Audiobooks panel then uses — or,
+from chat, the assistant is told about it with your next message.
+
+**Audiobooks** (`src/components/Audiobooks.tsx`) is the interface of the `audiobook` tool, which has
+none of its own. Reading a book, rendering it and cloning a voice are background jobs in the tool;
+the panel polls `audiobook__job_status`, so it can be closed and reopened mid-render. Finished audio
+is played and downloaded through the backend's `/api/files`, which wants the token in a header like
+every other call — so `fetchMedia` (`src/api.ts`) fetches the file and hands the player a blob,
+rather than pointing an `<audio>` tag at a URL with the token in it.
 
 **The access token arrives by itself.** Given `ASSISTANT_TOKEN` in its environment (which
 `../start` sets, fresh each launch, for both programs), this app's server writes it into the

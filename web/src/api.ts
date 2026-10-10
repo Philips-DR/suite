@@ -140,7 +140,7 @@ export interface AssistantEvent {
   level?: 'success' | 'warning' | 'error'
   title?: string
   body?: string
-  kind?: 'audio' | 'docs'
+  kind?: 'audio' | 'docs' | 'book' | 'voice'
   path?: string
 }
 
@@ -273,6 +273,8 @@ export interface UploadedDocs { name: string; path: string; files: string[] }
 export interface Uploads {
   audio: (UploadedAudio & { at: number })[]
   docs: (UploadedDocs & { at: number })[]
+  books: (UploadedAudio & { at: number })[]
+  voices: (UploadedAudio & { at: number })[]
 }
 
 function put<T>(path: string, file: Blob, onProgress?: (sent: number) => void): Promise<T> {
@@ -305,6 +307,34 @@ export const getUploads = () => request<Uploads>('/api/uploads')
 export const uploadAudio = (file: File, onProgress?: (fraction: number) => void) =>
   put<UploadedAudio>(`/api/uploads/audio?name=${encodeURIComponent(file.name)}`, file,
     (sent) => onProgress?.(file.size ? sent / file.size : 1))
+
+/** A PDF to make into an audiobook. */
+export const uploadBook = (file: File, onProgress?: (fraction: number) => void) =>
+  put<UploadedAudio>(`/api/uploads/book?name=${encodeURIComponent(file.name)}`, file,
+    (sent) => onProgress?.(file.size ? sent / file.size : 1))
+
+/** A recording to clone a voice from. Kept apart from meetings' audio on the server. */
+export const uploadVoice = (file: File, onProgress?: (fraction: number) => void) =>
+  put<UploadedAudio>(`/api/uploads/voice?name=${encodeURIComponent(file.name)}`, file,
+    (sent) => onProgress?.(file.size ? sent / file.size : 1))
+
+/**
+ * Audio a tool made. The token travels in a header like every other call, so the bytes are
+ * fetched here and handed to the player as a blob, rather than an <audio> tag being pointed at a
+ * URL -- which would mean putting the token in the URL, where it is kept in logs and history.
+ */
+export async function fetchMedia(path: string): Promise<Blob> {
+  const response = await fetch(`${API_URL}/api/files?path=${encodeURIComponent(path)}`, {
+    headers: { 'x-assistant-token': token },
+  })
+  if (response.status === 401 && !(await recoverToken())) {
+    window.dispatchEvent(new Event('assistant-needs-token'))
+  }
+  if (!response.ok) {
+    throw new ApiError(response.status, response.status === 404 ? 'That file is no longer there.' : response.statusText)
+  }
+  return response.blob()
+}
 
 /** docu-ai reads only the top level of a folder, so that is all that is sent; anything
  * deeper, or not markdown, is reported as skipped rather than uploaded to do nothing. */
