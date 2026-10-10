@@ -30,7 +30,7 @@ from typing import Any, Callable
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from assistant.approval import WEB_PREVIEW_LIMIT, needs_approval, sanitise
@@ -52,6 +52,10 @@ LOCAL_HOSTS = {"127.0.0.1", "localhost"}
 DEFAULT_ORIGINS = ("http://127.0.0.1:8751", "http://localhost:8751",
                    "http://127.0.0.1:5173", "http://localhost:5173")
 NOTE_LIMIT = 400
+# Audio a tool may offer for playing and download. A tool's folder is not enough on its own:
+# only these kinds of file are ever sent.
+MEDIA_TYPES = {".mp3": "audio/mpeg", ".m4b": "audio/mp4", ".m4a": "audio/mp4", ".wav": "audio/wav",
+               ".flac": "audio/flac", ".ogg": "audio/ogg", ".opus": "audio/ogg"}
 
 
 def approval_view(request: ApprovalRequest) -> dict[str, Any]:
@@ -395,6 +399,48 @@ def create_app(
         h.note_text(f"The user uploaded audio {target.name} ({size} bytes), saved at {target}.")
         await h.emit({"type": "upload", "kind": "audio", "name": target.name, "path": str(target)})
         return {"name": target.name, "path": str(target), "bytes": size}
+
+    @app.put("/api/uploads/book")
+    async def upload_book(request: Request, name: str):
+        h = hub()
+        try:
+            target = up.book_target(uploads_root, name)
+            size = await up.receive(target, request.stream(), up.MAX_BOOK_BYTES)
+        except up.UploadError as error:
+            return refuse(error)
+        h.note_text(f"The user uploaded a book (PDF) {target.name} ({size} bytes), saved at {target}.")
+        await h.emit({"type": "upload", "kind": "book", "name": target.name, "path": str(target)})
+        return {"name": target.name, "path": str(target), "bytes": size}
+
+    @app.put("/api/uploads/voice")
+    async def upload_voice(request: Request, name: str):
+        h = hub()
+        try:
+            target = up.voice_target(uploads_root, name)
+            size = await up.receive(target, request.stream(), up.MAX_VOICE_BYTES)
+        except up.UploadError as error:
+            return refuse(error)
+        h.note_text(f"The user uploaded a recording {target.name} to clone a voice from "
+                    f"({size} bytes), saved at {target}.")
+        await h.emit({"type": "upload", "kind": "voice", "name": target.name, "path": str(target)})
+        return {"name": target.name, "path": str(target), "bytes": size}
+
+    @app.get("/api/files")
+    async def media(path: str):
+        """Audio a tool made, for the web app to play or download. The token rides in a header
+        like everywhere else, so the app fetches this itself rather than pointing an <audio>
+        tag at it. Nothing is served unless it is an audio file inside a folder tools.yaml
+        declared for some tool; anything else is a plain 404, so the answer says nothing about
+        what exists elsewhere."""
+        try:
+            resolved = Path(path).resolve()  # follows symlinks: the check is on where it really is
+        except (ValueError, OSError):  # a NUL byte, an unreadable link loop: still just "not there"
+            raise HTTPException(404, "no such file") from None
+        roots = [root.resolve() for root in hub().registry.media_roots]
+        kind = MEDIA_TYPES.get(resolved.suffix.lower())
+        if kind is None or not resolved.is_file() or not any(resolved.is_relative_to(r) for r in roots):
+            raise HTTPException(404, "no such file")
+        return FileResponse(resolved, media_type=kind, filename=resolved.name)
 
     @app.post("/api/uploads/docs")
     async def start_docs(body: dict[str, Any]):

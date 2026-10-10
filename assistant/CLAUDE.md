@@ -12,7 +12,8 @@ belongs in a tool instead.
   whole architecture was a response to. A little duplication at a boundary is the cheaper
   mistake.
 - **`tools.yaml` is the only file that knows every tool exists.** Adding a tool is an entry
-  there; no module gets edited.
+  there; no module gets edited. (The one exception is `watchers.py`, which names the tools whose
+  long jobs deserve a "finished" notice: meet-ai's transcription and audiobook's jobs.)
 - **Credentials and paths are injected into tools, never discovered by them.** The `env` on
   a server entry is that mechanism.
 
@@ -173,6 +174,33 @@ from something that went wrong live:
   experience, employers, dates, qualifications, figures or skills.
 
 A CV is built with `docu_ai__build` and `theme: "resume"`, which docu-ai's model door now offers.
+
+## Books and voices (audiobook)
+
+`PUT /api/uploads/book` takes a PDF into `uploads/books/`, and `PUT /api/uploads/voice` a recording
+to clone a voice from into `uploads/voices/` — **apart from `audio/`, which is meetings**, so a voice
+sample never shows up as something to transcribe. Same rules as every upload: hostile names,
+`.part` then rename, a path is all the tool gets, and each is noted for the model. The tool is
+`audiobook`; the assistant knows nothing about books.
+
+## Audio a tool made (`GET /api/files`)
+
+How the web app plays and downloads what a tool rendered, without the assistant learning where any
+tool keeps anything. Five rules, the first four tested in `tests/test_uploads.py`:
+
+- **A tool declares what may be served, in `tools.yaml`** (`files: [output]`, relative to the tool's
+  own folder). The API serves only audio files inside a declared folder; the registry's
+  `media_roots` is the whole list.
+- **The check is on where the file really is.** `resolve()` follows symlinks and `..` before the
+  folder test, so a link inside `output/` that points outside it, or `output/../x.mp3`, is refused.
+- **Only audio extensions** (`MEDIA_TYPES`): a declared folder is not a licence to send `.env`.
+- **Every refusal is the same plain 404** — outside the folders, wrong kind, missing — so the answer
+  says nothing about what exists elsewhere.
+- **The token stays out of the URL.** Its rule is still "a URL only for `/api/events`", because
+  EventSource cannot send headers; an `<audio>` tag could, but only by putting the token in its
+  `src`, where it is kept in logs and history. So the web app `fetch`es the file with the header and
+  plays a blob (`web/src/api.ts` → `fetchMedia`). The cost is that a file loads whole before it
+  plays: a four-hour M4B is ~115 MB. Taking that over a token in a URL was deliberate.
 
 ## Memory and history in the interface
 

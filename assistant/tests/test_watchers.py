@@ -1,6 +1,6 @@
 """Tests for job notifications. The decisions are pure functions, so no server is needed."""
 
-from assistant.watchers import login_notice, recording_notice, transcription_notice
+from assistant.watchers import audiobook_notice, login_notice, recording_notice, transcription_notice
 
 
 def job(state, **extra):
@@ -56,3 +56,28 @@ def test_a_failing_login_is_announced_once_with_the_fix():
 def test_a_login_that_recovers_says_so():
     assert login_notice("error", {"level": "ok"})["title"] == "AWS login working again"
     assert login_notice(None, {"level": "ok"}) is None
+
+
+def book_job(kind, state, **extra):
+    return {"id": "j1", "kind": kind, "target": "/x/uploads/books/Novel.pdf", "state": state, **extra}
+
+
+def test_each_kind_of_audiobook_job_is_announced_in_its_own_words():
+    titles = {kind: audiobook_notice("running", book_job(kind, "done"))["title"]
+              for kind in ("analyse", "render", "voice", "sample")}
+    assert titles == {"analyse": "Book read", "render": "Audiobook ready",
+                      "voice": "Voice cloned", "sample": "Sample ready"}
+    assert "Novel.pdf" in audiobook_notice("running", book_job("render", "done"))["body"]
+
+
+def test_a_failed_or_interrupted_audiobook_job_is_not_called_a_success():
+    failed = audiobook_notice("running", book_job("render", "failed", detail="no such voice"))
+    assert failed["level"] == "error" and "no such voice" in failed["body"]
+    interrupted = audiobook_notice("running", book_job("render", "interrupted"))
+    assert interrupted["level"] == "warning" and "resumes" in interrupted["body"]
+
+
+def test_an_old_or_running_audiobook_job_is_not_announced():
+    assert audiobook_notice(None, book_job("render", "done")) is None
+    assert audiobook_notice("running", book_job("render", "running")) is None
+    assert audiobook_notice("running", None) is None

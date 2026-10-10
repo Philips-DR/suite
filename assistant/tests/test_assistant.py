@@ -99,6 +99,23 @@ def test_tools_yaml_round_trips(tmp_path):
     assert servers == [ToolServer(name="meet-ai", command="/bin/true", args=["--x"], env={"A": "1"})]
 
 
+def test_the_folders_a_tool_serves_are_relative_to_the_tool_not_to_tools_yaml(tmp_path):
+    path = tmp_path / "tools.yaml"
+    path.write_text(
+        "servers:\n"
+        "  - name: audiobook\n"
+        "    command: /bin/true\n"
+        f"    cwd: {tmp_path}/book\n"
+        "    files: [output, /somewhere/else]\n"
+        "  - name: meet-ai\n"
+        "    command: /bin/true\n",
+        encoding="utf-8",
+    )
+    audiobook, meet = load_tool_servers(path)
+    assert audiobook.files == [str(tmp_path / "book" / "output"), "/somewhere/else"]
+    assert meet.files == []  # a tool serves nothing unless it said so
+
+
 def test_a_hyphenated_server_name_is_folded_for_the_model():
     """Anthropic tool names allow [a-zA-Z0-9_-] only; "meet-ai" would otherwise be sent raw."""
     assert ToolServer(name="meet-ai", command="x").safe_name == "meet_ai"

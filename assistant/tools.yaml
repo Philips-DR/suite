@@ -28,3 +28,12 @@ servers:
       # Drafting and sending, switched on deliberately (2026-09-26). Sending still needs
       # two presses in the app, or an approval in chat, over the rendered message.
       MAIL_AI_COMPOSE: "1"
+
+  # PDF to audiobook, in a cloned voice. Reading a book and rendering it are background jobs of
+  # minutes to hours; job_status is how anyone watches them.
+  - name: audiobook
+    command: ${AUDIOBOOK_HOME:-../audiobook}/mcp
+    cwd: ${AUDIOBOOK_HOME:-../audiobook}
+    # The audio it makes, which the web app may play and download. Relative to its own folder;
+    # nothing outside the folders named here is ever served.
+    files: [output]

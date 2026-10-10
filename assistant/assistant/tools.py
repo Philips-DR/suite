@@ -12,6 +12,7 @@ import os
 import sys
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable
 
 from mcp import ClientSession, StdioServerParameters
@@ -119,6 +120,11 @@ class ToolRegistry:
         self._sessions: dict[str, ClientSession] = {}
         self._stack = AsyncExitStack()
         self.tools: list[RemoteTool] = []
+
+    @property
+    def media_roots(self) -> list[Path]:
+        """Folders the web app may fetch audio from: exactly what tools.yaml declared."""
+        return [Path(f) for server in self._servers for f in server.files]
 
     async def __aenter__(self) -> "ToolRegistry":
         await self._stack.__aenter__()

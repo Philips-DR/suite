@@ -77,6 +77,9 @@ class ToolServer:
     args: list[str] = field(default_factory=list)
     cwd: str | None = None
     env: dict[str, str] = field(default_factory=dict)
+    # Folders of audio this tool makes for a person to listen to, which the web app may play and
+    # download. Declared here, never discovered: the API serves nothing a tool did not name.
+    files: list[str] = field(default_factory=list)
 
     @property
     def safe_name(self) -> str:
@@ -148,6 +151,7 @@ def load_tool_servers(path: Path) -> list[ToolServer]:
         name = str(entry["name"])
         where = f"{path}: server {name!r}"
         command = str(entry["command"])
+        cwd = _resolve_path(str(entry["cwd"]), base, where) if entry.get("cwd") else None
 
         out.append(
             ToolServer(
@@ -157,11 +161,14 @@ def load_tool_servers(path: Path) -> list[ToolServer]:
                 # Arguments get ~ and $VAR but never relative resolution: an argument is as
                 # likely to be a flag or a literal as a path, and guessing would corrupt it.
                 args=[expand(str(a), base, where) for a in entry.get("args", [])],
-                cwd=_resolve_path(str(entry["cwd"]), base, where) if entry.get("cwd") else None,
+                cwd=cwd,
                 env={
                     str(k): expand(str(v), base, where)
                     for k, v in (entry.get("env") or {}).items()
                 },
+                # Relative to the tool's own folder, since that is where the tool runs.
+                files=[_resolve_path(str(f), Path(cwd) if cwd else base, where)
+                       for f in entry.get("files", [])],
             )
         )
     return out

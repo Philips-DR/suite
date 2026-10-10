@@ -1,4 +1,5 @@
-"""Files a person hands the assistant: audio to transcribe, markdown to turn into a Doc.
+"""Files a person hands the assistant: audio to transcribe, markdown to turn into a Doc,
+a PDF to make into an audiobook, a recording to clone a voice from.
 
 The assistant owns the uploads folder; the tools never learn it exists. An upload ends in a
 path, and a path is what meet-ai and docu-ai already take -- so a file uploaded here and a
@@ -17,9 +18,14 @@ from typing import Any, AsyncIterator
 
 AUDIO_EXTS = {".m4a", ".mp3", ".wav", ".flac", ".ogg", ".opus", ".webm", ".mp4", ".aac", ".wma"}
 DOC_EXTS = {".md"}
+BOOK_EXTS = {".pdf"}
 # A two-hour meeting is ~115 MB as m4a and ~350 MB as FLAC; four hours of WAV is ~2.5 GB.
 MAX_AUDIO_BYTES = 4 * 1024**3
 MAX_DOC_BYTES = 20 * 1024**2
+# A scanned book is a photograph of every page.
+MAX_BOOK_BYTES = 1024**3
+# A voice is cloned from about 30 seconds; a long recording is searched for its best window.
+MAX_VOICE_BYTES = 512 * 1024**2
 PART = ".part"
 
 _BAD_COMPONENT = re.compile(r"[\x00-\x1f/\\]")
@@ -60,6 +66,26 @@ def audio_target(root: Path, name: str) -> Path:
         raise UploadError(f"{name} is not an audio file this can transcribe "
                           f"({', '.join(sorted(AUDIO_EXTS))})")
     folder = root / "audio"
+    folder.mkdir(parents=True, exist_ok=True)
+    return _inside(root, unique(folder / name))
+
+
+def book_target(root: Path, name: str) -> Path:
+    name = _clean_component(Path(name).name)
+    if Path(name).suffix.lower() not in BOOK_EXTS:
+        raise UploadError(f"{name} is not a PDF")
+    folder = root / "books"
+    folder.mkdir(parents=True, exist_ok=True)
+    return _inside(root, unique(folder / name))
+
+
+def voice_target(root: Path, name: str) -> Path:
+    """A recording to clone a voice from. Kept apart from `audio/`, which is meetings: a voice
+    sample must not turn up in the list of things to transcribe."""
+    name = _clean_component(Path(name).name)
+    if Path(name).suffix.lower() not in AUDIO_EXTS:
+        raise UploadError(f"{name} is not an audio file ({', '.join(sorted(AUDIO_EXTS))})")
+    folder = root / "voices"
     folder.mkdir(parents=True, exist_ok=True)
     return _inside(root, unique(folder / name))
 
@@ -117,13 +143,20 @@ def doc_path(batch_dir: Path) -> Path:
     return files[0] if len(files) == 1 else batch_dir
 
 
-def listing(root: Path) -> dict[str, Any]:
-    audio_dir, docs_dir = root / "audio", root / "docs"
-    audio = [
+def _files(folder: Path, extensions: set[str]) -> list[dict[str, Any]]:
+    """What is in an uploads folder, newest first."""
+    if not folder.is_dir():
+        return []
+    return [
         {"name": p.name, "path": str(p), "bytes": p.stat().st_size, "at": p.stat().st_mtime}
-        for p in sorted(audio_dir.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True)
-        if p.is_file() and p.suffix.lower() in AUDIO_EXTS
-    ] if audio_dir.is_dir() else []
+        for p in sorted(folder.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if p.is_file() and p.suffix.lower() in extensions
+    ]
+
+
+def listing(root: Path) -> dict[str, Any]:
+    docs_dir = root / "docs"
+    audio = _files(root / "audio", AUDIO_EXTS)
     docs = []
     if docs_dir.is_dir():
         for batch in sorted(docs_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
@@ -131,5 +164,6 @@ def listing(root: Path) -> dict[str, Any]:
             if files:
                 docs.append({"name": batch.name, "path": str(doc_path(batch)), "files": files,
                              "at": batch.stat().st_mtime})
-    return {"audio": audio, "docs": docs}
+    return {"audio": audio, "docs": docs,
+            "books": _files(root / "books", BOOK_EXTS), "voices": _files(root / "voices", AUDIO_EXTS)}
 

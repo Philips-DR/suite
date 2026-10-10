@@ -52,6 +52,28 @@ def transcription_notice(before: str | None, job: dict[str, Any] | None) -> dict
             "body": f"{name} stopped before finishing. Starting it again resumes where it left off."}
 
 
+def audiobook_notice(before: str | None, job: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The same for an audiobook job -- reading a book, rendering it, cloning a voice, a sample."""
+    if not job or before != "running" or job.get("state") not in FINISHED:
+        return None
+    name = Path(str(job.get("target", ""))).name
+    kind = job.get("kind")
+    state = job["state"]
+    if state == "done":
+        title, body = {
+            "analyse": ("Book read", f"{name} is analysed. Preview it, then choose a voice."),
+            "render": ("Audiobook ready", f"{name} is rendered. It is under Audiobooks."),
+            "voice": ("Voice cloned", f"The voice from {name} is ready. Listen to a sample before using it."),
+            "sample": ("Sample ready", f"A sample of {name} is ready to hear."),
+        }.get(kind, ("Audiobook job finished", name))
+        return {"level": "success", "title": title, "body": body}
+    if state == "failed":
+        return {"level": "error", "title": "Audiobook job failed",
+                "body": f"{name}: {str(job.get('detail', ''))[:200]}"}
+    return {"level": "warning", "title": "Audiobook job interrupted",
+            "body": f"{name} stopped before finishing. Starting it again resumes where it left off."}
+
+
 def recording_notice(before: str | None, session: dict[str, Any] | None) -> dict[str, Any] | None:
     if before == "recording" and session and session.get("state") == "orphaned":
         return {"level": "warning", "title": "Recording interrupted",
@@ -62,6 +84,7 @@ def recording_notice(before: str | None, session: dict[str, Any] | None) -> dict
 async def watch(registry: ToolRegistry, emit: Emit) -> None:
     """Run until cancelled. A failed poll is skipped, never fatal."""
     job_state: dict[str, str] = {}
+    book_state: dict[str, str] = {}
     recording: str | None = None
     while True:
         try:
@@ -70,6 +93,14 @@ async def watch(registry: ToolRegistry, emit: Emit) -> None:
             if job:
                 notice = transcription_notice(job_state.get(job["id"]), job)
                 job_state[job["id"]] = job["state"]
+                if notice:
+                    await emit({"type": "notice", **notice})
+
+            status = await _read(registry, "audiobook__job_status")
+            job = (status or {}).get("job")
+            if job:
+                notice = audiobook_notice(book_state.get(job["id"]), job)
+                book_state[job["id"]] = job["state"]
                 if notice:
                     await emit({"type": "notice", **notice})
 
