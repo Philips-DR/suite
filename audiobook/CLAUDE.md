@@ -132,7 +132,7 @@ as clearest.
   top: `book_overview`, `chapter_text`, corrections, `list_audiobooks`, `start_*`, `job_status`. What
   both front doors call.
 - `audiobook/background.py` — analysing, rendering and voice work as detached background jobs.
-- `audiobook/mcp_server.py` — the MCP door (11 tools); `./mcp` launches it.
+- `audiobook/mcp_server.py` — the MCP door (12 tools); `./mcp` launches it.
 - `audiobook/voices.py` — `add_voice` (window search scored by WavLM similarity), `test_voice`,
   `list_voices`; metadata in `voices/NAME.json`.
 - `audiobook/__main__.py` — CLI and `.env` loading.
@@ -223,8 +223,19 @@ How it was joined to the suite, and the rules that came out of running it for re
   recorded as `interrupted` for good. `interrupted` is final, and jobs are ordered by id, never by
   file timestamp (re-saving a dead job used to move it ahead of newer ones). Two `start` calls at
   once were both let through until `_START` made check-and-launch atomic.
-- **No cancel.** Stopping a wrong multi-hour render means `pkill -f audiobook-job`; the cache keeps
-  what was spoken. A `cancel_job` tool is the obvious next addition.
+- **Cancel stops the whole process group, and writes its marker first.** `background.cancel` writes
+  `.jobs/<id>.cancel`, *then* sends SIGTERM to the group (the job is its own session, so its pid is
+  its group), then SIGKILL if anything is left after 5 s. The marker has to come first: once the
+  process is gone, any status poll must be able to tell `cancelled` from `interrupted` (which tells
+  people "starting again resumes"), and an answer only written after the kill loses that race. A job
+  that had in fact finished — its `[exit 0]` is in the log — is `done`, whatever the marker says.
+- **"Is the job alive" means "is anything alive in its process group", not "is the wrapper".** The
+  first cancel watched only the wrapper: SIGTERM killed it at once, the check said "stopped", and
+  members that ignore SIGTERM kept running (found because a test leaked them). The same weakness let
+  a killed wrapper turn a still-rendering job into "interrupted", inviting a second render beside it.
+  `is_our_job` now scans `/proc` for group members that name the target and the marker or
+  `python -m audiobook`; `cancel` waits for the group to empty, not for one pid.
+  A render stopped this way loses nothing (chunk cache); reading a book and cloning start over.
 - **Audio is served by the assistant, from `output/` only** (`tools.yaml`: `files: [output]`; see
   `assistant/CLAUDE.md`). Nothing here knows about HTTP.
 - **Verified for real (2026-10-10):** a voice sample in `abigail` from the new venv, transcribed with

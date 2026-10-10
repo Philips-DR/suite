@@ -23,7 +23,7 @@ interface BookJob {
   id: string
   kind: 'analyse' | 'render' | 'voice' | 'sample'
   target: string
-  state: 'running' | 'done' | 'failed' | 'interrupted'
+  state: 'running' | 'done' | 'failed' | 'interrupted' | 'cancelled'
   phase: string
   percent: number | null
   chapter: number | null
@@ -143,15 +143,51 @@ function AudioFile({ path, size }: { path: string; size?: number }) {
 
 // ---------------------------------------------------------------------------
 
-function JobCard({ job }: { job: BookJob | null }) {
+function JobCard({ job, reload }: { job: BookJob | null; reload: () => Promise<void> }) {
+  // Stopping a render is a click, then a second one: it is hours of work being set down, even though
+  // every sentence already spoken is kept.
+  const [asking, setAsking] = useState(false)
+  const [stopping, setStopping] = useState(false)
+  const [error, setError] = useState('')
   if (!job) return null
   const running = job.state === 'running'
+
+  const cancel = async () => {
+    setStopping(true)
+    setError('')
+    try {
+      await call('audiobook__cancel_job', { job_id: job.id })
+      setAsking(false)
+      await reload()
+    } catch (e) {
+      setError(message(e))
+    } finally {
+      setStopping(false)
+    }
+  }
+
   return (
     <div className={`card job job-${job.state}`}>
       <div className="job-head">
         <strong>{KIND_LABEL[job.kind]}: {fileName(job.target)}</strong>
-        <span className="badge">{running ? job.phase : job.state}</span>
+        <span className="row">
+          <span className="badge">{running ? job.phase : job.state}</span>
+          {running && !asking && <button onClick={() => setAsking(true)}>Cancel</button>}
+        </span>
       </div>
+      {running && asking && (
+        <div className="warn-box" style={{ marginBottom: 8 }}>
+          <p>
+            Stop this {job.kind === 'render' ? 'render' : 'job'}?
+            {job.kind === 'render' ? ' Everything already spoken is kept, so starting it again carries on.' : ' It will start over if run again.'}
+          </p>
+          <div className="row">
+            <button className="danger" disabled={stopping} onClick={() => void cancel()}>{stopping ? 'Stopping…' : 'Yes, stop it'}</button>
+            <button disabled={stopping} onClick={() => setAsking(false)}>Keep going</button>
+          </div>
+        </div>
+      )}
+      {error && <p className="error">{error}</p>}
       {running && (
         <>
           <div className="bar" role="progressbar" aria-valuenow={job.percent ?? 0} aria-valuemin={0} aria-valuemax={100}>
@@ -175,7 +211,7 @@ function JobCard({ job }: { job: BookJob | null }) {
         <p className="muted">{job.outputs.length} file{job.outputs.length === 1 ? '' : 's'} made — see Finished audio below.</p>
       )}
       {job.state === 'done' && job.kind === 'voice' && <p className="muted">The voice is ready. Hear a sample before using it.</p>}
-      {(job.state === 'failed' || job.state === 'interrupted') && <p className="warn">{job.detail}</p>}
+      {(job.state === 'failed' || job.state === 'interrupted' || job.state === 'cancelled') && <p className="warn">{job.detail}</p>}
     </div>
   )
 }
@@ -616,7 +652,7 @@ export function Audiobooks() {
   return (
     <div className="panel">
       <Library book={book} setBook={setBook} />
-      <JobCard job={job} />
+      <JobCard job={job} reload={status.reload} />
       {book && (
         <Book key={book} pdf={book} voices={voiceList.data?.voices ?? []} job={job} reloadJob={status.reload} />
       )}

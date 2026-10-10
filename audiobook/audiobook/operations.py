@@ -291,6 +291,12 @@ def start_voice_sample(name: str, jobs_dir: Path, speed: float = DEFAULT_SPEED) 
     return asdict(background.start("sample", name, jobs_dir, ["voice", "test", name, "--speed", f"{speed:g}"]))
 
 
+def cancel_job(jobs_dir: Path, job_id: str | None = None) -> dict:
+    """Stop the running job. A render keeps every sentence it had spoken, so starting it again
+    carries on; reading a book and cloning a voice start over."""
+    return asdict(background.cancel(jobs_dir, job_id))
+
+
 def job_status(jobs_dir: Path, job_id: str | None = None) -> dict | None:
     """One job by id, or the most recent. Refreshed from its process and its log."""
     job = background.get(jobs_dir, job_id) if job_id else background.latest(jobs_dir)

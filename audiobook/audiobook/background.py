@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import threading
@@ -71,7 +72,7 @@ class Job:
     started_at: str
     pid: int | None = None
     arguments: list[str] = field(default_factory=list)
-    state: str = "running"  # running | done | failed | interrupted
+    state: str = "running"  # running | done | failed | interrupted | cancelled
     phase: str = ""
     percent: float | None = None
     chapter: int | None = None
@@ -87,6 +88,22 @@ def _job_file(jobs_dir: Path, job_id: str) -> Path:
     return Path(jobs_dir) / f"{job_id}.json"
 
 
+def _cancel_marker(jobs_dir: Path, job_id: str) -> Path:
+    return Path(jobs_dir) / f"{job_id}.cancel"
+
+
+# What a person is told, per kind, once a job has been stopped on request: what survived.
+CANCELLED = {
+    "render": "stopped on request. Every sentence already spoken is kept, so starting the same render "
+              "again carries on from there.",
+    "analyse": "stopped on request. Nothing was kept from this reading; starting it again begins "
+               "again.",
+    "voice": "stopped on request. The voice was not saved; nothing else changed.",
+    "sample": "stopped on request.",
+}
+STOP_WAIT_SECONDS = 5.0
+
+
 def _save(jobs_dir: Path, job: Job) -> None:
     _job_file(jobs_dir, job.id).write_text(json.dumps(asdict(job), indent=2), encoding="utf-8")
 
@@ -98,19 +115,40 @@ def _load(path: Path) -> Job | None:
         return None
 
 
+def _group_members(pgid: int):
+    """(state, argv) of every process in a process group. The job runs in a session of its own, so
+    its group is the wrapper, the Python it started, and whatever that started in turn (ffmpeg)."""
+    for entry in Path("/proc").iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            stat = (entry / "stat").read_text().rsplit(")", 1)[-1].split()  # state, ppid, pgrp, ...
+            if int(stat[2]) != pgid:
+                continue
+            argv = [a.decode(errors="replace") for a in (entry / "cmdline").read_bytes().split(b"\0")]
+        except (OSError, ValueError, IndexError):  # it exited while we looked
+            continue
+        yield stat[0], argv
+
+
 def is_our_job(pid: int | None, target: str) -> bool:
-    """Is this pid still the wrapper running our job on this exact target?"""
+    """Is our job still running? That is: is anything alive in its process group that names this
+    target? Not "is the wrapper alive": if only the wrapper is killed, the render underneath it
+    carries on, and calling that "interrupted" would let a second render start beside it.
+
+    A pid left over from before a reboot can belong to anything, so a member only counts if it
+    names the target and is part of ours (the wrapper's marker, or `python -m audiobook`)."""
     if not pid:
         return False
-    try:
-        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
-        stat = Path(f"/proc/{pid}/stat").read_text()
-    except OSError:
-        return False
-    if stat.rsplit(")", 1)[-1].split()[0] == "Z":  # a zombie has finished
-        return False
-    args = [a.decode(errors="replace") for a in cmdline]
-    return JOB_MARKER in args and target in args
+    return any(
+        state != "Z" and target in argv and (JOB_MARKER in argv or "audiobook" in argv)  # Z: finished
+        for state, argv in _group_members(pid)
+    )
+
+
+def _group_alive(pgid: int) -> bool:
+    """Is any process left in the group, of any name? What a cancel must wait for."""
+    return any(state != "Z" for state, _ in _group_members(pgid))
 
 
 def _reap(pid: int | None) -> None:
@@ -164,9 +202,9 @@ def _log_tail(path: Path, limit: int = 400) -> str:
 
 def refresh(jobs_dir: Path, job: Job) -> Job:
     """Bring a job's state up to date from its process and its log."""
-    # All three are final: a job with no process cannot come back. Re-reading an interrupted one on
+    # All four are final: a job with no process cannot come back. Re-reading an interrupted one on
     # every poll used to re-save it, which is what the file's timestamp -- and so its age -- recorded.
-    if job.state in ("done", "failed", "interrupted"):
+    if job.state in ("done", "failed", "interrupted", "cancelled"):
         return job
 
     # Alive FIRST, log second. The other way round, a process that wrote "[exit 0]" and exited
@@ -190,6 +228,11 @@ def refresh(jobs_dir: Path, job: Job) -> Job:
     elif finished:
         job.state = "failed"
         job.detail = _log_tail(log)
+    elif _cancel_marker(jobs_dir, job.id).exists():
+        # Someone asked for this to stop, and the marker was written BEFORE the process was killed,
+        # so whichever poll first notices it gone gets this right instead of calling it interrupted.
+        job.state = "cancelled"
+        job.detail = CANCELLED[job.kind]
     else:
         # Gone without reporting an exit status: killed, or the machine slept or rebooted.
         job.state = "interrupted"
@@ -227,6 +270,39 @@ def get(jobs_dir: Path, job_id: str) -> Job:
 def latest(jobs_dir: Path) -> Job | None:
     jobs = _all(jobs_dir)
     return refresh(jobs_dir, jobs[-1]) if jobs else None
+
+
+def cancel(jobs_dir: Path, job_id: str | None = None) -> Job:
+    """Stop the running job (or the named one) and return it, finished.
+
+    The whole process group goes: the job runs in its own session, so this reaches the voice model,
+    Docling and any ffmpeg underneath it, and nothing is left burning CPU. SIGTERM first, SIGKILL if
+    it is still there after a few seconds. Nothing already done is lost -- see CANCELLED.
+    """
+    jobs_dir = Path(jobs_dir)
+    with _START:  # a start must not slip in between "nothing is running" and the kill
+        job = get(jobs_dir, job_id) if job_id else current(jobs_dir)
+        if job is None:
+            raise JobError("nothing is running")
+        if job.state != "running":
+            raise JobError(f"job {job.id} is already {job.state}")
+
+        # The marker first: once the process is gone, any poll must be able to tell cancelled from
+        # interrupted, and it cannot if the answer is only written after the kill.
+        _cancel_marker(jobs_dir, job.id).write_text(datetime.now().isoformat(timespec="seconds"))
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.killpg(job.pid, sig)  # the job is its own session, so its pid is its group
+            except ProcessLookupError:
+                break
+            deadline = time.monotonic() + STOP_WAIT_SECONDS
+            # Wait for the GROUP to empty, not just the wrapper: a member that ignores SIGTERM
+            # outlives the wrapper, and the job must not be called stopped while it burns CPU.
+            while time.monotonic() < deadline and _group_alive(job.pid):
+                time.sleep(0.1)
+            if not _group_alive(job.pid):
+                break
+        return refresh(jobs_dir, job)
 
 
 def start(kind: str, target: str, jobs_dir: Path, arguments: list[str],

@@ -8,6 +8,7 @@ the /proc check, and the progress read back from a log.
 import os
 import signal
 import time
+from pathlib import Path
 
 import pytest
 
@@ -22,7 +23,8 @@ def quick_confirm(monkeypatch):
 
 
 def standin(script: str, target: str = "book.pdf") -> list[str]:
-    return ["bash", "-c", WRAPPER, JOB_MARKER, "bash", "-c", script, "standin", target]
+    # "audiobook" and the target are in the real process's arguments too: python -u -m audiobook render <pdf>
+    return ["bash", "-c", WRAPPER, JOB_MARKER, "bash", "-c", script, "standin", "audiobook", target]
 
 
 def wait_until_finished(jobs_dir, job, seconds=10.0):
@@ -180,3 +182,107 @@ def test_a_job_that_finishes_between_the_checks_is_not_called_interrupted(tmp_pa
     background.refresh(tmp_path, background.Job(**{**job.__dict__, "state": "running"}))
     assert order.index("asked") < order.index("read log")
     wait_until_finished(tmp_path, job)
+
+
+# ---------------------------------------------------------------------------
+# Cancelling
+# ---------------------------------------------------------------------------
+
+def test_cancelling_stops_the_whole_job_and_says_what_was_kept(tmp_path):
+    # A grandchild, like ffmpeg under the real render: it must die too. Its pid is written down so
+    # the check is on that process, not on a name some other process might share.
+    child = tmp_path / "grandchild.pid"
+    job = background.start("render", "book.pdf", tmp_path, [],
+                           command=standin(f"sleep 31 & echo $! > {child}; wait", "book.pdf"))
+    assert background.get(tmp_path, job.id).state == "running"
+    deadline = time.monotonic() + 5
+    while not child.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    grandchild = int(child.read_text())
+    assert Path(f"/proc/{grandchild}").exists()
+
+    stopped = background.cancel(tmp_path)
+    assert stopped.id == job.id and stopped.state == "cancelled"
+    assert "already spoken is kept" in stopped.detail
+    assert not background.is_our_job(job.pid, "book.pdf")
+    # Nothing in the job's process group is left burning CPU. (It may take a moment to be reaped.)
+    deadline = time.monotonic() + 2
+    while Path(f"/proc/{grandchild}").exists() and time.monotonic() < deadline:
+        stat = Path(f"/proc/{grandchild}/stat").read_text().rsplit(")", 1)[-1].split()[0]
+        if stat == "Z":  # dead, waiting to be reaped by whoever adopted it
+            break
+        time.sleep(0.05)
+    else:
+        assert not Path(f"/proc/{grandchild}").exists(), "the grandchild is still running"
+
+    # It is final, it is not "interrupted" however often it is polled, and a new job may start.
+    for _ in range(3):
+        assert background.get(tmp_path, job.id).state == "cancelled"
+    assert background.current(tmp_path) is None
+    again = background.start("render", "book.pdf", tmp_path, [], command=standin("sleep 30", "book.pdf"))
+    os.killpg(again.pid, signal.SIGKILL)
+
+
+def test_what_is_kept_depends_on_what_was_cancelled(tmp_path):
+    for kind, expected in (("analyse", "begins again"), ("voice", "was not saved")):
+        job = background.start(kind, "x", tmp_path, [], command=standin("sleep 30", "x"))
+        assert expected in background.cancel(tmp_path, job.id).detail
+
+
+def test_cancelling_when_nothing_runs_or_twice_is_an_error_not_a_crash(tmp_path):
+    with pytest.raises(JobError, match="nothing is running"):
+        background.cancel(tmp_path)
+    job = background.start("render", "book.pdf", tmp_path, [], command=standin("sleep 30", "book.pdf"))
+    background.cancel(tmp_path)
+    with pytest.raises(JobError, match="already cancelled"):
+        background.cancel(tmp_path, job.id)
+    with pytest.raises(JobError, match="no audiobook job"):
+        background.cancel(tmp_path, "nope")
+
+
+def test_a_job_that_stops_ignoring_the_polite_request_is_still_stopped(tmp_path, monkeypatch):
+    monkeypatch.setattr(background, "STOP_WAIT_SECONDS", 0.5)
+    """Everything below the wrapper ignores SIGTERM, so the wrapper dies at once and the job's own
+    process does not. A cancel that watched only the wrapper would call this stopped."""
+    child = tmp_path / "stubborn.pid"
+    stubborn = standin(f"trap '' TERM; sleep 31 & echo $! > {child}; wait", "book.pdf")
+    job = background.start("render", "book.pdf", tmp_path, [], command=stubborn)
+    deadline = time.monotonic() + 5
+    while not child.exists() and time.monotonic() < deadline:
+        time.sleep(0.05)
+    grandchild = int(child.read_text())
+    assert background.cancel(tmp_path).state == "cancelled"
+    assert not background._group_alive(job.pid), "something in the job's group survived the cancel"
+    assert not Path(f"/proc/{grandchild}").exists() or \
+        Path(f"/proc/{grandchild}/stat").read_text().rsplit(")", 1)[-1].split()[0] == "Z"
+
+
+def test_a_job_that_finished_before_the_cancel_landed_is_done_not_cancelled(tmp_path):
+    """The marker is written before the kill. If the job had in fact already finished -- its exit
+    line is in the log -- that is the truth, and it must win."""
+    log = tmp_path / "j1.log"
+    log.write_text("  -> output/b/01.mp3 (0:00:10)\n\n[exit 0]\n")
+    job = background.Job(id="j1", kind="render", target="book.pdf", log=str(log), started_at="now", pid=None)
+    background._cancel_marker(tmp_path, "j1").write_text("now")
+    assert background.refresh(tmp_path, job).state == "done"
+
+
+def test_killing_only_the_wrapper_does_not_make_a_running_job_look_interrupted(tmp_path):
+    """The render underneath keeps going. "Interrupted" would invite starting a second one beside it."""
+    # `; true` keeps a shell around the sleep, as `python -m audiobook render <pdf>` is a process that
+    # names its book: without it bash would exec straight into `sleep`, which names nothing.
+    command = standin("sleep 31; true", "book.pdf")
+    job = background.start("render", "book.pdf", tmp_path, [], command=command)
+    try:
+        os.kill(job.pid, signal.SIGKILL)  # just the wrapper, not its group
+        time.sleep(0.3)
+        assert background.get(tmp_path, job.id).state == "running"
+        with pytest.raises(JobError, match="One at a time"):
+            background.start("render", "book.pdf", tmp_path, [], command=command)
+        assert background.cancel(tmp_path).state == "cancelled"
+        assert not background._group_alive(job.pid)
+    finally:
+        try:
+            os.killpg(job.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass

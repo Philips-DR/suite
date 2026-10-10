@@ -224,10 +224,29 @@ def create_audiobook_server(paths: ServerPaths) -> MCPServer:
             return _failed(error)
 
     @server.tool(
+        name="cancel_job",
+        title="Stop the running job",
+        description=(
+            "Stop the audiobook job that is running (or the one named by job_id) and return it with "
+            "state cancelled. For a render nothing is lost: every sentence already spoken is kept, so "
+            "start_render with the same arguments carries on from there. Reading a book or cloning a "
+            "voice starts over if run again, and a cloned voice that was not finished is not saved. "
+            "Use it when the user says the wrong book, voice or chapters were started, or wants the "
+            "computer back. Errors if nothing is running."
+        ),
+        annotations=WRITE,
+    )
+    def _cancel_job(job_id: str | None = None) -> dict:
+        try:
+            return {"job": operations.cancel_job(paths.jobs_dir, job_id)}
+        except FAILURES as error:
+            return _failed(error)
+
+    @server.tool(
         name="job_status",
         title="How is the job getting on?",
         description=(
-            "State of an audiobook job -- running, done, failed or interrupted -- with its kind "
+            "State of an audiobook job -- running, done, failed, interrupted or cancelled -- with its kind "
             "(analyse, render, voice, sample), its phase, percent, the chapter being spoken and "
             "the time left while it runs, and the files it made once it is done. Pass a job id, or "
             "omit it for the most recent. An interrupted render can be started again and resumes "

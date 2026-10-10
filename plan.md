@@ -61,9 +61,9 @@ Each was tested (`./test`) and run for real; the real runs found most of the bug
 | 09-27 | The suite: one repo, `./setup`, `./start`, `./test`, one shared `.venv` | `CLAUDE.md` |
 | 09-28 | Frontend/backend split; automatic token hand-over; uploads (audio, `.md` files, folders) from Meetings, Documents and chat | `assistant/CLAUDE.md`, `web/README.md` |
 | 09-28 | Drafting: the assistant can read an upload and write a tailored version (e.g. a CV for a role), measured against the original; CVs build in the résumé look | `assistant/CLAUDE.md` → Drafting |
-| 10-10 | audiobook joined: merged with history, own `.venv`, MCP door (11 tools), detached background jobs that survive a backend restart, PDF and recording uploads, path-confined audio playback and download, finished-job notices, and the Audiobooks panel (read a book, chapter table and exact text, corrections, voices with consent, render with progress, play and download). Run for real: Whisper heard a sample 100% right; a chapter rendered to MP3 + M4B; a render outlived `pkill` of the backend; the same flows through chat and in Chrome. | `audiobook/CLAUDE.md` → The suite integration; `assistant/CLAUDE.md` → Audio a tool made |
+| 10-10 | audiobook joined: merged with history, own `.venv`, MCP door (12 tools), detached background jobs that survive a backend restart and can be cancelled, PDF and recording uploads, path-confined audio playback and download, finished-job notices, and the Audiobooks panel (read a book, chapter table and exact text, corrections, voices with consent, render with progress, play and download). Run for real: Whisper heard a sample 100% right; a chapter rendered to MP3 + M4B; a render outlived `pkill` of the backend; the same flows through chat and in Chrome. | `audiobook/CLAUDE.md` → The suite integration; `assistant/CLAUDE.md` → Audio a tool made |
 
-Test counts on 2026-10-10: assistant 144, meet-ai 113, mail-ai 75, docu-ai 285, audiobook 77, web typecheck.
+Test counts on 2026-10-10: assistant 145, meet-ai 113, mail-ai 75, docu-ai 285, audiobook 83, web typecheck.
 
 ## Known rough edges
 
@@ -83,8 +83,7 @@ Real, known, not yet fixed. Each is small unless marked.
   registered only by the web server, which owns the uploads folder.
 - **A CV keeps all its content**, so the tailored one is 3 pages; shortening is a separate request,
   and the draft check will show what was cut.
-- **Audiobook: no way to cancel a job** from the page or from chat — a wrong multi-hour render is
-  stopped with `pkill -f audiobook-job` (what was spoken stays cached). Small things: one job at a time (reading, rendering and cloning share the CPU). A
+- **Audiobook, small things.** One job at a time (reading, rendering and cloning share the CPU). A
   file plays only once it has been fetched whole (the token travels in a header, so it is a blob, not
   a streamed URL): a four-hour M4B is ~115 MB before the first second. There is no button to delete
   finished audio or an uploaded book. A book is opened from an upload or by pasting its path — PDFs

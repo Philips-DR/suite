@@ -77,6 +77,10 @@ def test_a_failed_or_interrupted_audiobook_job_is_not_called_a_success():
     assert interrupted["level"] == "warning" and "resumes" in interrupted["body"]
 
 
+def test_a_job_the_user_cancelled_is_not_announced_back_to_them():
+    assert audiobook_notice("running", book_job("render", "cancelled")) is None
+
+
 def test_an_old_or_running_audiobook_job_is_not_announced():
     assert audiobook_notice(None, book_job("render", "done")) is None
     assert audiobook_notice("running", book_job("render", "running")) is None
