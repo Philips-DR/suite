@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audiobook</title>
+<style>
+  :root {
+    --bg: #f7f6f3; --panel: #ffffff; --ink: #1f2328; --muted: #6b7280; --line: #e5e3de;
+    --accent: #2f6f5e; --accent-ink: #ffffff; --soft: #eef4f1; --bad: #b42318; --warn: #8a5a00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16181b; --panel: #1f2226; --ink: #e8e6e3; --muted: #9aa0a6; --line: #30343a;
+            --accent: #6fbfa6; --accent-ink: #0f1412; --soft: #22302b; --bad: #ff8a80; --warn: #f0c36d; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 14px 24px; border-bottom: 1px solid var(--line); display: flex; align-items: baseline; gap: 12px; }
+  header h1 { font-size: 18px; margin: 0; }
+  header span { color: var(--muted); font-size: 13px; }
+  .layout { display: grid; grid-template-columns: 300px 1fr; gap: 20px; padding: 20px 24px; max-width: 1400px; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; padding: 16px; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 20px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 12px; }
+  h3 { margin: 0 0 4px; font-size: 20px; }
+  button, .btn { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 7px; padding: 7px 12px;
+    font: inherit; font-size: 14px; cursor: pointer; }
+  button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+  button:disabled { opacity: .5; cursor: default; }
+  input, select, textarea { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 7px; padding: 6px 8px; }
+  textarea { width: 100%; min-height: 140px; font-family: ui-monospace, monospace; font-size: 13px; }
+  .muted { color: var(--muted); font-size: 13px; }
+  ul.list { list-style: none; margin: 0; padding: 0; }
+  ul.list li { padding: 8px 10px; border-radius: 7px; cursor: pointer; display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+  ul.list li:hover { background: var(--soft); }
+  ul.list li.active { background: var(--soft); font-weight: 600; }
+  .tag { font-size: 11px; padding: 1px 7px; border-radius: 99px; background: var(--soft); color: var(--muted); white-space: nowrap; }
+  table { width: 100%; border-collapse: collapse; }
+  td, th { padding: 7px 6px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { font-size: 12px; color: var(--muted); font-weight: 500; }
+  td.num { text-align: right; white-space: nowrap; color: var(--muted); }
+  a.chap { color: var(--ink); text-decoration: none; border-bottom: 1px dotted var(--muted); cursor: pointer; }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
+  .text { max-height: 520px; overflow: auto; padding-right: 8px; }
+  .text p { margin: 0 0 12px; }
+  .text h4 { margin: 18px 0 8px; }
+  .text .announce { color: var(--muted); font-style: italic; }
+  details { margin-top: 14px; color: var(--muted); font-size: 13px; }
+  .job { padding: 10px 0; border-bottom: 1px solid var(--line); }
+  .job:last-child { border-bottom: 0; }
+  .bar { height: 6px; background: var(--line); border-radius: 99px; overflow: hidden; margin: 6px 0; }
+  .bar > div { height: 100%; background: var(--accent); transition: width .5s; }
+  .error { color: var(--bad); }
+  .warn { color: var(--warn); }
+  audio { width: 100%; margin-top: 4px; }
+  .file { margin-bottom: 12px; }
+  .empty { color: var(--muted); padding: 30px 0; text-align: center; }
+</style>
+</head>
+<body>
+<header><h1>Audiobook</h1><span>PDF → audiobook, read in the voice you choose</span></header>
+<div class="layout">
+  <aside>
+    <section>
+      <h2>Library</h2>
+      <ul class="list" id="books"></ul>
+      <div class="row">
+        <input type="file" id="upload" accept="application/pdf" hidden>
+        <button onclick="document.getElementById('upload').click()">Upload PDF</button>
+      </div>
+    </section>
+    <section>
+      <h2>Voices</h2>
+      <ul class="list" id="voices"></ul>
+      <details id="addvoice"><summary>Add a voice</summary>
+        <p class="muted">A recording of one person speaking, any format. 30 seconds is ideal; a longer
+          recording is searched for its best 30 seconds.</p>
+        <input id="vname" placeholder="name, e.g. tina" style="width:100%;margin-bottom:8px">
+        <input type="file" id="vclip" accept="audio/*" style="width:100%;margin-bottom:8px">
+        <label class="muted"><input type="checkbox" id="vconsent"> I own this voice or have the speaker's permission</label>
+        <div class="row"><button onclick="addVoice()">Clone voice</button></div>
+      </details>
+    </section>
+    <section>
+      <h2>Jobs</h2>
+      <div id="jobs"><div class="muted">Nothing running.</div></div>
+    </section>
+  </aside>
+  <main id="main"><section><div class="empty">Choose a book, or upload a PDF.</div></section></main>
+</div>
+
+<script>
+let book = null, voiceList = [], selectedChapter = null, watching = new Set();
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const clock = s => { s = Math.round(s); const h = Math.floor(s/3600), m = Math.floor(s%3600/60);
+  return h ? `${h} h ${String(m).padStart(2,"0")} min` : m ? `${m} min` : `${s % 60} s`; };
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, opts);
+  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || r.statusText); }
+  return r.json();
+}
+
+async function loadBooks() {
+  const books = await api("/api/books");
+  $("books").innerHTML = books.length ? books.map(b => `
+    <li class="${book && book.id === b.id ? "active" : ""}" onclick="openBook('${b.id}')">
+      <span>${esc(b.title)}${b.author ? `<br><span class="muted">${esc(b.author)}</span>` : ""}</span>
+      ${b.analysed ? "" : '<span class="tag">not read yet</span>'}</li>`).join("")
+    : '<li class="muted">No books yet.</li>';
+}
+
+async function loadVoices() {
+  voiceList = await api("/api/voices");
+  const mine = voiceList.filter(v => v.kind === "cloned");
+  $("voices").innerHTML = mine.map(v => `
+    <li><span>${esc(v.name)}${v.similarity ? `<br><span class="muted">likeness ${v.similarity.toFixed(3)}</span>` : ""}</span>
+      <button class="ghost" onclick="testVoice('${v.name}')">▶ Sample</button></li>`).join("")
+    + `<li class="muted">+ ${voiceList.length - mine.length} built-in voices</li>`;
+  const sel = $("voice");
+  if (sel) fillVoiceSelect(sel);
+}
+
+function fillVoiceSelect(sel) {
+  const current = sel.value || localStorage.getItem("voice") || "abigail";
+  sel.innerHTML = `<optgroup label="Your voices">${voiceList.filter(v => v.kind === "cloned").map(v => `<option>${esc(v.name)}</option>`).join("")}</optgroup>
+    <optgroup label="Built-in">${voiceList.filter(v => v.kind === "preset").map(v => `<option>${esc(v.name)}</option>`).join("")}</optgroup>`;
+  if ([...sel.options].some(o => o.value === current)) sel.value = current;
+}
+
+async function openBook(id) {
+  try { book = await api(`/api/books/${id}`); }
+  catch (e) {
+    if (e.message === "not analysed yet") {
+      $("main").innerHTML = `<section><h3>${esc(id)}</h3><p>This PDF hasn't been read yet.</p>
+        <button onclick="analyse('${id}')">Read it now</button> <span class="muted">About 2–4 seconds per page.</span></section>`;
+      book = {id}; loadBooks(); return;
+    }
+    throw e;
+  }
+  selectedChapter = null;
+  renderBook(); loadBooks();
+}
+
+function renderBook() {
+  const b = book;
+  $("main").innerHTML = `
+    <section>
+      <h3>${esc(b.title)}</h3>
+      <div class="muted">${b.author ? esc(b.author) + " · " : ""}${b.chapters.length} chapters · about ${b.speech} of speech</div>
+      <table style="margin-top:14px">
+        <tr><th><input type="checkbox" id="all" onchange="document.querySelectorAll('.pick').forEach(c => c.checked = this.checked)"></th>
+          <th>#</th><th>Chapter</th><th class="num">Words</th><th class="num">Speech</th></tr>
+        ${b.chapters.map(c => `<tr>
+          <td><input type="checkbox" class="pick" value="${c.number}"></td><td class="num">${c.number}</td>
+          <td><a class="chap" onclick="showChapter(${c.number})">${esc(c.label)}</a> ${c.appendix ? '<span class="tag">appendix</span>' : ""}</td>
+          <td class="num">${c.words.toLocaleString()}</td><td class="num">${c.speech}</td></tr>`).join("")}
+      </table>
+      <div class="row">
+        <label>Voice <select id="voice" onchange="localStorage.setItem('voice', this.value)"></select></label>
+        <label>Speed <input id="speed" type="number" min="0.5" max="2" step="0.05" value="${localStorage.getItem("speed") || "0.95"}"
+          style="width:80px" onchange="localStorage.setItem('speed', this.value)"></label>
+        <label><input type="checkbox" id="m4b"> Also one .m4b file</label>
+        <button onclick="render()">Render selected</button>
+      </div>
+    </section>
+    <section id="chapter"><h2>What will be read</h2><div class="muted">Click a chapter to see its exact text.</div></section>
+    <section><h2>Corrections</h2>
+      <p class="muted">Typos in the book, fixed before reading. One per line: <code>find =&gt; replace</code></p>
+      <textarea id="corrections"></textarea>
+      <div class="row"><button onclick="saveCorrections()">Save and re-check</button></div>
+    </section>
+    <section><h2>Audio</h2><div id="outputs"></div></section>`;
+  fillVoiceSelect($("voice"));
+  renderOutputs();
+  api(`/api/books/${b.id}/corrections`).then(r => $("corrections").value = r.text);
+  if (selectedChapter) showChapter(selectedChapter);
+}
+
+function renderOutputs() {
+  const files = book.outputs || [];
+  $("outputs").innerHTML = files.length ? files.map(f => `<div class="file"><div>${esc(f.name)}
+      <a class="muted" href="${f.url}" download>download</a></div><audio controls preload="none" src="${f.url}"></audio></div>`).join("")
+    : '<div class="muted">Nothing rendered yet.</div>';
+}
+
+function showChapter(n) {
+  selectedChapter = n;
+  const c = book.chapters[n - 1];
+  const body = c.segments.map(s => s.kind === "heading" ? `<h4>${esc(s.text)}</h4>`
+    : s.kind === "title" ? `<p><b>${esc(s.text)}</b></p>` : s.kind === "list_item" ? `<p>• ${esc(s.text)}</p>` : `<p>${esc(s.text)}</p>`).join("");
+  const reasons = {};
+  c.skipped.forEach(s => (reasons[s.reason] = reasons[s.reason] || []).push(s));
+  const skipped = Object.entries(reasons).map(([r, xs]) => `<li>${xs.length} × ${esc(r)}${xs[0].text ? ` — e.g. “${esc(xs[0].text.slice(0, 80))}”` : ""}</li>`).join("");
+  $("chapter").innerHTML = `<h2>What will be read — ${esc(c.label)}</h2>
+    <div class="text"><p class="announce">Announced: “${esc(c.announce)}”</p>${body}</div>
+    ${skipped || c.citations_removed ? `<details><summary>Not read aloud</summary><ul>
+      ${c.citations_removed ? `<li>${c.citations_removed} citations removed</li>` : ""}${skipped}</ul></details>` : ""}`;
+}
+
+async function analyse(id) { watch(await api(`/api/books/${id}/analyse`, {method: "POST"})); }
+
+$("upload").onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const fd = new FormData(); fd.append("file", f);
+  const r = await api("/api/books", {method: "POST", body: fd});
+  book = {id: r.book}; watch(r.job); loadBooks();
+  $("main").innerHTML = `<section><h3>${esc(f.name)}</h3><p>Reading the PDF — see Jobs.</p></section>`;
+  e.target.value = "";
+};
+
+async function render() {
+  const chapters = [...document.querySelectorAll(".pick:checked")].map(c => +c.value);
+  if (!chapters.length && !confirm("No chapters ticked. Render the whole book?")) return;
+  const body = {voice: $("voice").value, speed: +$("speed").value, m4b: $("m4b").checked, chapters: chapters.length ? chapters : null};
+  try { watch(await api(`/api/books/${book.id}/render`, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)})); }
+  catch (e) { alert(e.message); }
+}
+
+async function saveCorrections() {
+  await api(`/api/books/${book.id}/corrections`, {method: "PUT", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({text: $("corrections").value})});
+  openBook(book.id);
+}
+
+async function testVoice(name) { watch(await api(`/api/voices/${name}/test`, {method: "POST"})); }
+
+async function addVoice() {
+  const fd = new FormData();
+  fd.append("name", $("vname").value.trim().toLowerCase()); fd.append("clip", $("vclip").files[0]);
+  fd.append("consent", $("vconsent").checked);
+  try { watch(await api("/api/voices", {method: "POST", body: fd})); $("addvoice").open = false; }
+  catch (e) { alert(e.message); }
+}
+
+function watch(job) { watching.add(job.id); pollJobs(); }
+
+async function pollJobs() {
+  const jobs = await api("/api/jobs");
+  $("jobs").innerHTML = jobs.length ? jobs.slice(0, 8).map(j => `<div class="job">
+      <div>${esc(j.label)}</div>
+      ${j.status === "running" || j.status === "queued" ? `<div class="bar"><div style="width:${Math.round(j.progress * 100)}%"></div></div>
+        <div class="muted">${j.status === "queued" ? "Waiting for the current job" : esc(j.message)}${j.seconds_left ? ` · about ${clock(j.seconds_left)} left` : ""}</div>` : ""}
+      ${j.status === "error" ? `<div class="error">${esc(j.error)}</div>` : ""}
+      ${j.status === "done" ? `<div class="muted">Done</div>` : ""}
+      ${(j.result.warnings || []).map(w => `<div class="warn">${esc(w)}</div>`).join("")}
+      ${j.kind === "voice-test" && j.status === "done" ? (j.result.files || []).map(f => `<audio controls autoplay src="${f.url}?t=${j.finished}"></audio>`).join("") : ""}
+    </div>`).join("") : '<div class="muted">Nothing running.</div>';
+  for (const j of jobs) {
+    if (watching.has(j.id) && (j.status === "done" || j.status === "error")) {
+      watching.delete(j.id);
+      if (j.kind === "voice-add") loadVoices();
+      if (j.kind === "analyse" && j.result.book) openBook(j.result.book);
+      if (j.kind === "render" && book && book.chapters) openBook(book.id);
+    }
+  }
+  if (jobs.some(j => j.status === "running" || j.status === "queued")) setTimeout(pollJobs, 1500);
+}
+
+loadBooks(); loadVoices(); pollJobs();
+</script>
+</body>
+</html>
