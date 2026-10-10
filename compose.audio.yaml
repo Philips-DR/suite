@@ -1,0 +1,10 @@
+# Optional: let meet-ai record from this computer's microphone, through PipeWire's Pulse socket.
+#   ./start-docker up --audio
+# Only meaningful on a machine that has a microphone and a desktop session; a server has neither, and
+# recording there would have to happen in the browser instead.
+services:
+  backend:
+    environment:
+      PULSE_SERVER: unix:/run/pulse/native
+    volumes:
+      - ${XDG_RUNTIME_DIR}/pulse/native:/run/pulse/native

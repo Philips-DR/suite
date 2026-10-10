@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# The suite in containers.
+#
+#   ./start-docker up [--tailscale] [--audio]   build if needed, start, and say where it is
+#   ./start-docker down                          stop it (your data is in ./data and stays)
+#   ./start-docker logs [service]                follow the logs
+#   ./start-docker status                        what is running and healthy
+#   ./start-docker import                        copy this folder's existing state into ./data, once
+#   ./start-docker test                          run the Python and docu-ai test suites in the image
+#
+# `up` makes a fresh access token each time (unless ASSISTANT_TOKEN is set in .env), gives it to the
+# backend and the web app, and creates ./data owned by you rather than by Docker's root.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
+command -v docker >/dev/null || { echo "docker is not installed." >&2; exit 1; }
+docker compose version >/dev/null 2>&1 || { echo "needs the Docker Compose plugin (docker compose)." >&2; exit 1; }
+
+[[ -f .env ]] || { cp .env.example .env; echo "Wrote .env from .env.example -- check the AWS profile in it."; }
+set -a; source .env; set +a
+export SUITE_UID="$(id -u)" SUITE_GID="$(id -g)"
+
+cmd="${1:-up}"; shift || true
+# Compose wants the token to exist just to read the file, even to list or stop containers. Those
+# commands neither create nor change a container, so a placeholder is honest; `up` and `test` make a real one.
+case "$cmd" in up|test) ;; *) export ASSISTANT_TOKEN="${ASSISTANT_TOKEN:-unused}" ;; esac
+files=(-f compose.yaml)
+profiles=()
+for arg in "$@"; do
+  case "$arg" in
+    --tailscale) profiles=(--profile tailscale) ;;
+    --audio)     files+=(-f compose.audio.yaml) ;;
+    *)           service="$arg" ;;
+  esac
+done
+dc() { docker compose "${files[@]}" "${profiles[@]}" "$@"; }
+
+make_data() {
+  mkdir -p data/assistant/uploads data/config/docu-ai data/config/mail-ai data/docu-ai data/mail-ai \
+           data/meet-ai/audio data/meet-ai/transcripts data/cache/huggingface \
+           data/audiobook/{voices,voice,output,cache,jobs}
+  mkdir -p "${AWS_CONFIG_DIR:-$HOME/.aws}"   # else Docker would make it, owned by root
+}
+
+token() {
+  if [[ -z "${ASSISTANT_TOKEN:-}" ]]; then
+    ASSISTANT_TOKEN="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+  fi
+  export ASSISTANT_TOKEN
+}
+
+case "$cmd" in
+  up)
+    make_data; token
+    dc up -d --build --wait
+    echo
+    echo "Up. On this computer:  http://127.0.0.1:8751/"
+    if [[ ${#profiles[@]} -gt 0 ]]; then
+      if [[ -n "${SUITE_HOST:-}" ]]; then
+        echo "Over Tailscale:        https://${SUITE_HOST}/   (from a device signed in to your tailnet)"
+      else
+        echo "Tailscale is starting. Its first run prints a sign-in link:   ./start-docker logs tailscale"
+        echo "Then set SUITE_HOST=<the name it shows, e.g. suite.tail1234.ts.net> in .env and run this again."
+      fi
+    fi
+    ;;
+  down)   dc down ;;
+  logs)   dc logs -f --tail 100 ${service:-} ;;
+  status) dc ps ;;
+  import)
+    # Copies, never moves, and never overwrites: run it while the suite is stopped, once.
+    pgrep -f "m assistant[.]server" >/dev/null && { echo "Stop ./start first (the mailbox and uploads must not change while they are copied)." >&2; exit 1; }
+    make_data
+    # -T: the destination IS the thing, so a second run fills in what is missing instead of nesting a copy inside it.
+    put() { [[ -e "$1" ]] || return 0; mkdir -p "$(dirname "$2")"; cp -anT --reflink=auto "$1" "$2" && echo "  $1 -> $2"; }
+    put assistant/memory.json data/assistant/memory.json
+    put assistant/audit.jsonl data/assistant/audit.jsonl
+    put assistant/lexicon.json data/assistant/lexicon.json
+    for d in assistant/uploads/*; do put "$d" "data/assistant/uploads/$(basename "$d")"; done
+    for d in meet-ai/audio/* meet-ai/transcripts/* ; do [[ -e "$d" ]] && put "$d" "data/${d#./}"; done
+    put mail-ai/mailbox.sqlite3 data/mail-ai/mailbox.sqlite3
+    put mail-ai/credentials.json data/mail-ai/credentials.json
+    put docu-ai/credentials.json data/docu-ai/credentials.json
+    put "${XDG_CONFIG_HOME:-$HOME/.config}/docu-ai" data/config/docu-ai
+    put "${XDG_CONFIG_HOME:-$HOME/.config}/mail-ai" data/config/mail-ai
+    for d in voices voice output; do for f in audiobook/$d/*; do [[ -e "$f" ]] && put "$f" "data/audiobook/$d/$(basename "$f")"; done; done
+    for f in audiobook/.cache/*; do [[ -e "$f" ]] && put "$f" "data/audiobook/cache/$(basename "$f")"; done
+    put audiobook/.env data/audiobook/.env
+    echo "Done. (The Whisper and Pocket TTS models are downloaded again on first use; copy ~/.cache/huggingface into data/cache/ to skip that.)"
+    ;;
+  test)
+    token; make_data
+    dc build backend
+    # One docu-ai test reads a corpus at this exact path in the author's home folder (a portability flaw
+    # in the test, not the image): mount it read-only, where it exists, so the same tests run.
+    corpus=(); [[ -d "$HOME/Documents/technical" ]] && corpus=(-v "$HOME/Documents/technical:$HOME/Documents/technical:ro")
+    dc run --rm --no-deps -T "${corpus[@]}" --entrypoint bash backend -c '
+      set -u; failed=()
+      run() { name=$1; shift; printf "\n==> %s\n" "$name"; "$@" || failed+=("$name"); }
+      run assistant bash -c "cd assistant && ../.venv/bin/python -m pytest tests -q -p no:cacheprovider"
+      run meet-ai   bash -c "cd meet-ai && ../.venv/bin/python -m pytest tests -q -p no:cacheprovider"
+      run mail-ai   bash -c "cd mail-ai && ../.venv/bin/python -m pytest tests -q -p no:cacheprovider"
+      run audiobook bash -c "cd audiobook && .venv/bin/python -m pytest tests -q -p no:cacheprovider"
+      run docu-ai   bash -c "cd docu-ai && npm test --silent"
+      echo; if ((${#failed[@]})); then echo "FAILED: ${failed[*]}"; exit 1; fi; echo "All passed."'
+    ;;
+  *) sed -n '2,12p' "$0"; exit 2 ;;
+esac

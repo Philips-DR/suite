@@ -1,0 +1,31 @@
+# What never goes into an image: other people's secrets, this machine's data, and anything the
+# build makes for itself. State lives in ./data (a volume), never in a layer.
+.git
+.gitignore
+.dockerignore
+docker
+compose*.yaml
+start-docker
+data
+.env
+**/.env
+**/credentials.json
+**/node_modules
+**/.venv
+**/__pycache__
+**/.pytest_cache
+web/dist
+assistant/uploads
+assistant/memory.json
+assistant/audit.jsonl
+assistant/lexicon.json
+meet-ai/audio
+meet-ai/transcripts
+meet-ai/models
+mail-ai/*.sqlite3
+audiobook/output
+audiobook/.cache
+audiobook/voices
+audiobook/voice
+audiobook/.jobs
+audiobook/tests/fixtures/local

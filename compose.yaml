@@ -1,0 +1,104 @@
+# The suite in containers. Use ./start-docker, which makes the access token and the data folders
+# and then runs this; see README.md ("In containers").
+#
+#   backend    the assistant's API AND every tool (they are its child processes over MCP)
+#   web        the web app: a separate program, as on the host
+#   tailscale  optional (--tailscale): a private HTTPS address for your phone and other computers
+#
+# Nothing here is published beyond 127.0.0.1. Reaching it from elsewhere is Tailscale's job, which
+# opens it to the devices you have signed in and to nobody else.
+name: suite
+
+x-service: &service
+  restart: unless-stopped
+  init: true                          # reaps the render and transcription jobs the tools leave detached
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+
+services:
+  backend:
+    <<: *service
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+      args:
+        SUITE_UID: ${SUITE_UID:-1000}
+        SUITE_GID: ${SUITE_GID:-1000}
+    image: suite-backend
+    env_file:
+      - path: .env
+        required: false               # AWS_PROFILE and AWS_REGION, as on the host
+    environment:
+      # Listens on the container's own network; compose publishes it to 127.0.0.1 only. The one place
+      # the "bind to localhost" rule is deliberately relaxed (assistant/CLAUDE.md), and it still
+      # needs the token and a Host from this list.
+      ASSISTANT_HOST: 0.0.0.0
+      ASSISTANT_PORT: 8750
+      ASSISTANT_TOKEN: ${ASSISTANT_TOKEN:?run ./start-docker, which makes the token, or set ASSISTANT_TOKEN}
+      ASSISTANT_HOSTS: ${SUITE_HOST:-suite.invalid},backend
+      ASSISTANT_ORIGINS: http://127.0.0.1:8751,http://localhost:8751,https://${SUITE_HOST:-suite.invalid}
+      # Where each tool keeps what it keeps: all under the one volume.
+      ASSISTANT_MEMORY: /data/assistant/memory.json
+      ASSISTANT_AUDIT: /data/assistant/audit.jsonl
+      ASSISTANT_UPLOADS: /data/assistant/uploads
+      MEET_AI_AUDIO: /data/meet-ai/audio
+      MEET_AI_TRANSCRIPTS: /data/meet-ai/transcripts
+      MAIL_AI_STORE: /data/mail-ai/mailbox.sqlite3
+      MAIL_AI_CREDENTIALS: /data/mail-ai/credentials.json
+      DOCU_AI_CREDENTIALS: /data/docu-ai/credentials.json
+      AUDIOBOOK_JOBS: /data/audiobook/jobs
+      XDG_CONFIG_HOME: /data/config        # the Google tokens: config/docu-ai, config/mail-ai
+      HF_HOME: /data/cache/huggingface     # Whisper's and Pocket TTS's models, downloaded once
+    volumes:
+      - ./data:/data
+      - ${AWS_CONFIG_DIR:-${HOME}/.aws}:/home/suite/.aws   # the model's login; renew it on the host
+    ports:
+      - "127.0.0.1:8750:8750"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8750/')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s               # the tools launch one by one
+
+  web:
+    <<: *service
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    image: suite-web
+    environment:
+      WEB_HOST: 0.0.0.0
+      ASSISTANT_TOKEN: ${ASSISTANT_TOKEN:?run ./start-docker, which makes the token, or set ASSISTANT_TOKEN}
+      ASSISTANT_HOSTS: ${SUITE_HOST:-suite.invalid},web
+      # Opened by any name but localhost, the page looks for the backend on that same host at this port:
+      # what docker/tailscale-serve.json gives it.
+      ASSISTANT_REMOTE_API_PORT: 8443
+      WEB_INJECT_TOKEN: ${WEB_INJECT_TOKEN:-1}
+    ports:
+      - "127.0.0.1:8751:8751"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8751/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  tailscale:
+    profiles: ["tailscale"]
+    image: tailscale/tailscale:stable
+    restart: unless-stopped
+    hostname: ${TS_HOSTNAME:-suite}
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY:-}      # empty: it prints a sign-in link in its log, once
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_USERSPACE: "true"             # no /dev/net/tun, no extra capabilities
+      TS_SERVE_CONFIG: /config/serve.json
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - ./docker/tailscale-serve.json:/config/serve.json:ro
+    depends_on:
+      - web
+      - backend
+
+volumes:
+  tailscale-state:

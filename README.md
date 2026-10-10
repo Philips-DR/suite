@@ -75,6 +75,41 @@ the app asks once for the token the backend prints.
 ./test           # every tool's tests; none needs a login, a model or the network
 ```
 
+## In containers, and from your phone
+
+The same suite runs in Docker, which is also how it reaches your phone and other computers.
+
+```bash
+./start-docker up              # build, start, say where it is: http://127.0.0.1:8751/
+./start-docker up --tailscale  # the same, plus a private HTTPS address for your other devices
+./start-docker import          # once: copy this folder's existing data into ./data
+./start-docker down | logs | status | test
+```
+
+Two images, as on the host: **backend** (the API *and* every tool, which are its child processes) and
+**web** (the web app, still a separate program). All state lives in `./data`; the model's AWS login
+is read from `~/.aws`. Nothing is published beyond `127.0.0.1`. `up --audio` lets meet-ai record from
+this computer's microphone.
+
+**From your phone or another computer, over Tailscale.** Tailscale is a private network between
+your own devices: only devices signed in to your account can reach the suite, and to everyone else
+it does not exist.
+
+1. Install Tailscale on this computer and on each device, signed in to the same account. In the
+   Tailscale admin console, turn on **MagicDNS** and **HTTPS Certificates**.
+2. `./start-docker up --tailscale`. The first time, `./start-docker logs tailscale` prints a
+   sign-in link for the new `suite` machine (or put a `TS_AUTHKEY` in `.env` and nothing is asked).
+3. The admin console now lists `suite` with a name like `suite.tail1234.ts.net`. Put it in `.env` as
+   `SUITE_HOST=suite.tail1234.ts.net` and run `./start-docker up --tailscale` again.
+4. On your phone, with Tailscale on: open `https://suite.tail1234.ts.net/`.
+
+The tailnet is the first lock and the page's access token the second, and the token is handed to
+whatever can open the page: keep the tailnet to your own devices (or restrict it with Tailscale ACLs)
+until signing in with Google replaces it. **Logins** still happen on a computer with a browser
+(`./auth`); `./start-docker import` copies this folder's Google tokens into `./data/config`, and on a
+server you would copy `~/.config/docu-ai` and `~/.config/mail-ai` there yourself. The AWS login lapses
+overnight and is renewed on the host (`aws sso login`).
+
 ## Each tool still stands alone
 
 Every tool keeps its own command line, tests and rules (`CLAUDE.md`, `plan.md`), and works

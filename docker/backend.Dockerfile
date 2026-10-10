@@ -1,0 +1,92 @@
+# syntax=docker/dockerfile:1.7
+#
+# The backend and every tool, in one image -- because the tools are the backend's own child
+# processes, talking to it over MCP on stdio, and that is the architecture (../CLAUDE.md), not
+# something a container boundary should quietly change. The web app is a different image
+# (web.Dockerfile): the two stay separate programs.
+#
+# Built from the suite's root:  docker build -f docker/backend.Dockerfile .   (or compose)
+
+ARG PYTHON=3.14-slim
+ARG NODE=24-slim
+
+FROM node:${NODE} AS node
+FROM python:${PYTHON} AS python
+
+# --- the suite's shared Python environment (assistant, meet-ai, mail-ai) -------------------------
+# Built at the path it will run from, since a venv's scripts name their own location.
+FROM python AS shared-venv
+WORKDIR /app
+COPY assistant/requirements.txt assistant/
+COPY meet-ai/requirements.txt meet-ai/requirements-dev.txt meet-ai/
+COPY mail-ai/requirements.txt mail-ai/requirements-dev.txt mail-ai/
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m venv .venv \
+ && .venv/bin/pip install -r assistant/requirements.txt \
+      -r meet-ai/requirements.txt -r meet-ai/requirements-dev.txt \
+      -r mail-ai/requirements.txt -r mail-ai/requirements-dev.txt \
+ && .venv/bin/pip check
+
+# --- audiobook's own: torch (CPU build), Docling, Pocket TTS -- ~1.9 GB nothing else uses -----------
+FROM python AS audiobook-venv
+WORKDIR /app/audiobook
+COPY audiobook/requirements.txt audiobook/requirements-dev.txt ./
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m venv .venv \
+ && .venv/bin/pip install -r requirements.txt -r requirements-dev.txt \
+ && .venv/bin/pip check
+
+# --- docu-ai's Node packages (tsx, which runs it, is a dev dependency) -----------------------------
+FROM node AS docu-ai-deps
+WORKDIR /app/docu-ai
+COPY docu-ai/package.json docu-ai/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
+# --- what runs -----------------------------------------------------------------------------------
+FROM python AS runtime
+
+# ffmpeg: every tool that touches audio. pulseaudio-utils: `pactl`, how meet-ai lists microphones
+# (only useful with compose.audio.yaml). bzip2: unpacking the speaker models.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ffmpeg pulseaudio-utils curl ca-certificates bzip2 \
+ && rm -rf /var/lib/apt/lists/*
+
+# Node, for docu-ai: the binary and npm from the official image, not a second package manager.
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
+COPY --from=node /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -s ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+ && ln -s ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
+
+# Not root, and the same numbers as the person who owns ./data, so what the tools write there
+# is theirs to read and move.
+ARG SUITE_UID=1000
+ARG SUITE_GID=1000
+RUN groupadd --gid ${SUITE_GID} suite \
+ && useradd --create-home --uid ${SUITE_UID} --gid ${SUITE_GID} --shell /bin/bash suite
+
+WORKDIR /app
+COPY --from=shared-venv /app/.venv /app/.venv
+COPY --from=audiobook-venv /app/audiobook/.venv /app/audiobook/.venv
+COPY . /app
+# Owned by the user it runs as: vitest keeps its cache inside node_modules.
+COPY --chown=suite:suite --from=docu-ai-deps /app/docu-ai/node_modules /app/docu-ai/node_modules
+
+# meet-ai's speaker models (~37 MB). Whisper's and Pocket TTS's are fetched on first use into the
+# data volume (HF_HOME), so they are downloaded once, not once per image build.
+RUN meet-ai/fetch-models.sh
+
+# audiobook keeps its data in folders relative to itself, and reads no setting for where. Rather
+# than change it, point those folders into the one volume. Everything else takes its location
+# from an environment variable (compose.yaml).
+RUN mkdir -p /data \
+ && for d in voices voice output .cache; do ln -s "/data/audiobook/${d#.}" "/app/audiobook/$d"; done \
+ && ln -s /data/audiobook/.env /app/audiobook/.env \
+ && chown -R suite:suite /data /app/meet-ai/models
+
+ENV HOME=/home/suite \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+USER suite
+EXPOSE 8750
+# The backend's own launcher: it finds the suite's .venv, and it launches every tool as a child.
+CMD ["/app/assistant/assistant-web"]

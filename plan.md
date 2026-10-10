@@ -43,10 +43,18 @@ Settled; reopen only with new evidence, and say so here when one changes.
    — measured, see `meet-ai/CLAUDE.md`.
 6. **Nothing a model writes is trusted on its word.** Notes and minutes drop any point whose quote is
    not in the transcript; a rewritten document is measured against its original at approval time.
-7. **Localhost only**, for now. Deployment is an open decision (below), not a default.
+7. **Localhost by default; reachable over Tailscale** (2026-10-10). The user chose a private network
+   (Tailscale) over a public address: only devices signed in to the user's tailnet can reach it, and
+   nothing is published to the internet. Done in containers (`./start-docker up --tailscale`); the host
+   install stays localhost-only. A public address, with or without Cloudflare Access, was considered
+   and not chosen.
 8. **audiobook has no interface of its own** (2026-10-10). Its standalone web app was removed and every
    feature rebuilt in the suite's web app. It has its own `.venv` (weight and PyTorch's CPU index, not
    a version conflict), and a voice is cloned only with a consent statement the user writes.
+9. **A Google sign-in is the next big feature**, and the container setup is built to take it: one host
+   name over HTTPS for both programs, exact hosts and origins from the environment, the page's token
+   switchable off (`WEB_INJECT_TOKEN=0`), and one `authenticate()` in the backend where a session
+   would plug in. What it changes is written down in `assistant/CLAUDE.md` ("Authentication").
 
 ## Built and verified
 
@@ -63,7 +71,9 @@ Each was tested (`./test`) and run for real; the real runs found most of the bug
 | 09-28 | Drafting: the assistant can read an upload and write a tailored version (e.g. a CV for a role), measured against the original; CVs build in the résumé look | `assistant/CLAUDE.md` → Drafting |
 | 10-10 | audiobook joined: merged with history, own `.venv`, MCP door (12 tools), detached background jobs that survive a backend restart and can be cancelled, PDF and recording uploads, path-confined audio playback and download, finished-job notices, and the Audiobooks panel (read a book, chapter table and exact text, corrections, voices with consent, render with progress, play and download). Run for real: Whisper heard a sample 100% right; a chapter rendered to MP3 + M4B; a render outlived `pkill` of the backend; the same flows through chat and in Chrome. | `audiobook/CLAUDE.md` → The suite integration; `assistant/CLAUDE.md` → Audio a tool made |
 
-Test counts on 2026-10-10: assistant 145, meet-ai 113, mail-ai 75, docu-ai 285, audiobook 83, web typecheck.
+| 10-10 | Containers: `./start-docker`, two images (backend 4.9 GB with every tool; web 0.4 GB), one `./data` volume, an optional Tailscale sidecar with HTTPS on 443 (web) and 8443 (API), exact hosts and origins from the environment, the API address found at run time. **Run for real:** both images build; every suite passes inside the image, and offline with an empty model cache; the stack comes up healthy and publishes only 127.0.0.1; all five tool servers start (same tool counts as the host); a real voice sample (Whisper: 100% match) and a render, cancelled and resumed, from the container; a container restart mid-render leaves it `interrupted` and a re-run resumes; the page opened by a different name in Chrome calls the API on that host at 8443, gets its event stream and plays audio, and a name nobody configured is refused; the microphone override lists PipeWire's sources. **Not run:** the Tailscale sidecar against a real tailnet (the image does accept every variable the compose file uses, but the serve config, MagicDNS and HTTPS certificates are unproven until it is joined), real TLS, an actual recording, and a server host. | `README.md` → In containers; `CLAUDE.md` → In containers |
+
+Test counts on 2026-10-10: assistant 148, meet-ai 113, mail-ai 75, docu-ai 285, audiobook 83, web typecheck.
 
 ## Known rough edges
 
@@ -100,8 +110,9 @@ touch the same ground:
   `assistant/CLAUDE.md`, Memory).
 - **Storage for file uploads, and the rest.** Today `assistant/uploads/` is a local folder
   (`assistant/CLAUDE.md`, Uploads).
-- **User authentication.** Today: one user, one machine, a per-launch token (locked decision 4).
-  Deployment option (c) below touches on accounts.
+- **User authentication.** Now scoped, not open: a Google sign-in for one allowed account is the next
+  feature (locked decision 9; `assistant/CLAUDE.md`, "Authentication"). Accounts for more than one
+  person (per-user data, a job queue) remain the larger option (c) below.
 
 ## Waiting on the user
 
@@ -110,11 +121,12 @@ Decisions or input only the user can give. Don't guess these.
 1. **Correct spellings** for the association meeting (places, officers, members, visitors — listed
    in the 2026-09-26 conversation; the minutes' footer flags them). Then: teach them with
    `assistant__remember` (kind `spelling`) and regenerate that meeting's notes and minutes once.
-2. **Deployment**: (a) just the user, from anywhere, over a private network such as Tailscale —
-   about a day; (b) just the user on the public internet — Google login, HTTPS, credentials on the
-   server, browser recording — a few days; (c) a team or customers — accounts, per-user data, a
-   job queue, and Google's verification for restricted Gmail scopes if used outside the
-   ayadata.ai Workspace — a project. Recommended: (a).
+2. **Deployment: decided** — Tailscale (locked decision 7). Still the user's to say: **where it runs
+   always-on** (this laptop, which must be on and awake, or a server; the images and compose file
+   serve either, and a server has no microphone, so recording would move into the browser), and
+   **the `suite.<tailnet>.ts.net` name**, which only exists once the machine has joined the tailnet
+   and goes in `.env` as `SUITE_HOST`. A shared tailnet (other people's devices) needs Tailscale ACLs, or
+   the Google sign-in first, because the page hands its token to whatever can open it.
 3. **The old folders** `~/Documents/{assistant,meet-ai,mail-ai,docu-ai}` still exist (~1.2 GB, all
    content now in `suite/`), and so does `~/Documents/audiobook` (3.4 GB, mostly its old `.venv` and
    caches, which were copied here). Delete only when the user says so. Committing in them would push
