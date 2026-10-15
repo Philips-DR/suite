@@ -28,6 +28,12 @@ from assistant.tools import LocalTool
 MAX_READ_CHARS = 200_000
 MAX_DRAFT_CHARS = 200_000
 
+# Dropped beside every draft this tool writes. A tool that checks a new draft against "the user's own
+# material" (apply-ai) refuses a folder that holds it: a model's earlier draft is not the user's word, and
+# a claim it made would otherwise count as supported the next time -- the check laundering its own output.
+# A convention in a filename, not an import: neither side knows the other exists.
+DRAFT_MARKER = ".draft"
+
 
 def _inside_uploads(root: Path, path: str) -> Path:
     target = Path(path).expanduser().resolve()
@@ -61,6 +67,7 @@ def _write(root: Path, arguments: dict[str, Any]) -> str:
         return json.dumps({"error": str(error)})
     target = root / "docs" / batch / f"{batch}.md"
     target.write_text(markdown if markdown.endswith("\n") else markdown + "\n", encoding="utf-8")
+    (target.parent / DRAFT_MARKER).write_text("written by the assistant, not by the user\n", encoding="utf-8")
     result: dict[str, Any] = {"path": str(target), "title": batch, "characters": len(markdown)}
     source = _source(root, arguments)
     if source is not None:
@@ -120,7 +127,9 @@ def _render(root: Path, arguments: dict[str, Any]) -> str:
 def _list(root: Path) -> str:
     listing = up.listing(root)
     return json.dumps({
-        "documents": [{"name": d["name"], "path": d["path"], "files": d["files"]} for d in listing["docs"]],
+        # `draft` marks what the assistant wrote itself: never the user's own material, so never a source.
+        "documents": [{"name": d["name"], "path": d["path"], "files": d["files"], "draft": d["draft"]}
+                      for d in listing["docs"]],
         "audio": [{"name": a["name"], "path": a["path"]} for a in listing["audio"]],
     }, ensure_ascii=False)
 
@@ -133,7 +142,8 @@ def document_tools(uploads_root: Path) -> list[LocalTool]:
                 "List what the user has uploaded -- markdown documents (a CV, notes, a report) "
                 "and audio recordings -- newest first, with the path each needs. Use it whenever "
                 "the user refers to something they uploaded or 'my CV' and no path is in the "
-                "conversation. Reads only."
+                "conversation. A document marked draft: true was written by the assistant, not the "
+                "user, and is never the user's own material. Reads only."
             ),
             input_schema={"type": "object", "properties": {}},
             read_only=True,

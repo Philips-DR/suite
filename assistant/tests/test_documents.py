@@ -94,3 +94,23 @@ def test_uploads_can_be_found_without_a_path_in_the_conversation(tmp_path):
     (root / "docs" / "01-resume" / "01-resume.md").write_text("# Ama\n")
     listed = call(tools_for(root)["list_uploads"])
     assert listed["documents"][0]["path"].endswith("01-resume/01-resume.md")
+
+
+# A draft the assistant wrote is marked, and list_uploads says so. A tool that checks a draft against "the
+# user's own material" (apply-ai) refuses a marked folder: found when the model passed its own earlier cover
+# letter as a source and a claim it had made became supported by itself.
+def test_a_draft_is_marked_as_the_assistants_own_and_an_upload_is_not(tmp_path):
+    root = tmp_path / "uploads"
+    (root / "docs" / "01-resume").mkdir(parents=True)
+    (root / "docs" / "01-resume" / "01-resume.md").write_text("# Ama\n")
+    tools = tools_for(root)
+    written = call(tools["write_draft"], title="CV - Role", markdown="# Ama\n\n- Built things.\n")
+    assert (root / "docs" / "CV - Role" / ".draft").is_file()
+    listed = {d["name"]: d["draft"] for d in call(tools["list_uploads"])["documents"]}
+    assert listed == {"CV - Role": True, "01-resume": False}
+    assert written["path"].endswith("CV - Role.md")
+
+
+def test_the_listing_tells_the_model_what_draft_means(tmp_path):
+    description = tools_for(tmp_path / "uploads")["list_uploads"].description
+    assert "draft: true" in description and "never the user's own material" in description

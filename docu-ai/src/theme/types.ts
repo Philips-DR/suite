@@ -146,6 +146,18 @@ export interface Theme {
   codeBlock: CodeBlockSpec
   blockquote: BlockquoteSpec
   table: TableSpec
+  /**
+   * Heading levels whose directly-following paragraph is a LEAD line — a role's dates, a project's
+   * stack, a section's one-line note — and keeps with whatever comes after it. `keepWithNext` on the
+   * heading alone is not enough: it glues the heading to the lead line, so a page break can still
+   * fall between that pair and the bullets, stranding both at the foot of the page. (Found on two
+   * real résumés in one day; `layoutFindings` in verify/ is what sees it in a built document.)
+   * A lead is NOT kept when the next block is a heading of the same or a higher rank: then it is the
+   * whole entry (an education line, a summary paragraph) and has nothing to be stranded from. Absent
+   * means no paragraph gets this — a prose paragraph under a heading in a report must not be glued
+   * to the next block.
+   */
+  keepLeadWithNext?: ReadonlyArray<1 | 2 | 3 | 4 | 5 | 6>
 }
 
 export function themeFonts(theme: Theme): string[] {

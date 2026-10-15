@@ -11,6 +11,12 @@ export const BODY_START = 1
 export interface TextBlock {
   runs: Inline[]
   style: NamedStyleType
+  /**
+   * Keep this paragraph on the same page as the block after it. Set by compileBlocks, and only on a
+   * heading's lead line when the theme asks for it (`Theme.keepLeadWithNext`); absent everywhere
+   * else, so a theme that never asks emits exactly what it always has.
+   */
+  keepWithNext?: boolean
 }
 
 /** A run whose link target is another chapter in this build, not yet resolvable to Link.heading —
@@ -164,6 +170,17 @@ export function renderTextBlocks(
         fields: 'named_style_type',
       },
     })
+    // A separate request, after the named style, so a block without a lead emits exactly what it
+    // always has and the named-style request never carries a field that only some paragraphs need.
+    if (block.keepWithNext) {
+      requests.push({
+        updateParagraphStyle: {
+          range,
+          paragraphStyle: { keepWithNext: true },
+          fields: 'keep_with_next',
+        },
+      })
+    }
 
     let runCursor = paragraphStart
     for (const run of flattened[i]!) {

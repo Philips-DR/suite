@@ -3,7 +3,16 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import { GoogleOAuthProvider } from '../auth/google.js'
 import type { AuthProvider } from '../auth/types.js'
-import { THEMES, buildDocument, lintDocument, preview, type ThemeName } from '../operations.js'
+import {
+  THEMES,
+  buildDocument,
+  documentInfo,
+  layoutDocument,
+  lintDocument,
+  preview,
+  trashDocument,
+  type ThemeName,
+} from '../operations.js'
 import { tolerateSlowConnections } from '../network.js'
 
 /**
@@ -73,8 +82,14 @@ export function createDocuAiServer(auth: AuthProvider): McpServer {
       description:
         'Compile a folder of markdown into a real Google Doc: one tab per chapter, a cover with a ' +
         'clickable table of contents, real Docs styling, and no markdown residue. Returns the ' +
-        'document id and URL, a paragraph count, and the residue lint findings. Creates a document ' +
-        "in the user's Drive and spends write quota — run preview first.",
+        'document id and URL, a paragraph count, the residue lint findings, and `layout`: the page ' +
+        'count and a warning for any heading stranded at the foot of a page, a page target missed, or ' +
+        'a stray last page. Creates a document in the user\'s Drive and spends write quota — run ' +
+        'preview first. If `layout.warnings` is not empty, the document is not finished: shorten or ' +
+        'adjust the markdown (cut the least relevant points first, never invent or drop facts to ' +
+        'fit), build again, and then trash the earlier Doc with `trash` — every build makes a new ' +
+        'one, and a stack of superseded copies is clutter. `layout.measured: false` means the pages ' +
+        'could not be read (the reason is given): say so rather than calling the layout fine.',
       inputSchema: {
         path: z
           .string()
@@ -91,15 +106,29 @@ export function createDocuAiServer(auth: AuthProvider): McpServer {
           .optional()
           .describe(
             "How it looks. 'technical' (the default): a specification or handbook style. " +
-              "'resume': a CV — one page of one person, tighter type, no cover; the path must be a " +
-              'single .md file whose heading is the person’s name.',
+              "'resume': a CV — one or two packed pages, tighter type, no cover. 'letter': a cover letter " +
+              'or any business letter — 11pt, one-inch margins, room between the blocks of the letter. ' +
+              "For 'resume' and 'letter' the path must be a single .md file whose heading is the sender's " +
+              "name. Use 'letter' for a letter, not 'resume': the CV look is too small and cramped for one, " +
+              "and 'technical' is for reports.",
+          ),
+        maxPages: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            'The most pages the document should run to — a CV is usually one or two. Going over is ' +
+              'reported in layout.warnings, with how little spilled onto the last page.',
           ),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
     },
-    async ({ path, title, theme }) => {
+    async ({ path, title, theme, maxPages }) => {
       try {
-        return ok(await buildDocument(auth, { path, title, theme: theme ? THEMES[theme] : undefined }))
+        return ok(
+          await buildDocument(auth, { path, title, theme: theme ? THEMES[theme] : undefined, maxPages }),
+        )
       } catch (error) {
         return failed(error)
       }
@@ -123,6 +152,74 @@ export function createDocuAiServer(auth: AuthProvider): McpServer {
     async ({ documentId }) => {
       try {
         return ok(await lintDocument(auth, documentId))
+      } catch (error) {
+        return failed(error)
+      }
+    },
+  )
+
+  server.registerTool(
+    'layout',
+    {
+      title: 'Where a built document\'s pages break',
+      description:
+        'Export an already-built Google Doc as the PDF Docs itself lays out and report its page count and ' +
+        'any warning: a heading stranded at the foot of a page, more pages than maxPages, a stray last ' +
+        'page. Use it after the user has edited a Doc by hand, or to recheck one. Reads only. A ' +
+        'document of several tabs is not measured (Docs adds a title page per tab to its PDF).',
+      inputSchema: {
+        documentId: z.string().describe('The Google Docs document id, as returned by build.'),
+        maxPages: z.number().int().positive().optional().describe('The most pages it should run to.'),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    async ({ documentId, maxPages }) => {
+      try {
+        return ok(await layoutDocument(auth, documentId, { maxPages }))
+      } catch (error) {
+        return failed(error)
+      }
+    },
+  )
+
+  server.registerTool(
+    'info',
+    {
+      title: 'What a built document is',
+      description:
+        'Say which Google Doc a document id is: its title, when it was created and last edited, whether it ' +
+        'is already in the Trash, and its link. Reads only; use it to be sure which Doc is meant before ' +
+        'trashing one. Only documents docu-ai itself built can be seen.',
+      inputSchema: { documentId: z.string().describe('The Google Docs document id, as returned by build.') },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    async ({ documentId }) => {
+      try {
+        return ok(await documentInfo(auth, documentId))
+      } catch (error) {
+        return failed(error)
+      }
+    },
+  )
+
+  server.registerTool(
+    'trash',
+    {
+      title: 'Move a built document to the Trash',
+      description:
+        'Move a Google Doc docu-ai built to Drive\'s Trash, where it stays for 30 days and can be restored. ' +
+        'For a superseded build only, and only AFTER its replacement has been built and measured: trash the ' +
+        'one it replaced, never before. Never trash a Doc the user has not been told is superseded, and ' +
+        'never one whose link they were just given as the result. Can touch only documents docu-ai ' +
+        'itself built, never other files in Drive.',
+      inputSchema: { documentId: z.string().describe('The Google Docs document id, as returned by build.') },
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
+      // The id alone cannot be approved. The gate shows what `info` says about it, which names the Doc.
+      _meta: { approval: { preview_tool: 'info', argument_map: { documentId: 'documentId' }, field: 'summary' } },
+    },
+    async ({ documentId }) => {
+      try {
+        return ok(await trashDocument(auth, documentId))
       } catch (error) {
         return failed(error)
       }

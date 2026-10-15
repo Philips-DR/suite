@@ -20,7 +20,10 @@ two disagree, this file wins and `plan.md` should be corrected.
     npm start -- preview <dir>        # parse + plan a folder, print its structure — no network, no quota spent
     npm start -- build <dir> [title]  # build a doc: one tab per chapter, plus a cover with a clickable TOC
     npm start -- lint <documentId>    # re-run the residue lint against an already-built document
-    npm run mcp                       # serve preview/build/lint over MCP on stdio, for a model to call
+    npm start -- layout <documentId> [maxPages]   # page count + page-break warnings for a built document
+    npm start -- trash <documentId>   # move a document docu-ai built to Drive's Trash (restorable for 30 days)
+    npm start -- letter <dir> [out]   # a cover letter in the letter look (resume <dir> for a CV): one file, no cover, exported to PDF
+    npm run mcp                       # serve preview/build/layout/lint/info/trash over MCP on stdio, for a model to call
 
 Don't confuse the two "lint"s: `npm run lint` is ESLint checking source code quality; `npm start -- lint` is the
 CLI subcommand that reads a *built Google Doc* back and re-runs the markdown-residue lint against it.
@@ -61,8 +64,8 @@ The boundaries are the design. Violating one is the main way this project rots:
 
 ## Two front doors, one implementation
 
-`src/operations.ts` holds what docu-ai can be asked to do, as data in and data out: `previewFolder`,
-`buildDocument`, `lintDocument`. The CLI (`cli.ts`) formats those results for a person; the MCP
+`src/operations.ts` holds what docu-ai can be asked to do, as data in and data out: `preview`,
+`buildDocument`, `lintDocument`, `layoutDocument`, `documentInfo`, `trashDocument`. The CLI (`cli.ts`) formats those results for a person; the MCP
 server (`mcp/server.ts`) returns them as JSON to a model. **Neither door wraps the other.** A door
 that delegates to the other inherits its output format, its exit codes and its assumptions about who
 is reading, and the two drift the moment either is changed for its own audience. Nothing in
@@ -424,6 +427,58 @@ start-of-line checks apply to a paragraph's full text, never to an individual in
 boundary falls wherever styling changes — often mid-sentence — and checking every run's start against a
 start-of-line pattern flags ordinary prose that happens to follow a styled span with a literal `+` or `-`.
 
+## Layout: what only the PDF can say (2026-10-15)
+
+A built document's page count, and where its page breaks fall, are decided when Docs lays the page out;
+the readback has neither. So `build` exports the PDF (the same export `probe` uses for fonts), reads each
+page's text with `pdftotext` and reports `layout: {pages, lastPageLines, warnings}` — `verify/layout.ts`,
+whose analysis is a pure function of the pages' text and the document's paragraphs, tested with no network.
+Three warnings: a heading (or a heading with its lead line) that ends a page whose content starts on the
+next; more pages than `maxPages`; a last page of a few lines. The reasons it is built the way it is:
+
+- **`keepWithNext` on a heading is not enough, and the stored value proved nothing** (the `indentStart`
+  lesson again). `heading3` kept a role's heading with its dates line; the pair still fell at the foot of
+  page 1 with the bullets on page 2, on two real CVs in one day. The fix is a *lead line* rule in the
+  theme, `keepLeadWithNext: [2, 3]` (résumé only): a paragraph directly under such a heading keeps with the
+  block after it, **unless that block is a heading of the same or a higher rank** — then the lead is the
+  whole entry (an education line, a summary paragraph) and there is nothing to strand it from. The same
+  rule is in `compileBlocks` (what gets marked) and `keepGroups` in `verify/layout.ts` (what counts as
+  stranded); the first live run flagged an Education entry before the detector learned it, so keep the two
+  in step. `technical` sets nothing and its snapshots did not change.
+- **Verified live on a control**: the same CV with filler pushing the project heading to the foot, built
+  with `keepLeadWithNext` off and on. Off: page 1 ends with the heading and its stack line, bullets on page 2
+  (flagged). On: page 1 ends on a bullet, and the heading, line and first bullet start page 2 together.
+- **The match is on whole lines, from a line boundary.** A bullet that merely ends in a heading's last word
+  must not read as that heading. `pdftotext` keeps zero-width spaces and bullet glyphs; `squash()` strips
+  the spaces, and the glyph lines never match a heading.
+- **A document of several tabs is not measured** (`measured: false`, with the reason): Docs' PDF export adds
+  a title page per tab (M4), so its page count is not what a reader scrolls through. A missing `pdftotext`, or
+  a failed export, is also `measured: false` — never an exception, and never "no warnings": `layout` is always
+  present, so an empty `warnings` can only mean the pages were looked at and were fine. The backend image
+  carries `poppler-utils` for this.
+- **`trash`, with `info` as its approval preview.** Every rebuild makes a new Doc, so superseding one needs a
+  way to clear the old. `trash` sets Drive's `trashed` flag (restorable for 30 days; not a delete), refuses
+  anything that is not a Google Doc, and — because the scope is `drive.file` — can touch only documents
+  docu-ai built. Its MCP `_meta` names `info` (read-only) as the tool the assistant's gate shows instead of a
+  bare id: "Google Doc “X” · created … · last edited … · link".
+- **A 403 on a full Drive now says so.** `documents.create` answered "The caller does not have permission" for
+  every build while the account sat at 15.00 of 15 GB. `explainFailure` (drive.ts) reads the storage quota on
+  a 403 and, only when usage has reached the limit, replaces the message with the real cause (keeping Google's
+  words in it). A 403 with room left stays a 403. Unit-tested against the shape Google sent; not run live,
+  since the storage is no longer full.
+
+## The letter look (2026-10-15)
+
+A real cover letter built in the résumé look came out cramped and top-heavy: 10pt type, 4pt between paragraphs, a 22pt
+name over a page 60% empty. A CV is scanned and packed; a letter is read and needs room. `theme/presets/letter.ts` is
+10.5pt Source Serif at 115% with 10pt between blocks, inch side margins and 60pt top and bottom, and a 17pt name. Chosen
+by measuring, not by taste: the same 330-word letter spilled its two-line closing onto page 2 at 11pt (even with the
+margins trimmed) and sits on one page with room to spare at 10.5pt; looked at in the exported PDF. Same full-width
+rule as the résumé (`indentEndPt: 0`), same fonts, no `keepLeadWithNext` (a letter has no roles). `build` refuses
+several files for a letter as it does for a résumé. Two things the look cannot give a letter, both in the markdown:
+a **date line** (the model does not know today's date) and **room to sign** (markdown has no gap; a hard-break
+closing is as close as it gets).
+
 ## Definition of done for a feature
 
 Fixture added → IR asserted → request snapshot reviewed → live doc built → readback assertions pass → residue
@@ -448,10 +503,12 @@ requirement is *presentation*, and no assertion catches a code block split acros
       parse/                  loadDir.ts (discovery + SUMMARY.md ordering), toAst.ts (remark + remark-gfm)
       plan/                   types.ts (DocPlan IR), fromAst.ts, typography.ts (smart quotes, dashes, soft-wraps),
                                languageDetect.ts, syntaxHighlight.ts (lowlight tokenizer, M7)
-      theme/                  types.ts, fonts.ts (allow-list), presets/{technical,business,book}.ts
+      theme/                  types.ts, fonts.ts (allow-list), presets/{technical,resume,letter}.ts
       emit/                   document.ts (orchestrator — the only I/O), namedStyles, text, blocks (code/rules/
                                quotes), table, lists, inline, units, image.ts (classification, sizing,
                                PNG/GIF/JPEG dimension parsing, M8)
-      verify/                 readback.ts (readback + residue lint), pdfFonts.ts (PDF font truth)
+      drive.ts                info, trash, and the full-Drive explanation of a 403 (drive.file scope only)
+      verify/                 readback.ts (readback + residue lint), pdfFonts.ts (PDF font truth),
+                               layout.ts (page count and page-break findings, from the exported PDF)
       probe/                  assumptions.ts — a diagnostic, outside the layer rules and allowed its own I/O
     test/*.test.ts + test/__snapshots__/

@@ -54,7 +54,7 @@ export function compileChapterInserts(
   tabId: string,
   imageResolutions: Map<string, ImageResolution>,
 ): CompiledInserts {
-  const segments = compileBlocks(chapter.blocks, imageResolutions)
+  const segments = compileBlocks(chapter.blocks, imageResolutions, theme.keepLeadWithNext)
   const maxWidthPt = imageMaxWidthPt(theme)
 
   const insertRequests = segments.flatMap((segment): docs_v1.Schema$Request[] => {

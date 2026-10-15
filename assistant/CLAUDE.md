@@ -176,7 +176,22 @@ from something that went wrong live:
 - **Say what was and was not done.** The system prompt now requires it, and forbids inventing
   experience, employers, dates, qualifications, figures or skills.
 
-A CV is built with `docu_ai__build` and `theme: "resume"`, which docu-ai's model door now offers.
+- **A draft is marked as the assistant's own** (2026-10-15). `write_draft` drops a `.draft` file beside it and
+  `list_uploads` reports `draft: true`. A check that compares a new draft with "the user's own material"
+  (apply-ai) refuses a marked folder: on a second application the model passed its own earlier cover letter
+  as a source, and a claim it had made would have been supported by itself. A convention in a filename, not an
+  import. Drafts written before the marker have none (add `.draft` by hand).
+
+A CV is built with `docu_ai__build` and `theme: "resume"`, a cover letter with `theme: "letter"` (a letter in the
+CV look came out cramped, in the report look it ran onto a second page), both of which docu-ai's model door offers.
+
+**What runs around a draft, and where it lives.** Before drafting, `apply_ai__requirements` sets the posting
+against the material and the model asks every gap in one message; after drafting, `apply_ai__claims` traces the
+draft's claims to source lines; after saving, `docu_ai__build` returns a page count and layout warnings and
+`docu_ai__trash` clears the Doc a rebuild replaces. **None of that is in the system prompt**: it is in those
+tools' own descriptions, which is where "no domain logic, ever" puts it. A real run followed it with no prompt
+change. `MAX_TOOL_ROUNDS` is 30 for it: 12 stopped a legitimate tailoring mid-trim, with the answer to the
+user not yet written (found live, 2026-10-15).
 
 ## Books and voices (audiobook)
 

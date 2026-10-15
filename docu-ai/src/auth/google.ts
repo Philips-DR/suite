@@ -187,8 +187,19 @@ export class GoogleOAuthProvider implements AuthProvider {
     return new GoogleOAuthProvider(authConfigFromEnvironment())
   }
 
+  /**
+   * The MCP server holds one provider for its whole life, so a client cached forever meant a fresh
+   * `npm run auth` did nothing until the backend restarted: every build kept failing with the dead
+   * refresh token held in memory. The cache is kept only while the token file still carries the
+   * refresh token it was built from — one small local read per call, no network.
+   */
   async client(): Promise<Auth.OAuth2Client> {
-    if (this.cached) return this.cached
+    if (this.cached) {
+      // Only a different refresh token on disk replaces the cache. A missing or unreadable file
+      // keeps it: falling through would open a consent screen from inside a tool call.
+      const onDisk = await this.cachedRefreshToken()
+      if (!onDisk || onDisk === this.cached.credentials.refresh_token) return this.cached
+    }
     const secrets = await loadClientSecrets(this.config)
     const client =
       (await this.fromCache(secrets)) ??
@@ -215,6 +226,15 @@ export class GoogleOAuthProvider implements AuthProvider {
     )
     this.cached = client
     return client
+  }
+
+  private async cachedRefreshToken(): Promise<string | null | undefined> {
+    try {
+      return (JSON.parse(await readFile(this.config.tokenPath, 'utf8')) as Auth.Credentials)
+        .refresh_token
+    } catch {
+      return undefined
+    }
   }
 
   private async fromCache(secrets: ClientSecrets): Promise<Auth.OAuth2Client | undefined> {

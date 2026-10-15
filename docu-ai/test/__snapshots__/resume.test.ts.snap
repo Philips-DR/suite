@@ -164,6 +164,7 @@ Lagos, Nigeria · Graduated 2018 · First Class",
           "style": "HEADING_3",
         },
         {
+          "keepWithNext": true,
           "runs": [
             {
               "children": [
@@ -223,6 +224,7 @@ Lagos, Nigeria · Graduated 2018 · First Class",
           "style": "HEADING_3",
         },
         {
+          "keepWithNext": true,
           "runs": [
             {
               "children": [

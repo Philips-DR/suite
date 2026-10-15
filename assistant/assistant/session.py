@@ -21,8 +21,11 @@ from assistant.tools import RemoteTool, ToolRegistry
 
 MAX_TOKENS = 16000
 
-# A turn that needs more round trips than this is looping, not working.
-MAX_TOOL_ROUNDS = 12
+# A turn that needs more round trips than this is looping, not working. Twelve was too few the day tailoring
+# a CV began to check itself: one request legitimately runs ~25 rounds -- read, match the posting, record the
+# user's answers (one gated call each), draft, check the claims, fix, save, build, read the page count, trim
+# and rebuild, clear the superseded Docs. Measured live (2026-10-15): it stopped at twelve, mid-trim.
+MAX_TOOL_ROUNDS = 30
 
 SYSTEM_PROMPT = """\
 You coordinate a small set of local tools on the user's own machine. Each tool does one \

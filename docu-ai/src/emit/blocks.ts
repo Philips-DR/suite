@@ -131,7 +131,11 @@ function codeBlockRuns(code: string, tokens?: CodeToken[]): Inline[] {
  * document (see plan/fromAst.ts's planParagraph for why that case never even reaches here as an
  * ImageBlock in the first place).
  */
-export function compileBlocks(blocks: Block[], imageResolutions: Map<string, ImageResolution>): Segment[] {
+export function compileBlocks(
+  blocks: Block[],
+  imageResolutions: Map<string, ImageResolution>,
+  keepLeadWithNext: Theme['keepLeadWithNext'] = undefined,
+): Segment[] {
   const segments: Segment[] = []
   let current = emptyTextSegment()
 
@@ -145,15 +149,33 @@ export function compileBlocks(blocks: Block[], imageResolutions: Map<string, Ima
   }
 
   function walk(list: Block[], quoteDepth: number): void {
-    for (const block of list) {
+    for (const [position, block] of list.entries()) {
       switch (block.kind) {
         case 'heading':
           current.textBlocks.push({ runs: block.children, style: headingStyle(block.level) })
           break
 
-        case 'paragraph':
-          current.textBlocks.push({ runs: block.children, style: 'NORMAL_TEXT' })
+        case 'paragraph': {
+          // A paragraph straight under a heading, with something after it, is that heading's lead
+          // line (a role's dates, a project's stack, a section's one-line note). Whether it keeps
+          // with the next block is the theme's call, so it is marked only when the theme names that
+          // heading's level — and never when the next block is a heading of the same or a higher
+          // rank: then the lead is the whole entry (an education line, a summary paragraph), there
+          // is nothing after it to strand it from, and gluing it would chain one entry to the next.
+          const before = list[position - 1]
+          const after = list[position + 1]
+          const isLead =
+            before?.kind === 'heading' &&
+            after !== undefined &&
+            !(after.kind === 'heading' && after.level <= before.level) &&
+            keepLeadWithNext?.includes(before.level) === true
+          current.textBlocks.push({
+            runs: block.children,
+            style: 'NORMAL_TEXT',
+            ...(isLead ? { keepWithNext: true } : {}),
+          })
           break
+        }
 
         case 'list': {
           const start = current.textBlocks.length

@@ -102,4 +102,9 @@ export const resume: Theme = {
   },
   blockquote: { borderColor: '#80868b', borderWidthPt: 2, paddingPt: 6 },
   table: { headerShading: '#e8eaed' },
+  // The dates line under a role, the stack line under a project, the note under a section heading:
+  // kept with what follows, so the heading, its line and the first block move together (the
+  // headings' own keepWithNext keeps only the first pair). Not a Summary-style paragraph that is
+  // followed by the next section's heading: compileBlocks leaves a lead that ends its entry alone.
+  keepLeadWithNext: [2, 3],
 }

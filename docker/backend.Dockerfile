@@ -13,18 +13,20 @@ ARG NODE=24-slim
 FROM node:${NODE} AS node
 FROM python:${PYTHON} AS python
 
-# --- the suite's shared Python environment (assistant, meet-ai, mail-ai) -------------------------
+# --- the suite's shared Python environment (assistant, meet-ai, mail-ai, apply-ai) -------------------------
 # Built at the path it will run from, since a venv's scripts name their own location.
 FROM python AS shared-venv
 WORKDIR /app
 COPY assistant/requirements.txt assistant/
 COPY meet-ai/requirements.txt meet-ai/requirements-dev.txt meet-ai/
 COPY mail-ai/requirements.txt mail-ai/requirements-dev.txt mail-ai/
+COPY apply-ai/requirements.txt apply-ai/requirements-dev.txt apply-ai/
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -m venv .venv \
  && .venv/bin/pip install -r assistant/requirements.txt \
       -r meet-ai/requirements.txt -r meet-ai/requirements-dev.txt \
       -r mail-ai/requirements.txt -r mail-ai/requirements-dev.txt \
+      -r apply-ai/requirements.txt -r apply-ai/requirements-dev.txt \
  && .venv/bin/pip check
 
 # --- audiobook's own: torch (CPU build), Docling, Pocket TTS -- ~1.9 GB nothing else uses -----------
@@ -46,9 +48,11 @@ RUN npm ci --no-audit --no-fund
 FROM python AS runtime
 
 # ffmpeg: every tool that touches audio. pulseaudio-utils: `pactl`, how meet-ai lists microphones
-# (only useful with compose.audio.yaml). bzip2: unpacking the speaker models.
+# (only useful with compose.audio.yaml). bzip2: unpacking the speaker models. poppler-utils:
+# `pdftotext`, how docu-ai reads where a built document's pages break (without it a build still
+# works and says its layout was not measured).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ffmpeg pulseaudio-utils curl ca-certificates bzip2 \
+ && apt-get install -y --no-install-recommends ffmpeg pulseaudio-utils curl ca-certificates bzip2 poppler-utils \
  && rm -rf /var/lib/apt/lists/*
 
 # Node, for docu-ai: the binary and npm from the official image, not a second package manager.

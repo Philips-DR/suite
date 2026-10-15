@@ -1,21 +1,28 @@
 import { basename } from 'node:path'
 import type { AuthProvider } from './auth/types.js'
+import { explainFailureWithDrive } from './drive.js'
 import { buildFromPlan } from './emit/document.js'
 import { loadChapters } from './parse/loadDir.js'
 import { parseMarkdown } from './parse/toAst.js'
 import { planChapter, planDocument } from './plan/fromAst.js'
 import type { Block } from './plan/types.js'
+import { letter } from './theme/presets/letter.js'
 import { resume } from './theme/presets/resume.js'
 import { technical } from './theme/presets/technical.js'
 import type { Theme } from './theme/types.js'
+import { measureLayout, type LayoutResult } from './verify/layout.js'
 import { countParagraphs, fetchDocument, residueFindings } from './verify/readback.js'
+
+export { documentInfo, trashDocument } from './drive.js'
+export type { DocumentInfo, TrashResult } from './drive.js'
+export type { LayoutResult } from './verify/layout.js'
 
 /**
  * The looks a caller may ask for by name. A front door takes a name, never a Theme object: a
  * model choosing from two words cannot hand over a half-built theme, and a new preset becomes
  * available everywhere by being added here.
  */
-export const THEMES = { technical, resume } as const
+export const THEMES = { technical, resume, letter } as const
 export type ThemeName = keyof typeof THEMES
 
 /**
@@ -88,6 +95,12 @@ export interface BuildResult {
   paragraphs: number
   residue: string[]
   imageWarnings: string[]
+  /**
+   * Where Docs put the page breaks — page count, and a warning for a heading stranded at a page foot,
+   * a page target missed, or a stray last page. `measured: false` (with a reason) when it could not be
+   * read; never absent, so "no warnings" can only mean the layout was looked at and was fine.
+   */
+  layout: LayoutResult
 }
 
 /**
@@ -98,15 +111,15 @@ export interface BuildResult {
  */
 export async function buildDocument(
   auth: AuthProvider,
-  opts: { path: string; title?: string; theme?: Theme },
+  opts: { path: string; title?: string; theme?: Theme; maxPages?: number },
 ): Promise<BuildResult> {
   const theme = opts.theme ?? technical
   const { files, single } = await loadChapters(opts.path)
   if (files.length === 0) throw new Error(`no .md files found in ${opts.path}`)
-  // The résumé look is one page of one person, the same rule `npm start -- resume` holds.
-  if (theme === resume && files.length > 1) {
+  // The résumé and letter looks are one document by one person, the same rule `npm start -- resume` holds.
+  if ((theme === resume || theme === letter) && files.length > 1) {
     throw new Error(
-      `a résumé is one document, but ${opts.path} holds ${files.length} .md files: ` +
+      `a ${theme === letter ? 'letter' : 'résumé'} is one document, but ${opts.path} holds ${files.length} .md files: ` +
         `${files.map((f) => basename(f.path)).join(', ')}. Build it from the one file.`,
     )
   }
@@ -122,7 +135,11 @@ export async function buildDocument(
   // A lone file gets no cover: a cover whose table of contents has one entry is a page that
   // says nothing. With one tab and no cover, emit/document.ts also leaves the native tab
   // unrenamed, which keeps Docs from adding a blank first page to the PDF export.
-  const built = await buildFromPlan(auth, { theme, plan, cover: !single })
+  // A 403 from Docs on a full Drive reads "The caller does not have permission", which says nothing
+  // of the cause; explainFailureWithDrive swaps in the real one, and only when the quota shows it.
+  const built = await buildFromPlan(auth, { theme, plan, cover: !single }).catch(async (error: unknown) => {
+    throw await explainFailureWithDrive(auth, error)
+  })
   const doc = await fetchDocument(auth, built.documentId)
 
   return {
@@ -133,7 +150,22 @@ export async function buildDocument(
     paragraphs: countParagraphs(doc),
     residue: residueFindings(doc, { codeFont: theme.code.font }),
     imageWarnings: built.imageWarnings,
+    layout: await measureLayout(auth, built.documentId, { doc, maxPages: opts.maxPages }),
   }
+}
+
+export interface LayoutReport {
+  documentId: string
+  layout: LayoutResult
+}
+
+/** Where an already-built document's pages break, without rebuilding it — e.g. after a hand edit. */
+export async function layoutDocument(
+  auth: AuthProvider,
+  documentId: string,
+  opts: { maxPages?: number } = {},
+): Promise<LayoutReport> {
+  return { documentId, layout: await measureLayout(auth, documentId, opts) }
 }
 
 export interface LintResult {

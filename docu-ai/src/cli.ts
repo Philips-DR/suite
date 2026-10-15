@@ -2,13 +2,15 @@ import { basename } from 'node:path'
 import { GoogleOAuthProvider, hasCachedToken, tokenPath } from './auth/google.js'
 import { buildFromPlan, createThemedDocument } from './emit/document.js'
 import type { TextBlock } from './emit/text.js'
-import { buildDocument, lintDocument, preview } from './operations.js'
+import { buildDocument, layoutDocument, lintDocument, preview, trashDocument, type LayoutResult } from './operations.js'
 import { loadChapterFiles } from './parse/loadDir.js'
 import { parseMarkdown } from './parse/toAst.js'
 import { planChapter, planDocument } from './plan/fromAst.js'
 import { plain } from './plan/types.js'
 import { formatReport, probeAssumptions, writeReport } from './probe/assumptions.js'
+import { letter } from './theme/presets/letter.js'
 import { resume } from './theme/presets/resume.js'
+import type { Theme } from './theme/types.js'
 import { technical } from './theme/presets/technical.js'
 import { exportPdf } from './verify/pdfFonts.js'
 import { countParagraphs, fetchDocument, namedStyleSummary, residueFindings } from './verify/readback.js'
@@ -22,9 +24,12 @@ const USAGE = `docu-ai — markdown to Google Docs
   npm start -- preview <dir|file>    parse + plan a folder or one .md file — no network, no quota spent
   npm start -- build <dir|file> [t]  build a doc: a folder gets a tab per chapter and a cover; one file, a single tab
   npm start -- resume <dir> [out]    build a single-tab doc with no cover and export it to PDF
+  npm start -- letter <dir> [out]    the same for a cover letter, in the letter look
   npm start -- export <docId> [out]  export an already-built document to PDF
   npm start -- lint <documentId>     re-run the residue lint against an already-built document
-  npm run mcp                        serve preview/build/lint over MCP on stdio, for a model to call
+  npm start -- layout <docId> [max]  page count and page-break warnings for a built document (max: page target)
+  npm start -- trash <documentId>    move a document docu-ai built to Drive's Trash (30 days to restore it)
+  npm run mcp                        serve preview/build/layout/lint/info/trash over MCP on stdio, for a model to call
 
 See SETUP.md for the one-time Google Cloud setup.
 `
@@ -122,6 +127,17 @@ async function cmdM0(): Promise<void> {
  * runs, identified by their mono font: a theme whose code font differed from the one passed here
  * would have every inline code span either wrongly exempted or wrongly flagged.
  */
+function reportLayout(layout: LayoutResult): void {
+  if (!layout.measured) {
+    process.stdout.write(`layout: not measured — ${layout.reason}\n\n`)
+    return
+  }
+  process.stdout.write(`layout: ${layout.pages} page${layout.pages === 1 ? '' : 's'}, ${layout.lastPageLines} lines on the last\n`)
+  for (const warning of layout.warnings) process.stdout.write(`  warning: ${warning}\n`)
+  process.stdout.write('\n')
+  if (layout.warnings.length > 0) process.exitCode = 1
+}
+
 function reportResidue(residue: string[]): void {
   process.stdout.write(`markdown residue: ${residue.length === 0 ? 'none' : residue.join('; ')}\n\n`)
   if (residue.length > 0) process.exitCode = 1
@@ -162,6 +178,7 @@ async function cmdBuild(dir: string | undefined, title: string | undefined): Pro
   for (const warning of built.imageWarnings) process.stdout.write(`${warning}\n`)
   process.stdout.write(`paragraphs: ${built.paragraphs}\n`)
   reportResidue(built.residue)
+  reportLayout(built.layout)
 }
 
 /**
@@ -176,14 +193,29 @@ async function cmdBuild(dir: string | undefined, title: string | undefined): Pro
  * the PDF — the Doc is the intermediate artifact here, which is the reverse of every other command.
  */
 async function cmdResume(dir: string | undefined, outPath: string | undefined): Promise<void> {
-  if (!dir) throw new Error('usage: npm start -- resume <markdown-folder> [out.pdf]')
+  return cmdOneDocument(dir, outPath, resume, 'résumé', 'resume')
+}
+
+/** A letter is the same shape of document as a résumé — one person, one file, no cover — in its own look. */
+async function cmdLetter(dir: string | undefined, outPath: string | undefined): Promise<void> {
+  return cmdOneDocument(dir, outPath, letter, 'letter', 'letter')
+}
+
+async function cmdOneDocument(
+  dir: string | undefined,
+  outPath: string | undefined,
+  theme: Theme,
+  noun: string,
+  command: string,
+): Promise<void> {
+  if (!dir) throw new Error(`usage: npm start -- ${command} <markdown-folder> [out.pdf]`)
   const auth = GoogleOAuthProvider.fromEnvironment()
 
   const files = await loadChapterFiles(dir)
   if (files.length === 0) throw new Error(`no .md files found in ${dir}`)
   if (files.length > 1) {
     throw new Error(
-      `a résumé is one document, but ${dir} holds ${files.length} .md files: ` +
+      `a ${noun} is one document, but ${dir} holds ${files.length} .md files: ` +
         `${files.map((f) => basename(f.path)).join(', ')}. Use \`build\` for a multi-chapter document.`,
     )
   }
@@ -193,15 +225,15 @@ async function cmdResume(dir: string | undefined, outPath: string | undefined): 
   // file should be called in Drive. No folder-name fallback worth having here.
   const plan = planDocument(chapters, chapters[0]!.title)
 
-  const built = await buildFromPlan(auth, { theme: resume, plan, cover: false })
+  const built = await buildFromPlan(auth, { theme, plan, cover: false })
   process.stdout.write(`\n${built.url}\n\n`)
   for (const warning of built.imageWarnings) process.stdout.write(`${warning}\n`)
 
   const doc = await fetchDocument(auth, built.documentId)
   process.stdout.write(`paragraphs: ${countParagraphs(doc)}\n`)
-  reportResidue(residueFindings(doc, { codeFont: resume.code.font }))
+  reportResidue(residueFindings(doc, { codeFont: theme.code.font }))
 
-  const out = outPath ?? 'resume.pdf'
+  const out = outPath ?? `${command}.pdf`
   await exportPdf(auth, built.documentId, out)
   process.stdout.write(`exported pdf: ${out}\n\n`)
 }
@@ -223,6 +255,22 @@ async function cmdLint(documentId: string | undefined): Promise<void> {
   const result = await lintDocument(auth, documentId)
   process.stdout.write(`paragraphs: ${result.paragraphs}\n`)
   reportResidue(result.residue)
+}
+
+/** Where an already-built document's pages break — e.g. after a human has edited it in Docs. */
+async function cmdLayout(documentId: string | undefined, maxPages: string | undefined): Promise<void> {
+  if (!documentId) throw new Error('usage: npm start -- layout <documentId> [maxPages]')
+  const auth = GoogleOAuthProvider.fromEnvironment()
+  const result = await layoutDocument(auth, documentId, maxPages ? { maxPages: Number(maxPages) } : {})
+  reportLayout(result.layout)
+}
+
+/** Drive's Trash, not a deletion: Drive keeps it 30 days. Only a document docu-ai built can be named. */
+async function cmdTrash(documentId: string | undefined): Promise<void> {
+  if (!documentId) throw new Error('usage: npm start -- trash <documentId>')
+  const auth = GoogleOAuthProvider.fromEnvironment()
+  const result = await trashDocument(auth, documentId)
+  process.stdout.write(`trashed: "${result.title}"\n${result.restore}\n`)
 }
 
 async function main(): Promise<void> {
@@ -247,11 +295,20 @@ async function main(): Promise<void> {
     case 'resume':
       await cmdResume(process.argv[3], process.argv[4])
       break
+    case 'letter':
+      await cmdLetter(process.argv[3], process.argv[4])
+      break
     case 'export':
       await cmdExport(process.argv[3], process.argv[4])
       break
     case 'lint':
       await cmdLint(process.argv[3])
+      break
+    case 'layout':
+      await cmdLayout(process.argv[3], process.argv[4])
+      break
+    case 'trash':
+      await cmdTrash(process.argv[3])
       break
     case 'status':
       process.stdout.write(

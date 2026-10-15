@@ -163,7 +163,9 @@ def listing(root: Path) -> dict[str, Any]:
             files = sorted(p.name for p in batch.glob("*.md")) if batch.is_dir() else []
             if files:
                 docs.append({"name": batch.name, "path": str(doc_path(batch)), "files": files,
-                             "at": batch.stat().st_mtime})
+                             "at": batch.stat().st_mtime,
+                             # Written by write_draft (documents.py DRAFT_MARKER), not uploaded by the user.
+                             "draft": (batch / ".draft").exists()})
     return {"audio": audio, "docs": docs,
             "books": _files(root / "books", BOOK_EXTS), "voices": _files(root / "voices", AUDIO_EXTS)}
 

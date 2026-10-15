@@ -15,13 +15,14 @@ need node    "install Node 24"
 need npm     "install Node 24"
 need ffmpeg  "meet-ai records and decodes audio with it"
 
-step "Python environment (.venv), shared by assistant, meet-ai and mail-ai"
+step "Python environment (.venv), shared by assistant, meet-ai, mail-ai and apply-ai"
 [[ -x .venv/bin/python ]] || python3 -m venv .venv
 .venv/bin/pip install -q --upgrade pip
 .venv/bin/pip install -q \
   -r assistant/requirements.txt \
   -r meet-ai/requirements.txt -r meet-ai/requirements-dev.txt \
-  -r mail-ai/requirements.txt -r mail-ai/requirements-dev.txt
+  -r mail-ai/requirements.txt -r mail-ai/requirements-dev.txt \
+  -r apply-ai/requirements.txt -r apply-ai/requirements-dev.txt
 .venv/bin/pip check
 
 step "audiobook's own Python environment (audiobook/.venv)"
@@ -42,11 +43,7 @@ meet-ai/fetch-models.sh
 
 [[ -f .env ]] || { cp .env.example .env; echo; echo "Wrote .env from .env.example — check the AWS profile in it."; }
 
-step "Logins still needed"
-missing=0
-[[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/docu-ai/token.json" ]] || { echo "  Google Docs: (cd docu-ai && npm run auth)"; missing=1; }
-[[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/mail-ai/token.json" ]] || { echo "  Gmail:       mail-ai/mail auth   (and mail-ai/mail auth --compose to draft and send)"; missing=1; }
-echo "  AWS:         aws sso login --profile <the profile in .env>   (whenever the login lapses)"
-[[ $missing = 1 ]] || echo "  Google logins are in place."
+step "Logins"
+./auth --check || echo "  Sign in with ./auth (it opens a browser only for the logins that need one)."
 echo
 echo "Done. Start with ./start"

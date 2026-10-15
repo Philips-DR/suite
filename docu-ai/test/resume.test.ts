@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
+import { compileBlocks } from '../src/emit/blocks.js'
 import { compileChapterInserts } from '../src/emit/compile.js'
 import { namedStyleRequests, paragraphStyleFor } from '../src/emit/namedStyles.js'
+import { renderTextBlocks } from '../src/emit/text.js'
 import { parseMarkdown } from '../src/parse/toAst.js'
 import { planChapter } from '../src/plan/fromAst.js'
 import { assertVerifiedFonts } from '../src/theme/fonts.js'
@@ -111,5 +113,76 @@ describe('a résumé-shaped chapter — golden request snapshot', () => {
     expect(text).not.toContain('](')
     expect(text).not.toMatch(/^#/m)
     expect(text).toContain('Streaming ingestion.') // the bolded lead-in survived as plain text
+  })
+})
+
+/**
+ * Found on two real résumés in one day: heading3 has keepWithNext, so a role's heading stayed with
+ * its dates line — and the pair, with no keepWithNext on the dates line, still fell at the foot of a
+ * page while the bullets started the next one. The lead line has to keep with the first bullet too.
+ */
+describe('a heading’s lead line keeps with what follows it', () => {
+  const keepRequests = (theme: typeof resume) => {
+    const [segment] = compileBlocks(chapter.blocks, new Map(), theme.keepLeadWithNext)
+    if (segment?.kind !== 'text') throw new Error('expected a text segment')
+    const texts = segment.textBlocks
+    const requests = renderTextBlocks(texts, theme, { startIndex: 1 }).requests
+    return { texts, kept: requests.filter((r) => r.updateParagraphStyle?.fields === 'keep_with_next') }
+  }
+
+  it('asks it of the résumé theme, for section and role or project headings', () => {
+    expect(resume.keepLeadWithNext).toEqual([2, 3])
+  })
+
+  it('marks the dates line under each role, and nothing else', () => {
+    const { texts } = keepRequests(resume)
+    const marked = texts.filter((b) => b.keepWithNext).map((b) => JSON.stringify(b.runs))
+    expect(marked).toHaveLength(2)
+    expect(marked[0]).toContain('Mar 2021')
+    expect(marked[1]).toContain('Jan 2019')
+  })
+
+  // The fixture's Summary paragraph sits under `## Summary` and is followed by `## Experience`: it is
+  // the whole section, so there is nothing to strand it from, and gluing it would chain Summary to
+  // Experience to the first role.
+  it('does not mark a lead that is the whole entry: the next block is a heading of the same rank', () => {
+    const { texts } = keepRequests(resume)
+    const summary = texts.find((b) => JSON.stringify(b.runs).includes('track record'))
+    expect(summary).toBeDefined()
+    expect(summary?.keepWithNext).toBeUndefined()
+  })
+
+  it('marks a section’s note that introduces a deeper heading, which is what a stranded “Selected Projects” was', () => {
+    const intro = planChapter(
+      parseMarkdown('# A\n\n## Selected Projects\n\n*Repositories are private.*\n\n### The project\n\nStack line\n\n- a bullet\n'),
+      'x',
+      'x.md',
+    )
+    const [segment] = compileBlocks(intro.blocks, new Map(), resume.keepLeadWithNext)
+    if (segment?.kind !== 'text') throw new Error('expected a text segment')
+    const kept = segment.textBlocks.filter((b) => b.keepWithNext).map((b) => JSON.stringify(b.runs))
+    expect(kept).toHaveLength(2)
+    expect(kept[0]).toContain('Repositories are private')
+    expect(kept[1]).toContain('Stack line')
+  })
+
+  it('does not mark a lead line with nothing after it — the last block has nothing to keep with', () => {
+    const { texts } = keepRequests(resume)
+    const last = texts[texts.length - 1]!
+    expect(JSON.stringify(last.runs)).toContain('Graduated 2018')
+    expect(last.keepWithNext).toBeUndefined()
+  })
+
+  it('sends one keep_with_next request per marked paragraph, never touching the named style request', () => {
+    const { kept } = keepRequests(resume)
+    expect(kept).toHaveLength(2)
+    expect(kept[0]?.updateParagraphStyle?.paragraphStyle).toEqual({ keepWithNext: true })
+  })
+
+  it('leaves a theme that does not ask for it exactly as it was', () => {
+    expect(technical.keepLeadWithNext).toBeUndefined()
+    const { texts, kept } = keepRequests(technical)
+    expect(texts.some((b) => b.keepWithNext)).toBe(false)
+    expect(kept).toHaveLength(0)
   })
 })

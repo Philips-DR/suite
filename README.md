@@ -12,6 +12,7 @@ Where it stands and what comes next: [`plan.md`](plan.md). Rules for working on 
 | `meet-ai/` | Records meetings, transcribes them on this machine, writes notes and minutes that cite the recording. |
 | `docu-ai/` | Turns markdown into a properly formatted Google Doc. |
 | `mail-ai/` | Reads, searches, drafts and sends Gmail. |
+| `apply-ai/` | Checks for a job application: a posting's requirements against what your own material shows, and a draft's claims against what you have actually written. Reads only. |
 | `audiobook/` | Turns a PDF into an audiobook, read in a voice cloned from a short recording. Runs entirely on this computer. |
 
 ## Architecture
@@ -23,8 +24,8 @@ Six programs, not one. They share a folder, an install and a start command — n
   meet over HTTP, across origins — never an import, a shared build, or a page one hands the other.
   `./start` makes a fresh access token each launch and gives it to both; the web app's server writes
   it into the page as it serves it, so nothing is pasted by hand.
-- **The backend starts the four tools as its own child processes**, talking to each over MCP on
-  stdio — the same protocol a model uses to call them. `meet-ai`, `docu-ai`, `mail-ai` and
+- **The backend starts the five tools as its own child processes**, talking to each over MCP on
+  stdio — the same protocol a model uses to call them. `meet-ai`, `docu-ai`, `mail-ai`, `apply-ai` and
   `audiobook` each also work standalone, from their own folder, with nothing else running.
 - **No tool imports another, and no tool imports the backend.** They meet only through the
   backend's tool calls. A crash or a multi-hour transcription in one tool cannot take down another,
@@ -47,10 +48,10 @@ tool's own architecture — its layers, its verified API facts, its gotchas — 
 ./setup          # the Python environments, Node packages, the web app, speaker models
 ```
 
-Then the logins `./setup` lists: Google for docu-ai (`cd docu-ai && npm run auth`) and for
-mail-ai (`mail-ai/mail auth`, plus `--compose` to draft and send), and AWS for the model
-(`aws sso login --profile <profile>`). Settings go in `.env`, which `./setup` creates from
-`.env.example`.
+Then `./auth`: it checks every login — AWS for the model, Google for docu-ai, Gmail for
+mail-ai (plus the wider drafting token, once made with `./auth mail-compose`) — and opens a
+browser only for the ones that are dead. `./auth --check` reports without signing in. Settings
+go in `.env`, which `./setup` creates from `.env.example`.
 
 ## Every day
 
@@ -74,6 +75,31 @@ the app asks once for the token the backend prints.
 ```bash
 ./test           # every tool's tests; none needs a login, a model or the network
 ```
+
+## When you power on the laptop
+
+**If you run it in containers (`./start-docker up`), there is nothing to start.** Docker itself starts
+at boot and brings the suite back with it: all three containers (backend, web, Tailscale) are set to
+`restart: unless-stopped`, so they return unless you stopped them yourself with `./start-docker down`.
+They come back with the same access token, so a tab or phone that already had the page open keeps
+working. Give it a minute after logging in, then open `http://127.0.0.1:8751/` (or the `suite…ts.net`
+address from your phone).
+
+1. Check once that Docker starts at boot: `systemctl is-enabled docker` should print `enabled`
+   (if not, `sudo systemctl enable docker`).
+2. **Renew the AWS login each morning**: it lapses overnight, and until then the assistant cannot
+   think (Settings shows "AWS login needs renewing"). Run `./auth`, or just
+   `aws sso login --profile ayadata-bedrock`. The Google logins last about a week.
+3. If it is not there: `./start-docker status` shows what is running; `./start-docker up` starts it.
+
+**If you run it straight on the laptop (`./start`), it does not start itself.** Open a terminal in this
+folder and run `./start`, then open `http://127.0.0.1:8751/`; it runs in that terminal and stops on Ctrl+C or when the terminal closes. Run one
+or the other, never both: they use the same two ports (8750 and 8751), so whichever starts second
+fails to bind.
+
+**It is only reachable while the laptop is awake.** A laptop that sleeps (lid closed, idle) is off the
+network, so your phone cannot reach the suite until it wakes. For all-day access from your phone, keep it
+awake and plugged in (set the laptop not to suspend while on AC power).
 
 ## In containers, and from your phone
 
@@ -113,14 +139,48 @@ certificates are on, and what is being served, and says what to change. (The usu
 The tailnet is the first lock and the page's access token the second, and the token is handed to
 whatever can open the page: keep the tailnet to your own devices (or restrict it with Tailscale ACLs)
 until signing in with Google replaces it. **Logins** still happen on a computer with a browser
-(`./auth`); `./start-docker import` copies this folder's Google tokens into `./data/config`, and on a
+(`./auth`); `./start-docker import` copies this folder's Google tokens into `./data/config` once, `./auth` keeps them in
+step afterwards (a container's copy lapses on its own otherwise), and on a
 server you would copy `~/.config/docu-ai` and `~/.config/mail-ai` there yourself. The AWS login lapses
 overnight and is renewed on the host (`aws sso login`).
+
+## On a server (renewing its logins)
+
+A server has no browser and no AWS SSO, so it cannot renew a login. `./renew-secrets` does it from
+this computer, over ssh: it runs `./auth` for whatever has lapsed, sends the server temporary AWS
+credentials for the model and the Google tokens, then asks the server's backend who it now is. Secrets
+go on ssh's standard input, never in a command line.
+
+For a server reached through SSM, give it an alias in `~/.ssh/config`:
+
+```
+Host suite-server
+  HostName i-0123456789abcdef0            # the instance id
+  User ubuntu                             # or ec2-user
+  IdentityFile ~/.ssh/<key>
+  ProxyCommand sh -c "AWS_PROFILE=<a profile allowed to start sessions> AWS_REGION=us-east-1 aws ssm start-session --target %h --document-name AWS-StartSSHSession --parameters 'portNumber=%p'"
+```
+
+Then `SUITE_REMOTE=suite-server` in `.env` (and `SUITE_REMOTE_DIR`, `SUITE_REMOTE_AWS_DIR`; see
+`.env.example`), and on the server set `AWS_CONFIG_DIR` in its `.env` to the full path of the AWS
+credentials folder, so `~/.aws` there is never touched.
+
+```bash
+./renew-secrets --first    # once: also send the Google client files and audiobook's token
+./renew-secrets            # each time the logins lapse
+./renew-secrets --check    # what the server holds, and when the AWS credentials run out
+```
+
+SSO credentials last as long as the permission set's session (about 8 hours on this account), so
+the model's login lapses every few hours instead of overnight; an instance role would end that, and
+needs someone who administers the account to attach it. The backend reads the credentials file on every
+model call, so nothing is restarted afterwards. The Google tokens lapse weekly while the OAuth app is
+in "Testing" (`./auth` renews them, and so does this).
 
 ## Each tool still stands alone
 
 Every tool keeps its own command line, tests and rules (`CLAUDE.md`, `plan.md`), and works
-from its own folder with the assistant not running: `meet-ai/notes`, `mail-ai/mail`,
+from its own folder with the assistant not running: `meet-ai/notes`, `mail-ai/mail`, `apply-ai/apply`,
 `cd docu-ai && npm start`, `cd audiobook && .venv/bin/python -m audiobook preview BOOK.pdf`. See each
 folder's README or `CLAUDE.md`.
 

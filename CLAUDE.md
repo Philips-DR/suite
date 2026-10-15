@@ -12,7 +12,9 @@ changing the tool.
     ./setup    # idempotent: shared .venv, audiobook's own .venv, npm ci for docu-ai and the web app, speaker models
     ./start    # backend (API, :8750; launches every tool over MCP stdio) + web app (:8751)
     ./start-docker up [--tailscale]   # the same in containers; reachable from your other devices
-    ./test     # all six test suites. Must pass with no credentials, no model, no network
+    ./test     # all seven test suites. Must pass with no credentials, no model, no network
+    ./auth     # every login (AWS, Google Docs, Gmail): renews only the dead ones, and copies Google tokens into data/config for the containers; --check to just look
+    ./renew-secrets   # a server's logins: sends it fresh AWS credentials + Google tokens over ssh (README → "On a server")
 
 ## The web app and the backend are separate programs
 
@@ -44,7 +46,7 @@ module or a credential**, and keeping it that way is the point of the whole rebu
 
 ## The shared Python environment
 
-assistant, meet-ai and mail-ai share `.venv`. `./setup` installs all three tools'
+assistant, meet-ai, mail-ai and apply-ai share `.venv`. `./setup` installs all four tools'
 `requirements.txt` into it and runs `pip check`. **audiobook does not** (2026-10-10): it has its own
 `audiobook/.venv`, built from its own pinned `requirements.txt`, because torch, Docling and Pocket
 TTS are 1.9 GB that nothing else uses (the shared one is 696 MB) and torch must come from PyTorch's
@@ -60,6 +62,26 @@ loosened pin.
 Measured when the suite was formed (2026-09-27): the three tools pinned only `anthropic` in
 common, at the same version; installed transitive deps differed only by patch (`idna`,
 `protobuf`). 696 MB shared versus ~900 MB across three environments.
+
+## Tailoring a CV: the checks that run before the draft is saved (2026-10-15)
+
+Asked to tailor a CV or write a cover letter, the assistant now runs `apply-ai` first, then drafts, then builds
+with a page target. Three tools carry it, each in its own folder and none importing another; the procedure is
+in their tool descriptions, not in the assistant's prompt:
+
+- **apply-ai** (`requirements`, `claims`; reads only): every requirement of the posting against what the user's
+  own material shows, the gaps asked about in one message before drafting; then every figure, overstating word,
+  tool, language, degree and name in the draft traced to a source line, and any limit the source put on a claim
+  noticed when a draft drops it. Rules and the failures behind them: `apply-ai/CLAUDE.md`.
+- **docu-ai** (`build` returns `layout`; `layout`, `info`, `trash`): the page count and a warning for a heading
+  stranded at a page foot, a page target missed or a stray last page, read from the PDF Docs exports; a gated
+  `trash` for the Doc a rebuild replaces. `docu-ai/CLAUDE.md` → "Layout".
+- **assistant**: confirmed answers go to memory with `remember` and come back as `facts`; every draft it writes is
+  marked `.draft` and is never counted as the user's material; one request may take up to 30 model rounds
+  (`MAX_TOOL_ROUNDS`), because checking, fixing, trimming and rebuilding is that many.
+
+The check is advisory: nothing stops a model skipping it, and it cannot tell that a sentence is true. The
+person approving the draft is still the last check. Verified through the real chat on two real postings.
 
 ## The interface (`web/`)
 
@@ -154,8 +176,13 @@ A tool's own paths stay in `assistant/tools.yaml`, the one file that knows every
   the upload, and the `.corrections.txt` a test leaves beside it. A render is a detached process:
   restarting the backend does not stop it (and the restarted backend sees it), so `pkill` it
   explicitly if a test render must end.
-- **The model login lapses overnight** (AWS SSO). Settings shows it; only the user can renew it
-  (`aws sso login --profile ayadata-bedrock`, needs a browser).
+- **Logins lapse: AWS SSO overnight, the Google tokens weekly** (the OAuth app is in "Testing").
+  `./auth --check` tells which, without a browser — Settings cannot, since it judges a tool by its
+  last call, which may be days old. Only the user can renew them (`./auth`, needs a browser).
+  **The containers hold their own copy of each Google token** (`data/config`), which renewing on the host did
+  not touch: on 2026-10-15 every build in the container failed with `invalid_grant` on a token Google had let
+  lapse two weeks earlier. `./auth` now copies a login that is good on the host into `data/config` when the
+  refresh token differs (`--check` only says so), never the other way and never from a dead login.
 - **Done means run for real and looked at.** Unit tests passed on every change this suite has had;
   the real runs are what found the dropped quotes, the 8-page minutes, the truncated CV draft and
   the cut-off approval preview. Build it, run it, open the output.

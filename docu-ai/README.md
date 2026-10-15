@@ -109,6 +109,12 @@ that's done, the everyday commands are:
     npm start -- preview <folder>          # see how a folder would be structured — no changes made, no quota used
     npm start -- build <folder> [title]    # do the real thing: build the Google Doc
     npm start -- lint <documentId>         # re-check an already-built document for leftover markdown
+    npm start -- layout <documentId> [n]   # how many pages it runs to, and whether a page break strands a heading (n: the page target)
+    npm start -- trash <documentId>        # move a document this tool built to Drive's Trash (30 days to restore it)
+
+A build also reports its layout. The page count and the page breaks are decided when Docs lays the page
+out, so they are read from the PDF Docs exports (this needs `pdftotext`, from poppler-utils; without it a
+build still works and says its layout was not measured).
 
 ## How we know it's correct
 
@@ -131,6 +137,7 @@ history, see `plan.md`.
 
 ## Looks
 
-Two, chosen by name: `technical` (the default — specifications, handbooks) and `resume` (a CV:
-one file, one person, no cover). The CLI's `resume` command uses the second; over MCP, pass
-`theme: "resume"` to `build`.
+Three, chosen by name: `technical` (the default — specifications, handbooks), `resume` (a CV: one file, one
+person, no cover, packed) and `letter` (a cover letter: 10.5pt, roomy spacing, one file, no cover). The CLI's
+`resume` and `letter` commands use the second and third; over MCP, pass `theme: "resume"` or `theme: "letter"`
+to `build`.

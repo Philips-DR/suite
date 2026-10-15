@@ -21,6 +21,15 @@ servers:
     args: ["run", "--silent", "mcp"]
     cwd: ${DOCU_AI_HOME:-../docu-ai}
 
+  # Checks between a job posting, the user's own material and a draft: every requirement set against what
+  # the material shows, and every figure and overstating word in a draft traced to a line. Reads only. The
+  # uploads folder is the one place it may read from, injected here like every other path.
+  - name: apply-ai
+    command: ${APPLY_AI_HOME:-../apply-ai}/mcp
+    cwd: ${APPLY_AI_HOME:-../apply-ai}
+    env:
+      APPLY_AI_ROOTS: ${ASSISTANT_UPLOADS:-../assistant/uploads}
+
   - name: mail-ai
     command: ${MAIL_AI_HOME:-../mail-ai}/mcp
     cwd: ${MAIL_AI_HOME:-../mail-ai}

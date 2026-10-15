@@ -48,10 +48,52 @@ afterEach(async () => {
 })
 
 describe('the MCP front door', () => {
-  it('advertises exactly the three operations, and no more', async () => {
+  it('advertises exactly the six operations, and no more', async () => {
     const client = await connect()
     const names = (await client.listTools()).tools.map((t) => t.name).sort()
-    expect(names).toEqual(['build', 'lint', 'preview'])
+    expect(names).toEqual(['build', 'info', 'layout', 'lint', 'preview', 'trash'])
+  })
+
+  it('marks only build and trash as writes, and trash as destructive', async () => {
+    const tools = (await (await connect()).listTools()).tools
+    const writes = tools.filter((t) => t.annotations?.readOnlyHint !== true).map((t) => t.name).sort()
+    expect(writes).toEqual(['build', 'trash'])
+    expect(tools.find((t) => t.name === 'trash')?.annotations?.destructiveHint).toBe(true)
+  })
+
+  // The assistant's gate shows what the named tool says instead of raw arguments, and refuses a
+  // "preview" that is not read-only. A document id alone cannot be approved: it names no document.
+  it('has trash show what info says about the document, and info is read-only', async () => {
+    const tools = (await (await connect()).listTools()).tools
+    const trash = tools.find((t) => t.name === 'trash')
+    const approval = (trash?._meta as { approval?: Record<string, unknown> } | undefined)?.approval
+    expect(approval).toEqual({
+      preview_tool: 'info',
+      argument_map: { documentId: 'documentId' },
+      field: 'summary',
+    })
+    expect(tools.find((t) => t.name === approval?.preview_tool)?.annotations?.readOnlyHint).toBe(true)
+  })
+
+  // A letter built in the résumé look came out cramped: the description has to steer a model to the right one.
+  it('tells the model which look is for a letter, and not to use the CV look for one', async () => {
+    const build = (await (await connect()).listTools()).tools.find((t) => t.name === 'build')
+    const theme = (build?.inputSchema.properties as Record<string, { description?: string }>).theme
+    expect(theme?.description).toContain("'letter': a cover letter")
+    expect(theme?.description).toContain("Use 'letter' for a letter, not 'resume'")
+  })
+
+  it('lets a caller set a page target on a build', async () => {
+    const build = (await (await connect()).listTools()).tools.find((t) => t.name === 'build')
+    const props = build?.inputSchema.properties as Record<string, { type?: string }>
+    expect(props.maxPages?.type).toBe('integer')
+  })
+
+  it('tells the model what to do with a layout warning, and that a missing measurement is not a pass', async () => {
+    const build = (await (await connect()).listTools()).tools.find((t) => t.name === 'build')
+    expect(build?.description).toContain('layout.warnings')
+    expect(build?.description).toContain('trash')
+    expect(build?.description).toContain('measured: false')
   })
 
   it('marks preview read-only so a caller can tell which tool is safe to run unattended', async () => {
@@ -63,11 +105,11 @@ describe('the MCP front door', () => {
     expect(build?.annotations?.readOnlyHint).toBe(false)
   })
 
-  it('lets a caller choose the résumé look by name', async () => {
+  it('lets a caller choose the résumé and letter looks by name', async () => {
     const client = await connect()
     const build = (await client.listTools()).tools.find((t) => t.name === 'build')
     const theme = (build?.inputSchema.properties as Record<string, { enum?: string[] }>).theme
-    expect(theme?.enum).toEqual(['technical', 'resume'])
+    expect(theme?.enum).toEqual(['technical', 'resume', 'letter'])
   })
 
   it('previews a folder without ever touching auth', async () => {
