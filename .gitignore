@@ -2,6 +2,7 @@
 .venv/
 .env
 __pycache__/
+client_secret*.json
 
 # The container setup keeps all its state here (start-docker makes it).
 data/

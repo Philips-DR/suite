@@ -30,10 +30,14 @@ from typing import Any, Callable
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from pydantic import BaseModel
 
 from assistant.approval import WEB_PREVIEW_LIMIT, needs_approval, sanitise
+from assistant.auth import (
+    AuthError, SessionStore, clear_cookie, exchange_code, fetch_userinfo,
+    google_login_url, parse_allowed_emails, pkce_pair, set_cookie,
+)
 from assistant.config import load_tool_servers, model_config_from_environment
 from assistant.session import ApprovalRequest, allow_gate, execute, run_turn
 from assistant import uploads as up
@@ -197,6 +201,10 @@ def create_app(
     origins: tuple[str, ...] = DEFAULT_ORIGINS,
     hosts: frozenset[str] = frozenset(),
     on_ready: Callable[[], None] | None = None,
+    google_client_id: str | None = None,
+    google_client_secret: str | None = None,
+    google_redirect_uri: str | None = None,
+    allowed_emails: frozenset[str] = frozenset(),
 ) -> FastAPI:
     uploads_root = uploads_path or ROOT / "uploads"
     token = token or secrets.token_urlsafe(24)
@@ -238,39 +246,122 @@ def create_app(
         return holder["hub"]
 
     allowed_hosts = LOCAL_HOSTS | hosts
+    sessions = SessionStore() if google_client_id and google_client_secret else None
 
     def authenticate(request: Request) -> bool:
         """Is this request from someone who may use the API? The one place that decides.
 
-        Today that is the launch's token. It is a function of its own so that signing in with Google,
-        the next feature, adds a second way to be recognised here -- a session cookie -- instead of
-        touching the guard. See "Authentication" in CLAUDE.md for what else that changes."""
+        Two ways in: the launch token (header or, for EventSource, query param) and a Google
+        sign-in session cookie. Either one is enough."""
         supplied = request.headers.get("x-assistant-token") or ""
-        # EventSource cannot send headers, so the event stream alone takes the token as
-        # a query parameter. Everywhere else it stays out of URLs, and out of logs.
         if not supplied and request.url.path == "/api/events":
             supplied = request.query_params.get("token", "")
-        return secrets.compare_digest(supplied, token)
+        if supplied and secrets.compare_digest(supplied, token):
+            return True
+        if sessions is not None:
+            sid = request.cookies.get("session", "")
+            if sid and sessions.get(sid) is not None:
+                return True
+        return False
 
     @app.middleware("http")
     async def guard(request: Request, call_next):
         host = (request.headers.get("host") or "").rsplit(":", 1)[0].strip("[]").lower()
         if host not in allowed_hosts:
             return JSONResponse({"error": "forbidden host"}, status_code=403)
-        if request.url.path.startswith("/api/") and not authenticate(request):
+        path = request.url.path
+        if path.startswith("/auth/") or path == "/api/me":
+            return await call_next(request)
+        if path.startswith("/api/") and not authenticate(request):
             return JSONResponse({"error": "missing or wrong token"}, status_code=401)
         return await call_next(request)
 
-    # Added after the guard, so it runs outside it: a browser's preflight carries no token
-    # and must be answered here, and the guard's own 401 needs these headers too -- without
-    # them the web app sees "network error" and cannot tell a stale token from a dead server.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(origins),
         allow_methods=["GET", "POST", "PUT"],
         allow_headers=["content-type", "x-assistant-token"],
-        allow_credentials=False,  # nothing here uses cookies; the token travels in a header
+        allow_credentials=True,
     )
+
+    # -----------------------------------------------------------------------
+    # Google sign-in (when configured)
+    # -----------------------------------------------------------------------
+
+    if sessions is not None and google_client_id and google_client_secret and google_redirect_uri:
+        @app.get("/auth/login")
+        async def auth_login(request: Request):
+            redirect = request.query_params.get("redirect", "")
+            if redirect and not any(redirect.rstrip("/") == o.rstrip("/") for o in origins):
+                return JSONResponse({"error": "invalid redirect"}, status_code=400)
+            verifier, challenge = pkce_pair()
+            state = secrets.token_urlsafe(24)
+            sessions.save_pending(state, verifier, redirect)
+            return RedirectResponse(
+                google_login_url(google_client_id, google_redirect_uri, state, challenge),
+                status_code=302,
+            )
+
+        @app.get("/auth/callback")
+        @app.get("/auth/callback/")
+        async def auth_callback(request: Request):
+            error = request.query_params.get("error")
+            state = request.query_params.get("state", "")
+            pending = sessions.pop_pending(state) if state else None
+
+            if error:
+                target = pending[1] if pending else "/"
+                return RedirectResponse(target)
+
+            code = request.query_params.get("code")
+            if not code or not pending:
+                return JSONResponse({"error": "missing code or expired state"}, status_code=400)
+            verifier, redirect = pending
+
+            try:
+                tokens = await exchange_code(
+                    google_client_id, google_client_secret, google_redirect_uri, code, verifier)
+                access_token = tokens.get("access_token")
+                if not access_token:
+                    raise AuthError("no access token in response")
+                userinfo = await fetch_userinfo(access_token)
+            except AuthError:
+                return JSONResponse({"error": "sign-in failed"}, status_code=502)
+
+            email = (userinfo.get("email") or "").lower()
+            if not userinfo.get("email_verified"):
+                return JSONResponse({"error": "email not verified by Google"}, status_code=403)
+            if email not in allowed_emails:
+                return JSONResponse({"error": "this account is not allowed"}, status_code=403)
+
+            sid = sessions.create(email)
+            secure = request.url.scheme == "https"
+            target = redirect or "/"
+            if "127.0.0.1" in target:
+                target = target.replace("127.0.0.1", "localhost")
+            response = RedirectResponse(target, status_code=302)
+            response.headers["set-cookie"] = set_cookie(sid, secure)
+            return response
+
+        @app.post("/auth/logout")
+        async def auth_logout(request: Request):
+            sid = request.cookies.get("session", "")
+            if sid:
+                sessions.delete(sid)
+            secure = request.url.scheme == "https"
+            response = JSONResponse({"ok": True})
+            response.headers["set-cookie"] = clear_cookie(secure)
+            return response
+
+    @app.get("/api/me")
+    async def me(request: Request):
+        email = None
+        if sessions is not None:
+            sid = request.cookies.get("session", "")
+            session = sessions.get(sid) if sid else None
+            if session:
+                email = session.email
+        return {"email": email, "google_auth": sessions is not None}
 
     @app.get("/api/tools")
     async def tools() -> list[dict[str, Any]]:
@@ -562,7 +653,11 @@ def main() -> None:
     app = create_app(Path(args.tools), Path(args.memory), Path(args.audit), uploads_path=uploads,
                      provider=args.provider, model=args.model,
                      token=os.environ.get("ASSISTANT_TOKEN") or None,
-                     origins=origins or DEFAULT_ORIGINS, hosts=hosts, on_ready=announce)
+                     origins=origins or DEFAULT_ORIGINS, hosts=hosts, on_ready=announce,
+                     google_client_id=os.environ.get("GOOGLE_CLIENT_ID") or None,
+                     google_client_secret=os.environ.get("GOOGLE_CLIENT_SECRET") or None,
+                     google_redirect_uri=os.environ.get("GOOGLE_REDIRECT_URI") or None,
+                     allowed_emails=parse_allowed_emails(os.environ.get("ASSISTANT_ALLOWED_EMAILS")))
     holder["app"] = app
     # Loopback unless ASSISTANT_HOST says otherwise, and it says otherwise only in the container
     # setup, whose compose file publishes the port to 127.0.0.1 and to a private Tailscale

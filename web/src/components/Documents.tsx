@@ -4,15 +4,17 @@
 // docu-ai reads only a folder's top level, so that is all an upload sends; anything deeper or
 // not markdown is listed as skipped, never uploaded to silently do nothing.
 
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { getUploads, isMarkdown, splitDocs, uploadDocs, type UploadedDocs } from '../api'
 import { call } from '../call'
 import { HBars } from '../charts/HBars'
 import { toolColor } from '../charts/palette'
+import { useAppState } from '../state'
 import { CardHead } from '../ui/CardHead'
 import { DropZone } from '../ui/DropZone'
 import { Empty } from '../ui/Empty'
-import { IconCheck, IconDocuments, IconExternal, IconFolder, IconUpload } from '../ui/icons'
+import { IconCheck, IconChevron, IconDocuments, IconDownload, IconExternal, IconFolder, IconRefresh, IconUpload } from '../ui/icons'
+import { ago } from '../ui/time'
 import { usePoll } from '../usePoll'
 import { PickFiles, UploadProgress } from './Upload'
 import '../styles/panels/documents.css'
@@ -120,6 +122,182 @@ function Batch({ docs, index }: { docs: UploadedDocs; index: number }) {
   )
 }
 
+// ---- documents already built on Google Drive --------------------------------------------------------
+
+interface DriveDoc {
+  documentId: string
+  title: string
+  url: string
+  createdTime: string
+  modifiedTime: string
+}
+
+interface ExportResult {
+  filename: string
+  data: string
+  size: number
+}
+
+function downloadBase64(data: string, filename: string, mime: string) {
+  const bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0))
+  const blob = new Blob([bytes], { type: mime })
+  const href = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = href
+  link.download = filename
+  link.click()
+  window.setTimeout(() => URL.revokeObjectURL(href), 10_000)
+}
+
+function DriveDocRow({ doc }: { doc: DriveDoc }) {
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+
+  const download = async (format: 'pdf' | 'docx') => {
+    setBusy(format)
+    setError('')
+    try {
+      const result = await call<ExportResult>('docu_ai__export', { documentId: doc.documentId, format })
+      const mime = format === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      downloadBase64(result.data, result.filename, mime)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy('')
+    }
+  }
+
+  return (
+    <li className="drive-doc">
+      <div className="drive-doc-main">
+        <a href={doc.url} target="_blank" rel="noreferrer" className="drive-doc-title">
+          {doc.title}
+          <IconExternal size={13} aria-hidden />
+        </a>
+        <span className="muted small" title={new Date(doc.modifiedTime).toLocaleString()}>
+          {ago(doc.modifiedTime)}
+        </span>
+      </div>
+      <div className="drive-doc-actions">
+        <button disabled={busy !== ''} onClick={() => void download('pdf')}>
+          <IconDownload size={14} aria-hidden />
+          {busy === 'pdf' ? 'Exporting…' : 'PDF'}
+        </button>
+        <button disabled={busy !== ''} onClick={() => void download('docx')}>
+          <IconDownload size={14} aria-hidden />
+          {busy === 'docx' ? 'Exporting…' : 'DOCX'}
+        </button>
+      </div>
+      {error && <p className="error small">{error}</p>}
+    </li>
+  )
+}
+
+interface ListPage {
+  documents: DriveDoc[]
+  nextPageToken?: string
+}
+
+const PAGE_SIZE = 10
+
+function DriveDocuments() {
+  const { tools } = useAppState()
+  const hasList = tools.has('docu_ai__list')
+  const [page, setPage] = useState<ListPage | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [tokenStack, setTokenStack] = useState<string[]>([])
+  const mountRef = useRef(true)
+  useEffect(() => () => { mountRef.current = false }, [])
+
+  const load = useCallback(async (pageToken?: string) => {
+    setLoading(true)
+    setError('')
+    try {
+      const result = await call<ListPage>('docu_ai__list', { limit: PAGE_SIZE, ...(pageToken ? { pageToken } : {}) })
+      if (mountRef.current) setPage(result)
+    } catch (e) {
+      if (mountRef.current) setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      if (mountRef.current) setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (hasList) void load()
+  }, [hasList, load])
+
+  if (!hasList) return null
+
+  const pageNum = tokenStack.length + 1
+  const hasNext = !!page?.nextPageToken
+  const hasPrev = tokenStack.length > 0
+
+  const goNext = () => {
+    if (!page?.nextPageToken) return
+    setTokenStack((s) => [...s, page.nextPageToken!])
+    void load(page.nextPageToken)
+  }
+
+  const goPrev = () => {
+    if (tokenStack.length === 0) return
+    const prev = [...tokenStack]
+    prev.pop()
+    const token = prev[prev.length - 1]
+    setTokenStack(prev)
+    void load(token)
+  }
+
+  return (
+    <section className="card" aria-label="Documents on Google Drive">
+      <CardHead icon={IconDocuments} tool="docu-ai" title="Your documents" sub="CVs, cover letters and other documents built by docu-ai, on your Google Drive.">
+        <button disabled={loading} onClick={() => { setTokenStack([]); void load() }}>
+          <IconRefresh size={16} aria-hidden />
+          Refresh
+        </button>
+      </CardHead>
+
+      {page === null && !error ? (
+        <div aria-busy="true">
+          <ul className="drive-list">
+            {Array.from({ length: 3 }, (_, i) => (
+              <li key={i} className="drive-doc">
+                <div className="drive-doc-main"><span className="skeleton" style={{ width: '60%', height: 18 }} /><span className="skeleton" style={{ width: 50, height: 14 }} /></div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : page && page.documents.length === 0 && tokenStack.length === 0 ? (
+        <Empty icon={IconDocuments} title="No documents yet">
+          Build a markdown file into a Google Doc and it will appear here.
+        </Empty>
+      ) : (
+        <>
+          <ul className="drive-list stagger">
+            {(page?.documents ?? []).map((d) => (
+              <DriveDocRow key={d.documentId} doc={d} />
+            ))}
+          </ul>
+          {(hasPrev || hasNext) && (
+            <nav className="drive-pager" aria-label="Document pages">
+              <button disabled={!hasPrev || loading} onClick={goPrev} aria-label="Previous page">
+                <IconChevron size={16} style={{ transform: 'rotate(180deg)' }} aria-hidden />
+                Prev
+              </button>
+              <span className="muted small">Page {pageNum}</span>
+              <button disabled={!hasNext || loading} onClick={goNext} aria-label="Next page">
+                Next
+                <IconChevron size={16} aria-hidden />
+              </button>
+            </nav>
+          )}
+        </>
+      )}
+      {error && <p className="error">{error}</p>}
+    </section>
+  )
+}
+
 export function Documents() {
   const uploads = usePoll(getUploads, 30000)
   const [uploading, setUploading] = useState<{ name: string; fraction: number } | null>(null)
@@ -182,6 +360,8 @@ export function Documents() {
           <Empty icon={IconDocuments} title="Nothing uploaded yet">Markdown you upload appears here, ready to preview and build into a formatted Google Doc.</Empty>
         </div>
       )}
+      <DriveDocuments />
+
       {uploads.error && <p className="error">{uploads.error}</p>}
     </div>
   )

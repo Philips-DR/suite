@@ -6,7 +6,7 @@
 // thing that needs attention is found by its state (icon and word), not by reading.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type CSSProperties, type ReactNode } from 'react'
-import { getHistory, getStatus, toolLabel, type AuditRow, type Level, type Status } from '../api'
+import { getHistory, getMe, getStatus, signOut, toolLabel, type AuditRow, type AuthInfo, type Level, type Status } from '../api'
 import { DataTable } from '../charts/ChartCard'
 import { toolColor, toolName } from '../charts/palette'
 import { Sparkline } from '../charts/Sparkline'
@@ -367,6 +367,7 @@ export function Settings() {
   const [error, setError] = useState('')
   const [checkedAt, setCheckedAt] = useState<number | null>(null)
   const [usage, setUsage] = useState<AuditRow[] | null>(null)
+  const [auth, setAuth] = useState<AuthInfo | null>(null)
   const [, tick] = useState(0)
 
   const check = useCallback(async (live: boolean) => {
@@ -391,6 +392,12 @@ export function Settings() {
   useEffect(() => {
     let current = true
     getHistory(USAGE_LIMIT).then((rows) => { if (current) setUsage(rows) }, () => undefined)
+    return () => { current = false }
+  }, [])
+
+  useEffect(() => {
+    let current = true
+    getMe().then((info) => { if (current) setAuth(info) }, () => undefined)
     return () => { current = false }
   }, [])
 
@@ -450,11 +457,24 @@ export function Settings() {
         )}
       </section>
 
+      {auth?.email && (
+        <aside className="set-account" aria-label="Signed-in account">
+          <div className="set-account-info">
+            <span className="set-account-label">Signed in as</span>
+            <span className="set-account-email">{auth.email}</span>
+          </div>
+          <button className="ghost" onClick={() => { void signOut().then(() => window.location.reload()) }}>
+            Sign out
+          </button>
+        </aside>
+      )}
+
       <aside className="set-auth" aria-label="Signing back in">
         <IconAlert size={18} aria-hidden />
         <p className="hint">
-          Google logins belong to each tool: sign in again with <code>npm run auth</code> in docu-ai, or <code>./mail auth</code> in mail-ai.
+          Signed out of something? Run <code>./auth</code> in the suite folder: it checks every login and renews only the dead ones.
         </p>
+        <CopyButton text="./auth" />
       </aside>
     </div>
   )

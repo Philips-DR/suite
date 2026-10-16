@@ -235,11 +235,71 @@
 .composer-error { margin: -6px 0 12px; }
 .attachments { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 0 4px 10px; }
 
-/* ---- the first-run connect screen --------------------------------------------------------------- */
+/* ---- the login screen --------------------------------------------------------------------------- */
 
-.connect { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 16px; background: var(--overlay); backdrop-filter: blur(6px); animation: fade-in var(--dur-2) var(--ease); }
-.connect .card { width: min(460px, 100%); display: flex; flex-direction: column; gap: 14px; animation: pop-in var(--dur-3) var(--ease); }
-.connect input { width: 100%; font-family: var(--font-mono); }
+.login {
+  position: fixed; inset: 0; z-index: 80;
+  display: grid; place-items: center; padding: var(--gutter);
+  background: var(--bg);
+  animation: fade-in var(--dur-2) var(--ease);
+}
+.login-card {
+  width: min(380px, 100%);
+  display: flex; flex-direction: column; align-items: center; gap: 20px;
+  padding: 40px 32px;
+  background: var(--surface); border-radius: var(--r-card);
+  box-shadow: var(--shadow-2);
+  animation: pop-in var(--dur-3) var(--ease);
+}
+.login-card h1 {
+  margin: -8px 0 4px;
+  font-family: var(--font-display); font-size: var(--fs-xl); font-weight: 650;
+  color: var(--ink);
+}
+.login-status { color: var(--ink-2); font-size: var(--fs-sm); }
+
+/* the google button */
+.login-google {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; padding: 11px 16px;
+  border: 1px solid var(--line-strong); border-radius: var(--r-control);
+  font: inherit; font-size: var(--fs-md); font-weight: 500;
+  color: var(--ink); background: var(--surface); text-decoration: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: background var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease);
+  cursor: pointer;
+}
+.login-google:hover { background: var(--surface-2); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
+
+/* the "use token" fallback */
+.login-alt {
+  border: none; background: none; padding: 0;
+  font: inherit; font-size: var(--fs-sm); color: var(--ink-3);
+  cursor: pointer; text-decoration: underline; text-underline-offset: 3px;
+  transition: color var(--dur-1) var(--ease);
+}
+.login-alt:hover { color: var(--ink-2); }
+
+/* token form, revealed on click */
+.login-token { width: 100%; display: flex; flex-direction: column; gap: 10px; animation: fade-in var(--dur-2) var(--ease); }
+.login-divider {
+  display: flex; align-items: center; gap: 12px;
+  color: var(--ink-3); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.06em;
+}
+.login-divider::before, .login-divider::after { content: ''; flex: 1; height: 1px; background: var(--line); }
+.login-label { font-size: var(--fs-sm); color: var(--ink-2); }
+.login-token input { width: 100%; font-family: var(--font-mono); }
+.login-connect {
+  width: 100%; padding: 10px; border: none; border-radius: var(--r-control);
+  font: inherit; font-weight: 500; color: var(--brand-ink); background: var(--brand);
+  cursor: pointer; transition: opacity var(--dur-1) var(--ease);
+}
+.login-connect:hover { opacity: 0.9; }
+.login-connect:disabled { opacity: 0.5; cursor: default; }
+
+.login-error { color: var(--bad); font-size: var(--fs-sm); text-align: center; }
+.login-backend { font-size: var(--fs-xs); color: var(--ink-3); }
+.login-backend span { font-family: var(--font-mono); }
 
 /* ---- phone: tables become stacked rows -------------------------------------------------------- */
 

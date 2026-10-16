@@ -7,10 +7,13 @@ import {
   THEMES,
   buildDocument,
   documentInfo,
+  exportDocument,
   layoutDocument,
   lintDocument,
+  listDocuments,
   preview,
   trashDocument,
+  type ExportFormat,
   type ThemeName,
 } from '../operations.js'
 import { tolerateSlowConnections } from '../network.js'
@@ -220,6 +223,69 @@ export function createDocuAiServer(auth: AuthProvider): McpServer {
     async ({ documentId }) => {
       try {
         return ok(await trashDocument(auth, documentId))
+      } catch (error) {
+        return failed(error)
+      }
+    },
+  )
+
+  server.registerTool(
+    'list',
+    {
+      title: 'List documents docu-ai has built',
+      description:
+        'All Google Docs this tool has created — CVs, cover letters, meeting notes, and other documents — ' +
+        'sorted by last modified. Only documents docu-ai built appear (the Drive scope is drive.file). ' +
+        'Reads only. Returns a nextPageToken when more pages exist.',
+      inputSchema: {
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .max(100)
+          .optional()
+          .describe('How many to return per page (default 10, max 100).'),
+        pageToken: z
+          .string()
+          .optional()
+          .describe('Token from a previous response to fetch the next page.'),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    async ({ limit, pageToken }) => {
+      try {
+        return ok(await listDocuments(auth, limit, pageToken))
+      } catch (error) {
+        return failed(error)
+      }
+    },
+  )
+
+  server.registerTool(
+    'export',
+    {
+      title: 'Export a built document as PDF or DOCX',
+      description:
+        'Download a Google Doc docu-ai built as a file. Returns the raw bytes base64-encoded, with a ' +
+        'suggested filename. Only documents docu-ai built can be exported (drive.file scope).',
+      inputSchema: {
+        documentId: z.string().describe('The Google Docs document id, as returned by build or list.'),
+        format: z
+          .enum(['pdf', 'docx'])
+          .describe("'pdf' for a PDF, 'docx' for a Word document."),
+      },
+      annotations: { readOnlyHint: true, openWorldHint: true },
+    },
+    async ({ documentId, format }) => {
+      try {
+        const result = await exportDocument(auth, documentId, format as ExportFormat)
+        return ok({
+          documentId: result.documentId,
+          format: result.format,
+          filename: result.filename,
+          size: result.bytes.length,
+          data: result.bytes.toString('base64'),
+        })
       } catch (error) {
         return failed(error)
       }

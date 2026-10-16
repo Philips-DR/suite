@@ -6,16 +6,21 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { ApprovalCard } from './components/ApprovalCard'
 import { Connect } from './components/Connect'
 import { Notices } from './components/Notices'
-import { hasToken } from './api'
+import { getMe, hasToken } from './api'
+import { call } from './call'
 import { Overview } from './pages/Overview'
 import { useAppState } from './state'
 import { CommandPalette } from './ui/CommandPalette'
 import { IconAlert } from './ui/icons'
 import { PageHead } from './ui/PageHead'
 import type { Section } from './ui/sections'
+import { usePlayer } from './player/engine'
+import { MiniPlayer } from './ui/MiniPlayer'
 import { MoreSheet, Sidebar, TabBar, TopBar } from './ui/Shell'
 import { useRoute } from './ui/useRoute'
 import { useTheme } from './ui/useTheme'
+
+const SYNC_INTERVAL = 30 * 60_000
 
 // Every page but the first is fetched when it is opened, so the app starts on a phone with only what the
 // Overview needs (the markdown renderer behind Chat alone is a large part of the code).
@@ -49,18 +54,38 @@ function Page({ section, go }: { section: Section; go: (to: Section) => void }) 
 }
 
 export function App() {
-  const { pending } = useAppState()
+  const { pending, tools } = useAppState()
   const [section, go] = useRoute()
   const [theme, cycleTheme, setTheme] = useTheme()
   const [palette, setPalette] = useState(false)
   const [more, setMore] = useState(false)
 
-  // No token yet, or a stale one: the whole app waits behind the Connect screen.
-  const [needsToken, setNeedsToken] = useState(() => !hasToken())
+  // Not authenticated yet: the whole app waits behind the Connect / Sign-in screen.
+  // Always check /api/me first: when Google auth is configured, a session cookie is required
+  // even if a page token exists. When Google auth is off, the token alone is enough.
+  const [authState, setAuthState] = useState<'ok' | 'checking' | 'needs_auth'>('checking')
   useEffect(() => {
-    const onNeedsToken = () => setNeedsToken(true)
-    window.addEventListener('assistant-needs-token', onNeedsToken)
-    return () => window.removeEventListener('assistant-needs-token', onNeedsToken)
+    if (authState !== 'checking') return
+    getMe()
+      .then((info) => {
+        if (info.google_auth) {
+          setAuthState(info.email ? 'ok' : 'needs_auth')
+        } else {
+          setAuthState(hasToken() ? 'ok' : 'needs_auth')
+        }
+      })
+      .catch(() => setAuthState(hasToken() ? 'ok' : 'needs_auth'))
+  }, [authState])
+  useEffect(() => {
+    const onNeedsAuth = () => {
+      if (hasToken()) {
+        setAuthState('needs_auth')
+      } else {
+        setAuthState('checking')
+      }
+    }
+    window.addEventListener('assistant-needs-token', onNeedsAuth)
+    return () => window.removeEventListener('assistant-needs-token', onNeedsAuth)
   }, [])
 
   // Ctrl+K (or Cmd+K) from anywhere.
@@ -77,10 +102,21 @@ export function App() {
 
   const openPalette = useCallback(() => setPalette(true), [])
   const inChat = section === 'chat'
+  // While anything is loaded the shell keeps room at the foot of the page for the docked player, whether or
+  // not it is showing: room that came and went as the dock did would shift the page under your finger.
+  const loaded = usePlayer().track !== null
+
+  // Sync mail every 30 minutes while the app is open.
+  const hasMailSync = tools.has('mail_ai__sync')
+  useEffect(() => {
+    if (!hasMailSync) return
+    const timer = window.setInterval(() => { void call('mail_ai__sync').catch(() => {}) }, SYNC_INTERVAL)
+    return () => window.clearInterval(timer)
+  }, [hasMailSync])
 
   return (
-    <div className="shell" data-section={section}>
-      {needsToken && <Connect />}
+    <div className="shell" data-section={section} data-mini={loaded ? '' : undefined}>
+      {authState !== 'ok' && <Connect checking={authState === 'checking'} />}
       <Sidebar section={section} go={go} theme={theme} setTheme={setTheme} openPalette={openPalette} />
       <div className="content">
         <TopBar section={section} openPalette={openPalette} cycleTheme={cycleTheme} theme={theme} />
@@ -94,6 +130,7 @@ export function App() {
           <Suspense fallback={<Loading />}><Page section={section} go={go} /></Suspense>
         </main>
       </div>
+      <MiniPlayer goToBooks={() => go('audiobooks')} />
       <TabBar section={section} go={go} openMore={() => setMore(true)} />
       <MoreSheet open={more} onClose={() => setMore(false)} section={section} go={go} theme={theme} setTheme={setTheme} onSearch={openPalette} />
       <CommandPalette open={palette} onClose={() => setPalette(false)} go={go} setTheme={setTheme} pending={pending.length} />

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   documentInfoWith,
   explainFailure,
+  listDocumentsWith,
   trashDocumentWith,
   type DriveFile,
   type DriveLike,
@@ -19,16 +20,18 @@ const DOC: DriveFile = {
 }
 
 /** A Drive that holds one file and records what was done to it. */
-function drive(file: DriveFile): DriveLike & { updates: unknown[] } {
+function drive(file: DriveFile, allFiles?: DriveFile[]): DriveLike & { updates: unknown[] } {
   const updates: unknown[] = []
   return {
     updates,
     files: {
       get: () => Promise.resolve({ data: file }),
+      list: () => Promise.resolve({ data: { files: allFiles ?? [file] } }),
       update: (args) => {
         updates.push(args)
         return Promise.resolve({ data: { ...file, trashed: true } })
       },
+      export: () => Promise.resolve({ data: Buffer.from('fake-content') }),
     },
     about: { get: () => Promise.resolve({ data: {} }) },
   }
@@ -76,6 +79,32 @@ describe('trashDocumentWith', () => {
     const d = drive({ ...DOC, trashed: true })
     await expect(trashDocumentWith(d, 'abc')).rejects.toThrow(/already in the Trash/)
     expect(d.updates).toEqual([])
+  })
+})
+
+describe('listDocumentsWith', () => {
+  it('returns documents sorted by the drive response', async () => {
+    const result = await listDocumentsWith(drive(DOC))
+    expect(result.documents).toHaveLength(1)
+    expect(result.documents[0]).toMatchObject({ documentId: 'abc', title: 'Philip Baah Afriyie' })
+  })
+
+  it('returns an empty list when no files exist', async () => {
+    const result = await listDocumentsWith(drive(DOC, []))
+    expect(result.documents).toEqual([])
+  })
+
+  it('passes through nextPageToken when present', async () => {
+    const d = drive(DOC)
+    const origList = d.files.list
+    d.files.list = (args) => origList(args).then((r) => ({ data: { ...r.data, nextPageToken: 'tok_2' } }))
+    const result = await listDocumentsWith(d)
+    expect(result.nextPageToken).toBe('tok_2')
+  })
+
+  it('omits nextPageToken when absent', async () => {
+    const result = await listDocumentsWith(drive(DOC))
+    expect(result.nextPageToken).toBeUndefined()
   })
 })
 

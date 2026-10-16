@@ -16,7 +16,9 @@ const DOC_MIME = 'application/vnd.google-apps.document'
 export interface DriveLike {
   files: {
     get(args: { fileId: string; fields: string }): Promise<{ data: DriveFile }>
+    list(args: { q: string; fields: string; orderBy: string; pageSize: number; pageToken?: string }): Promise<{ data: { files?: DriveFile[]; nextPageToken?: string | null } }>
     update(args: { fileId: string; requestBody: { trashed: boolean }; fields: string }): Promise<{ data: DriveFile }>
+    export(args: { fileId: string; mimeType: string }): Promise<{ data: ArrayBuffer | Buffer | string }>
   }
   about: { get(args: { fields: string }): Promise<{ data: { storageQuota?: StorageQuota } }> }
 }
@@ -99,6 +101,81 @@ export async function trashDocumentWith(drive: DriveLike, documentId: string): P
     trashed: true,
     restore: 'It is in Drive\'s Trash for 30 days: open Trash in Google Drive and choose "Restore".',
   }
+}
+
+export interface ListedDocument {
+  documentId: string
+  title: string
+  url: string
+  createdTime: string
+  modifiedTime: string
+  trashed: boolean
+}
+
+export interface ListDocumentsResult {
+  documents: ListedDocument[]
+  nextPageToken?: string
+}
+
+export async function listDocumentsWith(drive: DriveLike, limit = 10, pageToken?: string): Promise<ListDocumentsResult> {
+  const { data } = await drive.files.list({
+    q: `mimeType = '${DOC_MIME}' and trashed = false`,
+    fields: `nextPageToken,files(${FILE_FIELDS})`,
+    orderBy: 'modifiedTime desc',
+    pageSize: Math.min(Math.max(1, limit), 100),
+    ...(pageToken ? { pageToken } : {}),
+  })
+  const documents = (data.files ?? []).map((f) => ({
+    documentId: f.id ?? '',
+    title: f.name ?? '(untitled)',
+    url: f.webViewLink ?? `https://docs.google.com/document/d/${f.id}/edit`,
+    createdTime: f.createdTime ?? '',
+    modifiedTime: f.modifiedTime ?? '',
+    trashed: f.trashed === true,
+  }))
+  return { documents, ...(data.nextPageToken ? { nextPageToken: data.nextPageToken } : {}) }
+}
+
+export type ExportFormat = 'pdf' | 'docx'
+const EXPORT_MIMES: Record<ExportFormat, string> = {
+  pdf: 'application/pdf',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+}
+
+export interface ExportResult {
+  documentId: string
+  format: ExportFormat
+  bytes: Buffer
+  filename: string
+}
+
+export async function exportDocumentWith(
+  drive: DriveLike,
+  documentId: string,
+  format: ExportFormat,
+): Promise<ExportResult> {
+  const info = await documentInfoWith(drive, documentId)
+  const { data } = await drive.files.export({ fileId: documentId, mimeType: EXPORT_MIMES[format] })
+  const bytes = Buffer.isBuffer(data)
+    ? data
+    : data instanceof ArrayBuffer
+      ? Buffer.from(data)
+      : Buffer.from(data as string, 'binary')
+  const ext = format === 'docx' ? '.docx' : '.pdf'
+  const safe = info.title.replace(/[/\\?%*:|"<>]/g, '_')
+  return { documentId, format, bytes, filename: `${safe}${ext}` }
+}
+
+export async function listDocuments(auth: AuthProvider, limit = 10, pageToken?: string): Promise<ListDocumentsResult> {
+  return listDocumentsWith(await driveFor(auth), limit, pageToken)
+}
+
+export async function exportDocument(
+  auth: AuthProvider,
+  documentId: string,
+  format: ExportFormat,
+): Promise<ExportResult> {
+  return exportDocumentWith(await driveFor(auth), documentId, format)
 }
 
 export async function documentInfo(auth: AuthProvider, documentId: string): Promise<DocumentInfo> {

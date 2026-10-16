@@ -6,7 +6,7 @@
 // write, save as a draft in Gmail, then review the whole email and confirm. Nothing is sent until
 // the second press, and that press is only offered after the full email has been shown.
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactElement } from 'react'
 import { runAction } from '../api'
 import { call } from '../call'
 import { toolColor } from '../charts/palette'
@@ -76,13 +76,32 @@ const dayLabel = (d: Date) => d.toLocaleDateString([], { day: 'numeric', month: 
 
 // ---- one email body: text only, folded when it is long -------------------------------------------------
 
+const URL_RE = /https?:\/\/[^\s<>"')\]]+/g
+
+function linkify(text: string): (string | ReactElement)[] {
+  const parts: (string | ReactElement)[] = []
+  let last = 0
+  for (const m of text.matchAll(URL_RE)) {
+    const at = m.index!
+    let url = m[0]
+    // Strip trailing punctuation that is almost certainly not part of the URL.
+    while (url.length > 8 && /[.,;:!?)>\]}]$/.test(url)) url = url.slice(0, -1)
+    if (at > last) parts.push(text.slice(last, at))
+    parts.push(<a key={at} href={url} target="_blank" rel="noopener noreferrer">{url}</a>)
+    last = at + url.length
+  }
+  if (last === 0) return [text]
+  if (last < text.length) parts.push(text.slice(last))
+  return parts
+}
+
 function Body({ text }: { text: string }) {
   const long = text.length > 1400 || text.split('\n').length > 20
   const [expanded, setExpanded] = useState(false)
   return (
     <div className="mbox-body">
-      {/* Email written by someone else: text only, never markup. */}
-      <pre className={long && !expanded ? 'is-folded' : ''}>{text || '(no text)'}</pre>
+      {/* Email written by someone else: text only, never markup. Links are React elements, not innerHTML. */}
+      <pre className={long && !expanded ? 'is-folded' : ''}>{text ? linkify(text) : '(no text)'}</pre>
       {long && (
         <button className="ghost" aria-expanded={expanded} onClick={() => setExpanded((x) => !x)}>
           {expanded ? 'Show less' : 'Show the whole message'}

@@ -2,7 +2,7 @@
 // recording stopped with a button be the one the model writes up in chat.
 
 import { createContext, useCallback, useContext, useEffect, useReducer, type ReactNode } from 'react'
-import { getState, getTools, hasToken, openEvents, type Approval, type AssistantEvent } from './api'
+import { getState, getTools, openEvents, type Approval, type AssistantEvent } from './api'
 
 interface State {
   events: AssistantEvent[]
@@ -122,12 +122,10 @@ export function StateProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // Without a token every call is refused; the Connect screen is showing, and on success
-    // it reloads the page, which lands back here with one.
-    if (!hasToken()) return
+    // Try to connect: a token or a session cookie may be present.
     refresh()
       .catch(() => {
-        // A refusal has already raised the Connect screen; anything else, the event stream's
+        // A 401 has already raised the auth screen; anything else, the event stream's
         // own reconnect will retry.
       })
       .finally(() => {

@@ -19,6 +19,8 @@ import { Ring } from '../charts/Ring'
 import { useCountUp } from '../charts/useWidth'
 import { call } from '../call'
 import { CardHead } from '../ui/CardHead'
+import { usePlayer, usePlayerActions } from '../player/engine'
+import { AudioPlayer } from '../ui/AudioPlayer'
 import { DropZone } from '../ui/DropZone'
 import {
   IconAlert, IconAudiobooks, IconCheck, IconClose, IconDocuments, IconDownload, IconFail, IconMeetings,
@@ -206,25 +208,30 @@ function Fig({ label, count, suffix, children, foot, index }: {
 
 // ---------------------------------------------------------------------------
 
-/** Play or download a file a tool made. Fetched with the token and handed over as a blob. */
+/** Play or download a file a tool made. Fetched with the token and handed to the one player that lives
+ *  above the pages (player/engine.tsx), so what you start here keeps playing when you leave this page. */
 function AudioFile({ path, size }: { path: string; size?: number }) {
-  const [url, setUrl] = useState<string | null>(null)
+  const { track, playing: audible } = usePlayer()
+  const { open, close } = usePlayerActions()
   const [busy, setBusy] = useState(false)
-  const [playing, setPlaying] = useState(false)
   const [error, setError] = useState('')
+  const here = useRef(true)
+  useEffect(() => { here.current = true; return () => { here.current = false } }, [])
 
-  // A blob URL holds the whole file in memory until it is revoked.
-  useEffect(() => () => { if (url) URL.revokeObjectURL(url) }, [url])
+  const current = track?.key === path
+  const playing = current && audible
 
   const play = async () => {
     setBusy(true)
     setError('')
     try {
-      setUrl(URL.createObjectURL(await fetchMedia(path)))
+      const blob = await fetchMedia(path)
+      // Left the page while it downloaded: nothing should start talking from somewhere you are not looking.
+      if (here.current) open({ key: path, title: fileName(path), blob })
     } catch (e) {
-      setError(message(e))
+      if (here.current) setError(message(e))
     } finally {
-      setBusy(false)
+      if (here.current) setBusy(false)
     }
   }
 
@@ -244,7 +251,7 @@ function AudioFile({ path, size }: { path: string; size?: number }) {
 
   const kind = (fileName(path).split('.').pop() ?? '').toUpperCase()
   return (
-    <div className={`ab-file ${url ? 'loaded' : ''} ${playing ? 'playing' : ''}`}>
+    <div className={`ab-file ${current ? 'loaded' : ''} ${playing ? 'playing' : ''}`}>
       <div className="ab-file-row">
         <span className="ab-file-tile" aria-hidden>
           {playing ? <span className="ab-eq"><i /><i /><i /></span> : <IconAudiobooks size={17} strokeWidth={2} />}
@@ -257,7 +264,7 @@ function AudioFile({ path, size }: { path: string; size?: number }) {
           </span>
         </span>
         <span className="ab-file-act">
-          {!url && (
+          {!current && (
             <button className="ab-play" disabled={busy} aria-busy={busy} onClick={() => void play()}>
               {busy ? <IconRefresh size={16} aria-hidden className="ab-spin" /> : <IconPlay size={16} aria-hidden />}
               <span className="ab-btn-label">{busy ? 'Loading…' : 'Play'}</span>
@@ -266,23 +273,7 @@ function AudioFile({ path, size }: { path: string; size?: number }) {
           <button onClick={() => void download()}><IconDownload size={16} aria-hidden /><span className="ab-btn-label">Download</span></button>
         </span>
       </div>
-      {url && (
-        <div className="ab-player">
-          <audio
-            controls
-            autoPlay
-            src={url}
-            onPlay={(e) => {
-              // One thing speaking at a time.
-              setPlaying(true)
-              document.querySelectorAll('audio').forEach((a) => { if (a !== e.currentTarget) a.pause() })
-            }}
-            onPause={() => setPlaying(false)}
-            onEnded={() => setPlaying(false)}
-          />
-          <button className="ghost icon" aria-label="Hide the player" title="Hide the player" onClick={() => { setUrl(null); setPlaying(false) }}><IconClose size={16} aria-hidden /></button>
-        </div>
-      )}
+      {current && <AudioPlayer onClose={close} />}
       {error && <p className="error">{error}</p>}
     </div>
   )
@@ -991,10 +982,10 @@ function Finished({ refreshKey, book }: { refreshKey: string; book: string }) {
     <div className="card ab-finished" id="ab-finished">
       <CardHead icon={IconAudiobooks} tool="audiobook" title="Finished audio" sub={`${files} file${files === 1 ? '' : 's'} in ${list.length} place${list.length === 1 ? '' : 's'}. Play one here, or download it.`} />
       <div className="ab-groups">
-        {list.map((b, i) => {
+        {list.map((b) => {
           const megabytes = b.files.reduce((n, f) => n + f.megabytes, 0)
           return (
-            <details key={b.book} className="ab-group" open={i === 0 || b.book === open || b.files.length <= 3}>
+            <details key={b.book} className="ab-group">
               <summary>
                 <span className="ab-group-name">{b.book === 'voices' ? 'Voice samples' : b.book}</span>
                 {b.book === open && <span className="chip">open book</span>}

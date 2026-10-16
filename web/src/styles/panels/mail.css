@@ -174,6 +174,8 @@
 .mbox-body { padding-left: 48px; }
 .mbox-body pre { margin: 0; font-family: var(--font-ui); font-size: var(--fs-md); line-height: 1.6; overflow-wrap: anywhere; }
 .mbox-body pre.is-folded { max-height: 15rem; overflow: hidden; -webkit-mask-image: linear-gradient(var(--ink) 62%, transparent); mask-image: linear-gradient(var(--ink) 62%, transparent); }
+.mbox-body pre a { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; }
+.mbox-body pre a:hover { text-decoration-thickness: 2px; }
 .mbox-body .ghost { margin: 6px 0 0 -10px; }
 
 /* ---- replying: the ladder, and the one thing that cannot be undone ------------------------------------------- */

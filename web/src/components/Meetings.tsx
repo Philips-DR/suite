@@ -5,8 +5,9 @@
 // The polls live here, in one place, because the strip and the cards read the same answers: the
 // recorder every 2 s, the transcription job every 5 s, the list of recordings every 15 s.
 
-import { useEffect, useRef, useState, type ComponentType, type CSSProperties, type ReactElement, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ComponentType, type CSSProperties, type ReactElement, type ReactNode } from 'react'
 import { AUDIO_EXTS, getUploads, isAudio, uploadAudio, type Uploads } from '../api'
+import { canRecordInBrowser, useBrowserRecorder } from '../useBrowserRecorder'
 import { call } from '../call'
 import { toolColor } from '../charts/palette'
 import { Ring } from '../charts/Ring'
@@ -213,6 +214,88 @@ function useElapsed(session: Session | null): number {
   const estimate = heard.current.seconds + Math.max(0, (now - heard.current.at) / 1000)
   shown.current = Math.max(shown.current, Math.floor(estimate))
   return shown.current
+}
+
+function BrowserRec({ onRecorded }: { onRecorded: (path: string) => void }) {
+  const rec = useBrowserRecorder()
+  const recording = rec.state === 'recording'
+  const uploading = rec.state === 'uploading'
+  const done = rec.state === 'done'
+
+  useEffect(() => {
+    if (done && rec.result) onRecorded(rec.result.path)
+  }, [done, rec.result, onRecorded])
+
+  return (
+    <section id={IDS.record} className="mt-slot" tabIndex={-1} aria-label="Record">
+      <div className={`card mt-rec ${recording ? 'is-live' : ''}`}>
+        <CardHead icon={IconMeetings} tool="meet-ai" title="Record" sub="Record from this device's microphone; the audio is handed on to Transcribe." />
+
+        {recording ? (
+          <div className="mt-live">
+            <div className="mt-live-top">
+              <span className="mt-onair" role="status"><span className="rec-dot" aria-hidden />Recording</span>
+              <span className="mono small muted">Browser microphone</span>
+            </div>
+            <p className="mt-clock">{clock(rec.elapsed)}</p>
+            <button className="danger mt-big" onClick={rec.stop}>
+              <IconStop size={16} aria-hidden />
+              Stop recording
+            </button>
+          </div>
+        ) : uploading ? (
+          <div className="mt-live">
+            <p className="mt-clock">{clock(rec.elapsed)}</p>
+            <UploadProgress name="Recording" fraction={rec.uploadProgress} />
+          </div>
+        ) : rec.state === 'stopping' ? (
+          <div className="mt-live" aria-busy="true">
+            <p className="muted">Finishing…</p>
+          </div>
+        ) : done && rec.result ? (
+          <>
+            <div className="mt-saved" role="status">
+              <div className="mt-saved-head">
+                <span className="badge ok"><IconOk size={14} aria-hidden />Saved</span>
+                <strong className="mt-file">{rec.result.name}</strong>
+              </div>
+              <dl className="mt-figs" style={{ '--n': 1 } as CSSProperties}>
+                <Fig label="Duration" value={clock(rec.result.seconds)} />
+              </dl>
+              <div className="mt-saved-next">
+                <span className="muted small">It is in the Transcribe box, ready to go.</span>
+                <button type="button" className="ghost" onClick={() => jumpTo(IDS.transcribe)}>
+                  Go to Transcribe
+                  <IconChevron size={16} aria-hidden />
+                </button>
+              </div>
+            </div>
+            <hr />
+            <div className="mt-start">
+              <button className="primary mt-big" onClick={() => { rec.reset(); rec.start() }}>
+                <IconMeetings size={17} aria-hidden />
+                Record again
+              </button>
+            </div>
+          </>
+        ) : (
+          <Empty icon={IconMeetings} title="Ready when the meeting starts" action={
+            <div className="mt-start">
+              <button className="primary mt-big" disabled={rec.state === 'requesting'} onClick={rec.start}>
+                <IconMeetings size={17} aria-hidden />
+                {rec.state === 'requesting' ? 'Requesting microphone…' : 'Start recording'}
+              </button>
+            </div>
+          }>
+            Uses this device's microphone. The audio is uploaded and handed to the next step.
+          </Empty>
+        )}
+
+        {rec.error && <Problem>{rec.error}</Problem>}
+        <p className="hint">One microphone records everyone in the room together; speaker labels are still inferred.</p>
+      </div>
+    </section>
+  )
 }
 
 function Recorder({ status, elapsed, last, setLast, onStopped }: {
@@ -905,6 +988,8 @@ function WriteUp({ recordings, busy, setBusy }: {
 
 // ---- the panel -------------------------------------------------------------------------------------
 
+const HAS_BROWSER_MIC = canRecordInBrowser()
+
 export function Meetings() {
   const [audio, setAudio] = useState('')
   const [last, setLast] = useState<Session | null>(null)
@@ -921,6 +1006,7 @@ export function Meetings() {
 
   // A transcription that has just finished has just made a transcript: look again now, not at the next poll.
   const reloadRecordings = recordings.reload
+  const reloadUploads = uploads.reload
   const jobState = job?.state
   const before = useRef(jobState)
   useEffect(() => {
@@ -935,9 +1021,15 @@ export function Meetings() {
     void reloadRecordings()
   }
 
+  // Browser recording uploads a file, which lands in the uploads list and the Transcribe box.
+  const onBrowserRecorded = useCallback((path: string) => {
+    setAudio(path)
+    void reloadUploads()
+  }, [reloadUploads])
+
   const steps = flowSteps({
     session,
-    recorderUnreachable: recording.data === null && recording.error !== '',
+    recorderUnreachable: !HAS_BROWSER_MIC && recording.data === null && recording.error !== '',
     elapsed,
     last,
     job,
@@ -952,7 +1044,9 @@ export function Meetings() {
         <Flow steps={steps} />
       </div>
       <div className="mt-cell" style={{ '--i': 1 } as CSSProperties}>
-        <Recorder status={recording} elapsed={elapsed} last={last} setLast={setLast} onStopped={stopped} />
+        {HAS_BROWSER_MIC
+          ? <BrowserRec onRecorded={onBrowserRecorded} />
+          : <Recorder status={recording} elapsed={elapsed} last={last} setLast={setLast} onStopped={stopped} />}
       </div>
       <div className="mt-cell" style={{ '--i': 2 } as CSSProperties}>
         <Transcriber job={job} status={transcription} recordings={recordings} uploads={uploads} audio={audio} setAudio={setAudio} />

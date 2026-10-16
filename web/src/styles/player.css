@@ -1,0 +1,305 @@
+/*
+ * The audio player: the full one under a file on the Audiobooks page, and the docked one that follows you
+ * to every other page. Colours, radii, type sizes and every duration come from tokens; the tool's own
+ * colour arrives as --pa (set on each player's root), the bar's position as --progress (written every
+ * frame by the player engine), so nothing here re-renders to move.
+ */
+
+.player, .mini {
+  --pa-ink: color-mix(in srgb, var(--pa, var(--brand)) 64%, var(--ink));   /* the tool's colour, deep enough to read on a well */
+  --pa-soft: color-mix(in srgb, var(--pa, var(--brand)) 20%, transparent);
+  --progress: 0;
+}
+
+/* ---- the full player ------------------------------------------------------------------------- */
+
+.player {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 14px 16px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  animation: pop-in var(--dur-3) var(--ease);
+}
+.player-top { display: flex; align-items: center; justify-content: space-between; min-height: 28px; margin: -4px -6px 0 0; }
+.player-resume { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-xs); color: var(--ink-2); }
+.player-close { width: 32px; min-height: 32px; }
+.player-failed { margin: 4px 0; color: var(--bad); font-size: var(--fs-sm); }
+
+/* a text-like button: the length, "Start over" */
+button.plink {
+  min-height: 0;
+  padding: 2px 6px;
+  gap: 0;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+}
+button.plink:hover:not(:disabled) { background: transparent; color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---- the waveform, which is the seek bar ---- */
+
+.player-wave {
+  position: relative;
+  height: 64px;
+  margin-top: 14px;                       /* room for the hover time above it */
+  cursor: pointer;
+  touch-action: pan-y;                    /* a sideways drag seeks; an up-and-down one still scrolls the page */
+  user-select: none;
+  -webkit-user-select: none;
+  border-radius: 10px;
+}
+.player-wave:focus-visible { outline: 2px solid var(--brand); outline-offset: 4px; }
+.player-wave svg { display: block; overflow: visible; }
+.wave-rest rect { fill: color-mix(in srgb, var(--ink-3) 42%, transparent); }
+.wave-played rect { fill: var(--pa-ink); }
+.wave-played { clip-path: inset(0 calc((1 - var(--progress, 0)) * 100%) 0 0); }
+
+.playhead {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  left: calc(var(--progress, 0) * 100%);
+  width: 2px;
+  margin-left: -1px;
+  background: var(--ink);
+  border-radius: 2px;
+  pointer-events: none;
+}
+.playhead::after {                         /* the grab handle: shown when there is something to grab */
+  content: '';
+  position: absolute;
+  top: -3px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  background: var(--ink);
+  border: 2px solid var(--bg-2);
+  border-radius: 50%;
+  box-sizing: content-box;
+  transform: scale(0);
+  transition: transform var(--dur-2) var(--ease);
+}
+.player-wave:hover .playhead::after, .player-wave:focus-visible .playhead::after, .player-wave:active .playhead::after { transform: scale(1); }
+.hoverline { position: absolute; top: 0; bottom: 0; left: var(--x); width: 1px; background: var(--ink-3); opacity: 0.5; pointer-events: none; }
+.hovertime {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: clamp(24px, var(--x), calc(100% - 24px));
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  font-size: var(--fs-xs);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  color: var(--bg);
+  background: var(--ink);
+  border-radius: var(--r-pill);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* no waveform: a plain track (a file too big to draw, or a format this browser will not decode) */
+.wave-track { position: absolute; left: 0; right: 0; top: 50%; height: 6px; margin-top: -3px; background: var(--line-strong); border-radius: var(--r-pill); overflow: hidden; }
+.wave-track i { position: absolute; inset: 0; background: var(--pa-ink); border-radius: var(--r-pill); transform-origin: left; transform: scaleX(var(--progress, 0)); }
+/* the waveform on its way: bars that breathe, so the wait reads as work */
+.wave-loading { display: flex; align-items: center; gap: 4px; height: 100%; overflow: hidden; }
+.wave-loading i { flex: 1; min-width: 2px; height: var(--h); background: color-mix(in srgb, var(--ink-3) 42%, transparent); border-radius: 2px; animation: wave-breathe calc(var(--dur-3) * 3) ease-in-out infinite; animation-delay: var(--d); }
+@keyframes wave-breathe { 0%, 100% { transform: scaleY(0.45); } 50% { transform: scaleY(1); } }
+
+.player-times { display: flex; align-items: center; justify-content: space-between; font-size: var(--fs-xs); font-weight: 600; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.player-times > span { padding: 2px 6px; }
+
+/* ---- the controls ---- */
+
+.player-controls { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 8px; }
+.pc-side { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.pc-right { justify-content: flex-end; }
+.pc-main { display: flex; align-items: center; gap: 10px; }
+.pc-volume { display: inline-flex; align-items: center; gap: 2px; }
+
+.pskip {
+  position: relative;
+  width: 48px;
+  min-height: 48px;
+  padding: 0;
+  color: var(--ink-2);
+  background: transparent;
+  border: 0;
+  border-radius: var(--r-pill);
+}
+.pskip:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink); border: 0; }
+.pskip b { position: absolute; inset: 0; display: grid; place-items: center; padding-top: 1px; font-size: 0.625rem; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 0; pointer-events: none; }
+
+/* the big one: ink on the page, so it is the clearest thing in the player in both themes */
+.pplay {
+  position: relative;
+  width: 64px;
+  height: 64px;
+  min-height: 0;
+  padding: 0;
+  color: var(--bg);
+  background: var(--ink);
+  border: 0;
+  border-radius: 50%;
+  box-shadow: var(--shadow-1);
+  transition: transform var(--dur-2) var(--ease), box-shadow var(--dur-3) var(--ease), background-color var(--dur-1) var(--ease);
+}
+.pplay:hover:not(:disabled) { background: var(--ink); border: 0; transform: scale(1.05); }
+.pplay:active:not(:disabled) { transform: scale(0.95); }
+.pplay:disabled { opacity: 1; cursor: progress; }
+[data-state='playing'] .pplay { box-shadow: 0 0 0 6px var(--pa-soft), var(--shadow-1); }
+.pplay-icon { display: grid; place-items: center; animation: pop var(--dur-2) var(--ease); }
+.pspin { position: absolute; inset: -5px; border: 3px solid transparent; border-top-color: var(--pa-ink); border-radius: 50%; animation: spin calc(var(--dur-3) * 2) linear infinite; }
+
+.pchip {
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+}
+.pchip:hover:not(:disabled) { color: var(--ink); background: color-mix(in srgb, var(--ink) 6%, transparent); border-color: var(--ink-3); }
+.pchip[aria-expanded='true'] { color: var(--ink); background: var(--pa-soft); border-color: var(--pa-ink); }
+
+.pmenu { position: relative; }
+.pmenu-list {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  z-index: 5;
+  display: grid;
+  gap: 2px;
+  min-width: 132px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  box-shadow: var(--shadow-2);
+  animation: pop-in var(--dur-2) var(--ease);
+}
+.pmenu-list.left { left: 0; }
+.pmenu-list.right { right: 0; }
+.pmenu-list button { justify-content: flex-start; min-height: 36px; padding: 0 12px; font-variant-numeric: tabular-nums; color: var(--ink); background: transparent; border: 0; border-radius: 9px; }
+.pmenu-list button:hover:not(:disabled) { background: var(--bg-2); border: 0; }
+.pmenu-list button[aria-checked='true'] { background: var(--pa-soft); font-weight: 700; }
+.pmenu-list button[aria-checked='true']::after { content: ''; width: 6px; height: 6px; margin-left: auto; background: var(--pa-ink); border-radius: 50%; }
+
+/* the volume: a range input drawn by hand, filled to its level */
+input.pvolume {                                    /* undoes the page-wide text-field look */
+  -webkit-appearance: none;
+  appearance: none;
+  width: 84px;
+  height: 20px;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  cursor: pointer;
+}
+input.pvolume:hover, input.pvolume:focus { background: transparent; border: 0; box-shadow: none; }
+input.pvolume:focus-visible { outline: 2px solid var(--brand); outline-offset: 4px; border-radius: 6px; }
+.pvolume::-webkit-slider-runnable-track { height: 4px; border-radius: var(--r-pill); background: linear-gradient(to right, var(--ink) var(--level, 100%), var(--line-strong) var(--level, 100%)); }
+.pvolume::-moz-range-track { height: 4px; border-radius: var(--r-pill); background: var(--line-strong); }
+.pvolume::-moz-range-progress { height: 4px; border-radius: var(--r-pill); background: var(--ink); }
+.pvolume::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; margin-top: -5px; background: var(--ink); border: 2px solid var(--bg-2); border-radius: 50%; box-sizing: content-box; }
+.pvolume::-moz-range-thumb { width: 10px; height: 10px; background: var(--ink); border: 2px solid var(--bg-2); border-radius: 50%; }
+
+/* ---- the docked player ---------------------------------------------------------------------- */
+
+.shell { --mini-h: 0px; }
+.shell[data-mini] { --mini-h: 84px; }        /* the room kept at the foot of a page while a file is loaded */
+
+.mini {
+  position: fixed;
+  z-index: 28;
+  left: calc(var(--nav-w) + var(--gutter));
+  right: var(--gutter);
+  bottom: 14px;
+  max-width: 760px;
+  margin-inline: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 8px 8px 10px;
+  overflow: hidden;
+  background: var(--surface-glass);
+  backdrop-filter: blur(18px) saturate(1.4);
+  -webkit-backdrop-filter: blur(18px) saturate(1.4);
+  border: 1px solid var(--line-strong);
+  border-radius: 20px;
+  box-shadow: var(--shadow-2);
+  animation: rise var(--dur-3) var(--ease);
+}
+.mini-line { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; background: var(--line); pointer-events: none; }
+.mini-line i { position: absolute; inset: 0; background: var(--pa-ink); transform-origin: left; transform: scaleX(var(--progress, 0)); }
+
+/* the title area is a button (it opens the page), dressed as plain content */
+button.mini-info {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 6px 0 0;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 12px;
+}
+button.mini-info:hover:not(:disabled) { background: transparent; border: 0; }
+button.mini-info:hover .mini-text b { text-decoration: underline; text-underline-offset: 3px; }
+.mini-tile { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; color: var(--ink); background: var(--pa-soft); }
+.mini-eq { display: flex; align-items: flex-end; gap: 2px; height: 16px; }
+.mini-eq i { width: 3px; height: 100%; border-radius: 2px; background: var(--pa-ink); transform-origin: bottom; animation: mini-eq calc(var(--dur-3) * 2) ease-in-out infinite; }
+.mini-eq i:nth-child(2) { animation-delay: calc(var(--dur-1) * -2); }
+.mini-eq i:nth-child(3) { animation-delay: calc(var(--dur-1) * -4); }
+@keyframes mini-eq { 0%, 100% { transform: scaleY(0.35); } 50% { transform: scaleY(1); } }
+.mini-text { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.mini-text b { font-size: var(--fs-sm); font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-text small { font-size: var(--fs-xs); font-weight: 500; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+[data-state='failed'].mini .mini-text small { color: var(--bad); }
+
+.mini-skip { width: 40px; min-height: 40px; }
+.mini-skip b { font-size: 0.5625rem; }
+.mini-play { width: 44px; height: 44px; margin: 0 4px; box-shadow: none; }
+[data-state='playing'].mini .mini-play { box-shadow: 0 0 0 4px var(--pa-soft); }
+.mini-close { width: 36px; min-height: 36px; }
+
+/* the shell makes room (while anything is loaded, shown or not), so the docked player never covers the end of a page or the composer */
+.shell[data-mini] .page { padding-bottom: calc(80px + var(--mini-h)); }
+.shell[data-mini] .page.page-chat { height: calc(100dvh - var(--mini-h)); padding-bottom: 0; }
+.shell[data-mini] .notices { bottom: calc(var(--mini-h) + 14px); }
+
+@media (max-width: 1023px) {
+  .mini { left: calc(var(--rail-w) + var(--gutter)); }
+  .shell[data-mini] .page.page-chat { height: calc(100dvh - var(--bar-h) - env(safe-area-inset-top, 0px) - var(--mini-h)); }
+}
+
+@media (max-width: 639px) {
+  .player { padding: 12px 12px 10px; border-radius: 18px; }
+  .pc-volume { display: none; }                 /* a phone has its own volume buttons */
+  .pchip { min-height: 44px; }
+  .pskip { width: 52px; min-height: 52px; }
+  .pmenu-list button { min-height: 44px; }
+  .mini { left: 10px; right: 10px; bottom: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px) + 8px); padding: 6px 4px 6px 8px; border-radius: 18px; }
+  .mini-forward { display: none; }                 /* the lock screen and the full player have both skips; the dock keeps to what fits */
+  .shell[data-mini] { --mini-h: 76px; }
+  .shell[data-mini] .page { padding-bottom: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px) + 28px + var(--mini-h)); }
+  .shell[data-mini] .page.page-chat {
+    height: calc(100dvh - var(--bar-h) - var(--tab-h) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - var(--mini-h));
+    padding-bottom: 0;
+  }
+  .shell[data-mini] .notices { bottom: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px) + var(--mini-h) + 12px); }
+}

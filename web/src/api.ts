@@ -20,7 +20,9 @@ function apiUrl(): string {
   const built = import.meta.env.VITE_API_URL as string | undefined
   if (built) return built
   const { protocol, hostname } = location
-  if (hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]') return 'http://127.0.0.1:8750'
+  if (hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]') {
+    return `http://${hostname === '[::1]' ? 'localhost' : hostname}:8750`
+  }
   return `${protocol}//${hostname}:${metaContent('assistant-api-port') || '8750'}`
 }
 
@@ -100,11 +102,10 @@ export class ApiError extends Error {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
+    credentials: 'include',
     headers: {
       'content-type': 'application/json',
-      // Every API call carries the per-launch token. A page in another tab can make the
-      // browser send requests here, but cannot read this page to learn the token.
-      'x-assistant-token': token,
+      ...(token ? { 'x-assistant-token': token } : {}),
       ...init.headers,
     },
   })
@@ -196,6 +197,17 @@ export interface ToolInfo {
   has_preview: boolean
 }
 
+export interface AuthInfo { email: string | null; google_auth: boolean }
+
+export const getMe = () =>
+  fetch(`${API_URL}/api/me`, { credentials: 'include' }).then(r => r.json() as Promise<AuthInfo>)
+
+export const signInUrl = () =>
+  `${API_URL}/auth/login?redirect=${encodeURIComponent(location.origin)}`
+
+export const signOut = () =>
+  fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' })
+
 export const getState = () => request<ServerState>('/api/state')
 
 export const getTools = () => request<ToolInfo[]>('/api/tools')
@@ -266,8 +278,12 @@ export const runAction = <T = unknown>(
     body: JSON.stringify({ tool, arguments: args, confirmed }),
   })
 
-/** EventSource cannot send headers, so this one request carries the token in its URL. */
-export const openEvents = () => new EventSource(`${API_URL}/api/events?token=${encodeURIComponent(token)}`)
+export const openEvents = () => {
+  const url = token
+    ? `${API_URL}/api/events?token=${encodeURIComponent(token)}`
+    : `${API_URL}/api/events`
+  return new EventSource(url, { withCredentials: true })
+}
 
 /** "meet_ai__start_recording" → "meet-ai · start recording" */
 export function toolLabel(qualified: string | undefined): string {
@@ -300,7 +316,8 @@ function put<T>(path: string, file: Blob, onProgress?: (sent: number) => void): 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('PUT', `${API_URL}${path}`)
-    xhr.setRequestHeader('x-assistant-token', token)
+    xhr.withCredentials = true
+    if (token) xhr.setRequestHeader('x-assistant-token', token)
     xhr.setRequestHeader('content-type', 'application/octet-stream')
     xhr.upload.onprogress = (e) => onProgress?.(e.loaded)
     xhr.onerror = () => reject(new Error(`Can't reach the backend at ${API_URL}.`))
@@ -344,7 +361,8 @@ export const uploadVoice = (file: File, onProgress?: (fraction: number) => void)
  */
 export async function fetchMedia(path: string): Promise<Blob> {
   const response = await fetch(`${API_URL}/api/files?path=${encodeURIComponent(path)}`, {
-    headers: { 'x-assistant-token': token },
+    credentials: 'include',
+    headers: token ? { 'x-assistant-token': token } : {},
   })
   if (response.status === 401 && !(await recoverToken())) {
     window.dispatchEvent(new Event('assistant-needs-token'))

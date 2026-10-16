@@ -48,10 +48,10 @@ afterEach(async () => {
 })
 
 describe('the MCP front door', () => {
-  it('advertises exactly the six operations, and no more', async () => {
+  it('advertises exactly the eight operations, and no more', async () => {
     const client = await connect()
     const names = (await client.listTools()).tools.map((t) => t.name).sort()
-    expect(names).toEqual(['build', 'info', 'layout', 'lint', 'preview', 'trash'])
+    expect(names).toEqual(['build', 'export', 'info', 'layout', 'lint', 'list', 'preview', 'trash'])
   })
 
   it('marks only build and trash as writes, and trash as destructive', async () => {

@@ -54,6 +54,7 @@ odd card left alone on a row is a bug.
 | Progress | `.bar` > `<div style={{width}}/>`, or `<Ring value label/>` (`charts/Ring`) |
 | Big numbers | `.stat` tiles: see `pages/Overview.tsx` (`Stat`) |
 | Drop files on a card | `<DropZone accepts onFiles label>` (`ui/DropZone`) plus `PickFiles` (`components/Upload`) |
+| Play audio | `open({key, title, blob})` from `usePlayerActions()` (`player/engine`); the page shows `<AudioPlayer onClose>` (`ui/AudioPlayer`) for the current file. Never an `<audio>` of your own: the one player lives above the pages, so playback survives moving between them, and `ui/MiniPlayer` docks it when the full one is not in view |
 | Icons | import from `ui/icons.ts` only (lucide). 16px in buttons, 17–20px in tiles. `aria-hidden` on decoration |
 | Tables | `<div className="table-wrap stack-rows"><table>…`, with `data-label="Column"` on each `<td>`: on a phone each row becomes a stacked block |
 | Forms | plain `input`, `select`, `textarea`, `button` are already styled; `.row` lays controls out, `.stack` stacks them |
@@ -64,6 +65,17 @@ odd card left alone on a row is a bug.
 Buttons: default is quiet; `.primary` is the brand fill (one per view, the main thing to do);
 `.danger` for destructive confirmations; `.ghost` for borderless; `.icon` for square icon-only (give it
 an `aria-label`).
+
+## Anything that must outlive a page (`src/player/`)
+
+Pages mount one at a time (`<main key={section}>`), so whatever a page owns dies when you leave it. The
+audio player learned this the hard way: its `<audio>` lived in the Audiobooks panel and stopped the
+moment you opened another tab. It now lives in `PlayerProvider` (`main.tsx`, above `App`); the panel's
+`AudioPlayer` and the docked `MiniPlayer` are only views of it. A view re-renders only for what it shows
+(three contexts: slow state, the clock, actions), and the bar moves by writing `--progress` into the views'
+DOM nodes each frame. `--mini-h` (set while a file is loaded) keeps room at the foot of every page and
+shortens Chat, so the dock never covers the composer. Anything else that has to keep going across pages
+(an upload, a live stream) belongs in a provider up there too, never inside the page that started it.
 
 ## Charts (`src/charts/`)
 

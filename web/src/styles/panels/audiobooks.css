@@ -245,8 +245,6 @@
 .ab-file-act { display: flex; gap: 8px; }
 .ab-play { color: var(--brand); background: var(--brand-soft); border-color: transparent; }
 .ab-play:hover:not(:disabled) { color: var(--brand); background: var(--brand-soft); border-color: var(--brand-line); }
-.ab-player { display: flex; align-items: center; gap: 6px; margin-top: 10px; padding: 5px 6px 5px 8px; background: var(--bg-2); border-radius: var(--r-pill); animation: pop-in var(--dur-3) var(--ease); }
-.ab-player audio { flex: 1; min-width: 0; height: 40px; border-radius: var(--r-pill); }
 .ab-eq { display: flex; align-items: flex-end; gap: 2px; height: 16px; }
 .ab-eq i { width: 3px; height: 100%; border-radius: 2px; background: var(--ab); transform-origin: bottom; animation: ab-eq calc(var(--dur-3) * 2) ease-in-out infinite; }
 .ab-eq i:nth-child(2) { animation-delay: calc(var(--dur-1) * -2); }

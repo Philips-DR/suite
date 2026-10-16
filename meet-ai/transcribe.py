@@ -91,7 +91,17 @@ def probe_duration(path: Path) -> float:
     try:
         return float(proc.stdout.strip())
     except ValueError:
-        raise RuntimeError(f"could not read duration ({proc.stderr.strip()[:200]})")
+        pass
+    # Browser-recorded webm files often lack a duration header. Decode to find it.
+    proc = run([
+        "ffmpeg", "-nostdin", "-v", "error", "-stats", "-i", str(path),
+        "-f", "null", "-",
+    ])
+    match = re.search(r"time=(\d+):(\d+):([\d.]+)", proc.stderr)
+    if match:
+        h, m, s = match.groups()
+        return int(h) * 3600 + int(m) * 60 + float(s)
+    raise RuntimeError(f"could not read duration ({proc.stderr.strip()[:200]})")
 
 
 # --------------------------------------------------------------------------
