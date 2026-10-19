@@ -102,7 +102,7 @@ export function StateProvider({ children }: { children: ReactNode }) {
   }, [])
 
   useEffect(() => {
-    let source: EventSource | null = null
+    let source: import('./api').EventStream | null = null
     let cancelled = false
 
     const connect = () => {

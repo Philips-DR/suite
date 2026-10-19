@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The suite in containers.
 #
-#   ./start-docker up [--tailscale] [--audio]   build if needed, start, and say where it is
+#   ./start-docker up [--tailscale] [--ngrok] [--audio]   build if needed, start, and say where it is
 #   ./start-docker down                          stop it (your data is in ./data and stays)
 #   ./start-docker logs [service]                follow the logs
 #   ./start-docker status                        what is running and healthy
@@ -27,9 +27,11 @@ cmd="${1:-up}"; shift || true
 case "$cmd" in up|test) ;; *) export ASSISTANT_TOKEN="${ASSISTANT_TOKEN:-unused}" ;; esac
 files=(-f compose.yaml)
 profiles=()
+use_ngrok=false
 for arg in "$@"; do
   case "$arg" in
     --tailscale) profiles=(--profile tailscale) ;;
+    --ngrok)     profiles=(--profile ngrok); use_ngrok=true ;;
     --audio)     files+=(-f compose.audio.yaml) ;;
     *)           service="$arg" ;;
   esac
@@ -50,18 +52,81 @@ token() {
   export ASSISTANT_TOKEN
 }
 
+ngrok_discover() {
+  # Poll ngrok's local API until both tunnels appear. Each tunnel's name matches docker/ngrok.yml.
+  local attempt
+  for attempt in $(seq 1 30); do
+    local json
+    json="$(curl -sf http://127.0.0.1:4040/api/tunnels 2>/dev/null)" || { sleep 1; continue; }
+    local found
+    found="$(python3 -c '
+import json, sys
+d = json.loads(sys.argv[1])
+by_name = {}
+for t in d.get("tunnels", []):
+    name = t.get("name", "")
+    url = t.get("public_url", "")
+    if url.startswith("https://"):
+        by_name[name] = url
+if "web" in by_name and "api" in by_name:
+    print(f"web {by_name[\"web\"]}")
+    print(f"api {by_name[\"api\"]}")
+' "$json" 2>/dev/null)" || { sleep 1; continue; }
+    if [[ -n "$found" ]]; then echo "$found"; return 0; fi
+    sleep 1
+  done
+  return 1
+}
+
 case "$cmd" in
   up)
     make_data; token
-    dc up -d --build --wait
-    echo
-    echo "Up. On this computer:  http://127.0.0.1:8751/"
-    if [[ ${#profiles[@]} -gt 0 ]]; then
-      if [[ -n "${SUITE_HOST:-}" ]]; then
-        echo "Over Tailscale:        https://${SUITE_HOST}/   (from a device signed in to your tailnet)"
-      else
-        echo "Tailscale is starting. Its first run prints a sign-in link:   ./start-docker logs tailscale"
-        echo "Then set SUITE_HOST=<the name it shows, e.g. suite.tail1234.ts.net> in .env and run this again."
+    if $use_ngrok; then
+      # Write the ngrok config with the static domain if one is set.
+      ngrok_conf=data/.ngrok.yml
+      cat > "$ngrok_conf" <<YAML
+version: "3"
+tunnels:
+  web:
+    addr: web:8751
+    proto: http
+$([[ -n "${NGROK_WEB_DOMAIN:-}" ]] && echo "    hostname: $NGROK_WEB_DOMAIN")
+  api:
+    addr: backend:8750
+    proto: http
+YAML
+      # Phase 1: bring everything up, including ngrok. The backend and web start with default
+      # origins; ngrok tunnels to them immediately and we discover the public URLs from its API.
+      dc up -d --build --wait
+      echo
+      echo "Discovering ngrok tunnel URLs..."
+      ngrok_tunnels="$(ngrok_discover)" || { echo "Could not reach ngrok's API on localhost:4040." >&2; exit 1; }
+      NGROK_WEB_URL="$(echo "$ngrok_tunnels" | grep '^web ' | awk '{print $2}')"
+      NGROK_API_URL="$(echo "$ngrok_tunnels" | grep '^api ' | awk '{print $2}')"
+      [[ -n "$NGROK_WEB_URL" && -n "$NGROK_API_URL" ]] || { echo "ngrok tunnels not found. Check ./start-docker logs ngrok" >&2; exit 1; }
+      ngrok_web_host="$(echo "$NGROK_WEB_URL" | sed 's|https://||; s|/.*||')"
+      ngrok_api_host="$(echo "$NGROK_API_URL" | sed 's|https://||; s|/.*||')"
+      # Phase 2: recreate backend and web with the ngrok origins, hosts and API URL added.
+      export ASSISTANT_HOSTS="${SUITE_HOST:-suite.invalid},backend,web,$ngrok_web_host,$ngrok_api_host"
+      export ASSISTANT_ORIGINS="http://127.0.0.1:8751,http://localhost:8751,https://${SUITE_HOST:-suite.invalid},$NGROK_WEB_URL"
+      export ASSISTANT_REMOTE_API_URL="$NGROK_API_URL"
+      dc up -d backend web
+      echo
+      echo "Up. On this computer:  http://127.0.0.1:8751/"
+      echo "Over ngrok (web):      $NGROK_WEB_URL"
+      echo "Over ngrok (API):      $NGROK_API_URL"
+      echo "ngrok dashboard:       http://127.0.0.1:4040"
+    else
+      dc up -d --build --wait
+      echo
+      echo "Up. On this computer:  http://127.0.0.1:8751/"
+      if [[ ${#profiles[@]} -gt 0 ]]; then
+        if [[ -n "${SUITE_HOST:-}" ]]; then
+          echo "Over Tailscale:        https://${SUITE_HOST}/   (from a device signed in to your tailnet)"
+        else
+          echo "Tailscale is starting. Its first run prints a sign-in link:   ./start-docker logs tailscale"
+          echo "Then set SUITE_HOST=<the name it shows, e.g. suite.tail1234.ts.net> in .env and run this again."
+        fi
       fi
     fi
     ;;

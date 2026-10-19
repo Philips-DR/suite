@@ -22,6 +22,8 @@ const BIND_HOST = process.env.WEB_HOST || '127.0.0.1'
 // The port the backend answers on when this page was opened by any name but localhost; the browser
 // takes the host from the address bar. Written into the page, so the same dist serves any host.
 const REMOTE_API_PORT = (process.env.ASSISTANT_REMOTE_API_PORT ?? '').replace(/\D/g, '')
+// A full URL when the API is on a different host entirely (ngrok gives each tunnel its own hostname).
+const REMOTE_API_URL = process.env.ASSISTANT_REMOTE_API_URL ?? ''
 // Off, the page carries no token at all. For when signing in replaces it (a Google login).
 const INJECT_TOKEN = (process.env.WEB_INJECT_TOKEN ?? '1') !== '0'
 
@@ -41,6 +43,7 @@ function injectToken(): Plugin {
   const token = INJECT_TOKEN ? (process.env.ASSISTANT_TOKEN ?? '') : ''
   const meta = () =>
     `<meta name="assistant-token" content="${token.replace(/[^A-Za-z0-9_-]/g, '')}">` +
+    (REMOTE_API_URL ? `<meta name="assistant-api-url" content="${REMOTE_API_URL.replace(/"/g, '')}">` : '') +
     (REMOTE_API_PORT ? `<meta name="assistant-api-port" content="${REMOTE_API_PORT}">` : '')
   const allowed = (host: string | undefined) =>
     ALLOWED_HOSTS.has((host ?? '').replace(/:\d+$/, '').replace(/^\[|\]$/g, '').toLowerCase())

@@ -1,0 +1,11 @@
+# ngrok tunnels for the suite's two services. Used by the ngrok sidecar in compose.yaml;
+# start-docker discovers the public URLs at run time from the ngrok API.
+version: "3"
+tunnels:
+  web:
+    addr: web:8751
+    proto: http
+    # inspect: false would hide the web dashboard; leave it on for debugging.
+  api:
+    addr: backend:8750
+    proto: http

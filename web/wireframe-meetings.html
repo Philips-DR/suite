@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meetings — wireframe</title>
+<style>
+  :root {
+    --bg: #fafafa; --surface: #fff; --border: #e2e2e2;
+    --text: #1a1a1a; --muted: #717171; --accent: #2563eb;
+    --accent-soft: #eff4ff; --green: #16a34a; --green-soft: #ecfdf5;
+    --amber: #d97706; --amber-soft: #fffbeb; --red: #dc2626;
+    --radius: 12px; --radius-sm: 8px;
+    --shadow: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111; --surface: #1a1a1a; --border: #2a2a2a;
+      --text: #e5e5e5; --muted: #888; --accent: #5b9aff;
+      --accent-soft: #1a2744; --green: #4ade80; --green-soft: #0a2618;
+      --amber: #fbbf24; --amber-soft: #2a2210; --red: #f87171;
+      --shadow: 0 1px 3px rgba(0,0,0,.3);
+    }
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); line-height: 1.5; }
+
+  /* phone frame */
+  .frame { max-width: 430px; margin: 32px auto; border: 1px solid var(--border);
+    border-radius: 20px; overflow: hidden; min-height: 780px; background: var(--bg);
+    box-shadow: 0 4px 24px rgba(0,0,0,.08); position: relative; }
+  .frame-label { text-align: center; color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+
+  /* desktop frame */
+  .desktop-frame { max-width: 900px; margin: 48px auto; border: 1px solid var(--border);
+    border-radius: 16px; overflow: hidden; min-height: 600px; background: var(--bg);
+    box-shadow: 0 4px 24px rgba(0,0,0,.08); }
+
+  /* views */
+  .view { display: none; padding: 0 16px 24px; }
+  .view.active { display: block; }
+
+  /* header */
+  .page-head { padding: 20px 16px 12px; position: sticky; top: 0; background: var(--bg);
+    z-index: 10; display: flex; align-items: center; justify-content: space-between; }
+  .page-head h1 { font-size: 22px; font-weight: 700; }
+  .page-head .blurb { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .back-btn { background: none; border: none; color: var(--accent); font: inherit;
+    font-size: 15px; cursor: pointer; display: flex; align-items: center; gap: 4px; padding: 0; }
+  .back-btn::before { content: "\2190"; font-size: 18px; }
+
+  /* new-meeting button */
+  .btn-new { background: var(--accent); color: #fff; border: none; border-radius: var(--radius-sm);
+    padding: 8px 16px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .btn-new:hover { opacity: .9; }
+
+  /* meeting list */
+  .meeting-list { display: flex; flex-direction: column; gap: 8px; }
+  .meeting-card { background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 14px 16px; cursor: pointer;
+    box-shadow: var(--shadow); transition: border-color .15s; }
+  .meeting-card:hover { border-color: var(--accent); }
+  .meeting-card .title { font-size: 15px; font-weight: 600; }
+  .meeting-card .meta { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .meeting-card .chips { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+
+  /* status chips */
+  .chip { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 20px;
+    display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .chip.transcript { background: var(--accent-soft); color: var(--accent); }
+  .chip.notes { background: var(--green-soft); color: var(--green); }
+  .chip.minutes { background: var(--green-soft); color: var(--green); }
+  .chip.doc { background: var(--green-soft); color: var(--green); }
+  .chip.pending { background: var(--amber-soft); color: var(--amber); }
+  .chip.recording { background: #fef2f2; color: var(--red); animation: pulse 1.5s infinite; }
+  @media (prefers-color-scheme: dark) {
+    .chip.recording { background: #2a1515; }
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .6; } }
+
+  /* section label in list */
+  .date-group { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase;
+    letter-spacing: .5px; padding: 16px 0 6px; }
+  .date-group:first-child { padding-top: 8px; }
+
+  /* detail view */
+  .detail-head { padding: 4px 0 16px; }
+  .detail-head h2 { font-size: 20px; font-weight: 700; }
+  .detail-head .meta { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+  .detail-section { background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px; margin-bottom: 12px; box-shadow: var(--shadow); }
+  .detail-section h3 { font-size: 14px; font-weight: 600; margin-bottom: 8px;
+    display: flex; align-items: center; gap: 6px; }
+  .detail-section p { font-size: 14px; color: var(--muted); }
+  .detail-section .summary-text { color: var(--text); line-height: 1.6; }
+
+  /* claim counts */
+  .claim-row { display: flex; align-items: center; gap: 10px; padding: 6px 0;
+    font-size: 14px; border-bottom: 1px solid var(--border); }
+  .claim-row:last-child { border-bottom: none; }
+  .claim-count { font-weight: 700; font-size: 18px; min-width: 24px; }
+  .claim-label { color: var(--muted); }
+
+  /* verification bar */
+  .verify-bar { margin-top: 12px; }
+  .verify-bar .bar-track { height: 6px; background: var(--border); border-radius: 3px;
+    overflow: hidden; }
+  .verify-bar .bar-fill { height: 100%; background: var(--green); border-radius: 3px; }
+  .verify-bar .bar-label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  /* action buttons */
+  .actions { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+  .action-btn { background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 12px 16px; font: inherit; font-size: 14px;
+    font-weight: 500; cursor: pointer; text-align: left; display: flex;
+    align-items: center; justify-content: space-between; }
+  .action-btn:hover { border-color: var(--accent); }
+  .action-btn .arrow { color: var(--muted); }
+  .action-btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .action-btn.done { color: var(--green); }
+  .action-btn.done .label::before { content: "\2713 "; }
+
+  /* transcript preview */
+  .transcript-peek { font-size: 13px; color: var(--muted); line-height: 1.6;
+    border-left: 3px solid var(--border); padding-left: 12px; margin: 8px 0; }
+  .transcript-peek .ts { color: var(--accent); font-size: 11px; font-weight: 600; }
+  .transcript-peek .speaker { font-weight: 600; color: var(--text); }
+
+  /* new meeting view */
+  .rec-hero { text-align: center; padding: 48px 0 32px; }
+  .rec-hero .dot { width: 80px; height: 80px; border-radius: 50%; background: var(--red);
+    margin: 0 auto 16px; display: flex; align-items: center; justify-content: center;
+    font-size: 32px; color: #fff; cursor: pointer; box-shadow: 0 0 0 8px rgba(220,38,38,.15); }
+  .rec-hero .clock { font-size: 40px; font-weight: 300; font-variant-numeric: tabular-nums;
+    letter-spacing: -1px; }
+  .rec-hero .hint { font-size: 13px; color: var(--muted); margin-top: 8px; }
+
+  .or-divider { text-align: center; color: var(--muted); font-size: 13px; padding: 16px 0;
+    display: flex; align-items: center; gap: 12px; }
+  .or-divider::before, .or-divider::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
+  .upload-zone { border: 2px dashed var(--border); border-radius: var(--radius);
+    padding: 32px; text-align: center; color: var(--muted); font-size: 14px; }
+
+  /* progress card for transcription */
+  .progress-card { background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px; text-align: center; }
+  .progress-ring { width: 64px; height: 64px; margin: 0 auto 12px; position: relative; }
+  .progress-ring svg { transform: rotate(-90deg); }
+  .progress-ring .pct { position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; font-size: 14px; font-weight: 600; }
+  .progress-card .phase { font-size: 13px; color: var(--muted); }
+
+  /* desktop: side-by-side */
+  .desktop-layout { display: flex; height: 600px; }
+  .desktop-sidebar { width: 320px; border-right: 1px solid var(--border); overflow-y: auto;
+    flex-shrink: 0; }
+  .desktop-sidebar .page-head { padding: 16px; }
+  .desktop-sidebar .meeting-list { padding: 0 12px 16px; }
+  .desktop-sidebar .meeting-card.selected { border-color: var(--accent);
+    background: var(--accent-soft); }
+  .desktop-main { flex: 1; overflow-y: auto; padding: 20px 24px; }
+
+  /* annotations */
+  .annotation { position: absolute; background: #fff3cd; color: #856404; font-size: 11px;
+    padding: 4px 8px; border-radius: 4px; border: 1px solid #ffc107; z-index: 20;
+    pointer-events: none; max-width: 200px; line-height: 1.3; }
+  @media (prefers-color-scheme: dark) {
+    .annotation { background: #3d3416; color: #ffd75e; border-color: #6b5a1e; }
+  }
+
+  /* empty state */
+  .empty-state { text-align: center; padding: 64px 24px; }
+  .empty-state .icon { font-size: 48px; margin-bottom: 16px; opacity: .4; }
+  .empty-state h3 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .empty-state p { font-size: 14px; color: var(--muted); max-width: 280px; margin: 0 auto; }
+
+  /* section titles */
+  .wire-title { font-size: 16px; font-weight: 700; text-align: center; color: var(--muted);
+    padding: 40px 0 4px; text-transform: uppercase; letter-spacing: 1px; }
+  .wire-subtitle { font-size: 13px; text-align: center; color: var(--muted);
+    max-width: 500px; margin: 0 auto 24px; }
+</style>
+</head>
+<body>
+
+<!-- ==================== PHONE: MEETING LIST ==================== -->
+<p class="wire-title">Phone — meeting list</p>
+<p class="wire-subtitle">The landing view. Meetings grouped by day, most recent first. Each card shows what's been produced.</p>
+
+<div class="frame">
+  <div class="page-head">
+    <div>
+      <h1>Meetings</h1>
+      <div class="blurb">Record, transcribe, and write up</div>
+    </div>
+    <button class="btn-new" onclick="showView('phone-new')">+ New</button>
+  </div>
+  <div id="phone-list" class="view active">
+    <div class="meeting-list">
+
+      <div class="meeting-card" style="border-color: var(--red); border-width: 2px;" onclick="showView('phone-detail-live')">
+        <div class="title">Recording now</div>
+        <div class="meta">Started 2 min ago</div>
+        <div class="chips">
+          <span class="chip recording">Recording</span>
+        </div>
+      </div>
+
+      <div class="date-group">Today</div>
+
+      <div class="meeting-card" onclick="showView('phone-detail')">
+        <div class="title">Weekly standup</div>
+        <div class="meta">10:00 am &middot; 34 min &middot; 3 speakers</div>
+        <div class="chips">
+          <span class="chip transcript">Transcript</span>
+          <span class="chip notes">Notes</span>
+        </div>
+      </div>
+
+      <div class="date-group">Yesterday</div>
+
+      <div class="meeting-card">
+        <div class="title">Product review</div>
+        <div class="meta">2:30 pm &middot; 1 h 12 min &middot; 5 speakers</div>
+        <div class="chips">
+          <span class="chip transcript">Transcript</span>
+          <span class="chip notes">Notes</span>
+          <span class="chip minutes">Minutes</span>
+          <span class="chip doc">Google Doc</span>
+        </div>
+      </div>
+
+      <div class="meeting-card">
+        <div class="title">Client call &mdash; Acme</div>
+        <div class="meta">11:00 am &middot; 48 min</div>
+        <div class="chips">
+          <span class="chip transcript">Transcript</span>
+          <span class="chip pending">No notes yet</span>
+        </div>
+      </div>
+
+      <div class="date-group">Monday</div>
+
+      <div class="meeting-card">
+        <div class="title">Board meeting Q3</div>
+        <div class="meta">9:00 am &middot; 2 h 5 min &middot; 8 speakers</div>
+        <div class="chips">
+          <span class="chip transcript">Transcript</span>
+          <span class="chip notes">Notes</span>
+          <span class="chip minutes">Minutes</span>
+          <span class="chip doc">Google Doc</span>
+        </div>
+      </div>
+
+      <div class="meeting-card">
+        <div class="title">Sprint planning</div>
+        <div class="meta">Uploaded &middot; 52 min</div>
+        <div class="chips">
+          <span class="chip pending">Transcribing 63%</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ==================== PHONE: MEETING DETAIL ==================== -->
+  <div id="phone-detail" class="view">
+    <button class="back-btn" onclick="showView('phone-list')">Meetings</button>
+
+    <div class="detail-head">
+      <h2>Weekly standup</h2>
+      <div class="meta">Today 10:00 am &middot; 34 min &middot; 3 speakers</div>
+    </div>
+
+    <div class="detail-section">
+      <h3>Summary</h3>
+      <p class="summary-text">Sprint progress review. Auth migration blocked on the staging
+        environment; design team presented the new onboarding flow; agreed to ship the
+        billing fix by Friday.</p>
+    </div>
+
+    <div class="detail-section">
+      <h3>From the notes</h3>
+      <div class="claim-row">
+        <span class="claim-count">3</span>
+        <span class="claim-label">decisions</span>
+      </div>
+      <div class="claim-row">
+        <span class="claim-count">4</span>
+        <span class="claim-label">action items</span>
+      </div>
+      <div class="claim-row">
+        <span class="claim-count">1</span>
+        <span class="claim-label">open question</span>
+      </div>
+      <div class="verify-bar">
+        <div class="bar-track"><div class="bar-fill" style="width:92%"></div></div>
+        <div class="bar-label">11 of 12 claims verified against the transcript</div>
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <h3>Transcript</h3>
+      <div class="transcript-peek">
+        <div><span class="ts">0:00</span> <span class="speaker">Speaker 1:</span> Morning everyone, let's get started.</div>
+        <div style="margin-top:6px"><span class="ts">0:04</span> <span class="speaker">Speaker 2:</span> Hey, so on the auth migration — we're blocked on staging...</div>
+        <div style="margin-top:6px; opacity:.5"><span class="ts">0:18</span> <span class="speaker">Speaker 1:</span> Can you flag that with infra today?</div>
+      </div>
+      <div style="margin-top:8px">
+        <button class="action-btn"><span class="label">Read full transcript</span><span class="arrow">&rarr;</span></button>
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <h3>Outputs</h3>
+      <div class="actions">
+        <button class="action-btn done"><span class="label">Notes</span><span class="arrow">&rarr;</span></button>
+        <button class="action-btn"><span class="label">Write minutes</span><span class="arrow">&rarr;</span></button>
+        <button class="action-btn"><span class="label">Make Google Doc</span><span class="arrow">&rarr;</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== PHONE: LIVE RECORDING ==================== -->
+  <div id="phone-detail-live" class="view">
+    <button class="back-btn" onclick="showView('phone-list')">Meetings</button>
+    <div class="rec-hero">
+      <div class="dot" style="animation: pulse 1.5s infinite;">&#9679;</div>
+      <div class="clock">2:14</div>
+      <div class="hint">MacBook Pro Microphone</div>
+      <div style="margin-top:24px">
+        <button class="action-btn primary" style="display:inline-flex; width:auto; padding:12px 32px; justify-content:center;">Stop recording</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================== PHONE: NEW MEETING ==================== -->
+  <div id="phone-new" class="view">
+    <button class="back-btn" onclick="showView('phone-list')">Meetings</button>
+
+    <div class="detail-head">
+      <h2>New meeting</h2>
+    </div>
+
+    <div class="rec-hero" style="padding-top:24px; padding-bottom:16px;">
+      <div class="dot">&#9899;</div>
+      <div style="font-size:15px; margin-top:8px;">Tap to record</div>
+    </div>
+
+    <div class="or-divider">or</div>
+
+    <div class="upload-zone">
+      Drop an audio file here<br>or tap to browse
+    </div>
+
+    <div style="padding:24px 0 0;">
+      <div class="progress-card" style="opacity:.45;">
+        <div class="progress-ring">
+          <svg width="64" height="64" viewBox="0 0 64 64">
+            <circle cx="32" cy="32" r="28" fill="none" stroke="var(--border)" stroke-width="4"/>
+            <circle cx="32" cy="32" r="28" fill="none" stroke="var(--accent)" stroke-width="4"
+              stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round"/>
+          </svg>
+          <div class="pct">&mdash;</div>
+        </div>
+        <div class="phase">Transcription starts after recording</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== PHONE: EMPTY STATE ==================== -->
+<p class="wire-title">Phone — empty state</p>
+<p class="wire-subtitle">What a new user sees. Explains the workflow without a flow strip.</p>
+
+<div class="frame" style="min-height:500px">
+  <div class="page-head">
+    <div>
+      <h1>Meetings</h1>
+      <div class="blurb">Record, transcribe, and write up</div>
+    </div>
+    <button class="btn-new">+ New</button>
+  </div>
+  <div class="view active">
+    <div class="empty-state">
+      <div class="icon">&#127908;</div>
+      <h3>No meetings yet</h3>
+      <p>Record a meeting or upload audio. It gets transcribed, then you can generate notes, minutes, and a Google Doc.</p>
+      <div style="margin-top:20px">
+        <button class="btn-new">Record your first meeting</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== PHONE: TRANSCRIBING STATE ==================== -->
+<p class="wire-title">Phone — transcription in progress</p>
+<p class="wire-subtitle">After recording or uploading, the meeting appears in the list with a live progress indicator.</p>
+
+<div class="frame" style="min-height:420px">
+  <div class="page-head">
+    <div>
+      <h1>Meetings</h1>
+      <div class="blurb">Record, transcribe, and write up</div>
+    </div>
+    <button class="btn-new">+ New</button>
+  </div>
+  <div class="view active">
+    <div class="meeting-list">
+      <div class="date-group" style="padding-top:8px">Today</div>
+      <div class="meeting-card">
+        <div class="title">Sprint planning</div>
+        <div class="meta">Uploaded &middot; 52 min</div>
+        <div class="chips">
+          <span class="chip pending">Transcribing 63%</span>
+        </div>
+        <div style="margin-top:10px">
+          <div class="verify-bar">
+            <div class="bar-track"><div class="bar-fill" style="width:63%; background:var(--amber)"></div></div>
+            <div class="bar-label">Diarizing &middot; ETA 4 min</div>
+          </div>
+        </div>
+      </div>
+      <div class="meeting-card">
+        <div class="title">Weekly standup</div>
+        <div class="meta">10:00 am &middot; 34 min &middot; 3 speakers</div>
+        <div class="chips">
+          <span class="chip transcript">Transcript</span>
+          <span class="chip notes">Notes</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ==================== DESKTOP ==================== -->
+<p class="wire-title">Desktop — list + detail side by side</p>
+<p class="wire-subtitle">On wider screens, the list becomes a sidebar and the detail fills the rest. No separate page transition.</p>
+
+<div class="desktop-frame">
+  <div class="desktop-layout">
+    <div class="desktop-sidebar">
+      <div class="page-head" style="padding:16px">
+        <div><h1 style="font-size:18px">Meetings</h1></div>
+        <button class="btn-new" style="font-size:13px; padding:6px 12px;">+ New</button>
+      </div>
+      <div class="meeting-list">
+        <div class="date-group" style="padding-top:0">Today</div>
+
+        <div class="meeting-card selected">
+          <div class="title">Weekly standup</div>
+          <div class="meta">10:00 am &middot; 34 min</div>
+          <div class="chips">
+            <span class="chip transcript">Transcript</span>
+            <span class="chip notes">Notes</span>
+          </div>
+        </div>
+
+        <div class="date-group">Yesterday</div>
+
+        <div class="meeting-card">
+          <div class="title">Product review</div>
+          <div class="meta">2:30 pm &middot; 1 h 12 min</div>
+          <div class="chips">
+            <span class="chip transcript">Transcript</span>
+            <span class="chip notes">Notes</span>
+            <span class="chip minutes">Minutes</span>
+            <span class="chip doc">Google Doc</span>
+          </div>
+        </div>
+
+        <div class="meeting-card">
+          <div class="title">Client call &mdash; Acme</div>
+          <div class="meta">11:00 am &middot; 48 min</div>
+          <div class="chips">
+            <span class="chip transcript">Transcript</span>
+            <span class="chip pending">No notes yet</span>
+          </div>
+        </div>
+
+        <div class="date-group">Monday</div>
+
+        <div class="meeting-card">
+          <div class="title">Board meeting Q3</div>
+          <div class="meta">9:00 am &middot; 2 h 5 min</div>
+          <div class="chips">
+            <span class="chip transcript">Transcript</span>
+            <span class="chip notes">Notes</span>
+            <span class="chip minutes">Minutes</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="desktop-main">
+      <div class="detail-head">
+        <h2>Weekly standup</h2>
+        <div class="meta">Today 10:00 am &middot; 34 min &middot; 3 speakers</div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+        <div class="detail-section">
+          <h3>Summary</h3>
+          <p class="summary-text">Sprint progress review. Auth migration blocked on staging;
+            design team presented the new onboarding flow; agreed to ship billing fix by Friday.</p>
+        </div>
+
+        <div class="detail-section">
+          <h3>From the notes</h3>
+          <div class="claim-row">
+            <span class="claim-count">3</span>
+            <span class="claim-label">decisions</span>
+          </div>
+          <div class="claim-row">
+            <span class="claim-count">4</span>
+            <span class="claim-label">action items</span>
+          </div>
+          <div class="claim-row">
+            <span class="claim-count">1</span>
+            <span class="claim-label">open question</span>
+          </div>
+          <div class="verify-bar">
+            <div class="bar-track"><div class="bar-fill" style="width:92%"></div></div>
+            <div class="bar-label">11 / 12 claims verified</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <h3>Transcript</h3>
+        <div class="transcript-peek">
+          <div><span class="ts">0:00</span> <span class="speaker">Speaker 1:</span> Morning everyone, let's get started.</div>
+          <div style="margin-top:6px"><span class="ts">0:04</span> <span class="speaker">Speaker 2:</span> Hey, so on the auth migration — we're blocked on staging. The environment's been flaky since Thursday.</div>
+          <div style="margin-top:6px"><span class="ts">0:18</span> <span class="speaker">Speaker 1:</span> Can you flag that with infra today?</div>
+          <div style="margin-top:6px; opacity:.5"><span class="ts">0:25</span> <span class="speaker">Speaker 2:</span> Already did, waiting on them...</div>
+        </div>
+        <div style="margin-top:8px">
+          <button class="action-btn"><span class="label">Read full transcript</span><span class="arrow">&rarr;</span></button>
+        </div>
+      </div>
+
+      <div class="detail-section">
+        <h3>Outputs</h3>
+        <div style="display:flex; gap:8px; flex-wrap:wrap;">
+          <button class="action-btn done" style="flex:1"><span class="label">Notes</span><span class="arrow">&rarr;</span></button>
+          <button class="action-btn" style="flex:1"><span class="label">Write minutes</span><span class="arrow">&rarr;</span></button>
+          <button class="action-btn" style="flex:1"><span class="label">Make Google Doc</span><span class="arrow">&rarr;</span></button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div style="height:64px"></div>
+
+<script>
+function showView(id) {
+  const frame = document.getElementById(id).closest('.frame');
+  frame.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+</script>
+</body>
+</html>

@@ -68,10 +68,10 @@ export function App() {
     if (authState !== 'checking') return
     getMe()
       .then((info) => {
-        if (info.google_auth) {
-          setAuthState(info.email ? 'ok' : 'needs_auth')
+        if (info.email || hasToken()) {
+          setAuthState('ok')
         } else {
-          setAuthState(hasToken() ? 'ok' : 'needs_auth')
+          setAuthState('needs_auth')
         }
       })
       .catch(() => setAuthState(hasToken() ? 'ok' : 'needs_auth'))

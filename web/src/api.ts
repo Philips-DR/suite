@@ -11,6 +11,8 @@ const metaContent = (name: string) =>
 /**
  * Where the backend is. Decided in the browser, at run time, so one build serves every host:
  *  - VITE_API_URL, if a build was made for one place (development);
+ *  - assistant-api-url meta tag: a full URL when the API is on a different host entirely
+ *    (ngrok gives each tunnel its own hostname, so same-host-different-port does not apply);
  *  - on localhost, 127.0.0.1:8750, as ever;
  *  - on any other name (a tailnet address), the SAME host the page came from, at the port the web
  *    server was told the backend answers on. Same host means same site, which a login cookie
@@ -19,6 +21,8 @@ const metaContent = (name: string) =>
 function apiUrl(): string {
   const built = import.meta.env.VITE_API_URL as string | undefined
   if (built) return built
+  const full = metaContent('assistant-api-url')
+  if (full) return full
   const { protocol, hostname } = location
   if (hostname === '127.0.0.1' || hostname === 'localhost' || hostname === '[::1]') {
     return `http://${hostname === '[::1]' ? 'localhost' : hostname}:8750`
@@ -27,6 +31,10 @@ function apiUrl(): string {
 }
 
 export const API_URL = apiUrl().replace(/\/$/, '')
+
+// ngrok's free tier shows an interstitial page to browser User-Agents. This header bypasses it.
+// Harmless when not behind ngrok.
+const NGROK_HEADER = { 'ngrok-skip-browser-warning': 'true' }
 
 const TOKEN_KEY = 'assistant-token'
 
@@ -105,6 +113,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     credentials: 'include',
     headers: {
       'content-type': 'application/json',
+      ...NGROK_HEADER,
       ...(token ? { 'x-assistant-token': token } : {}),
       ...init.headers,
     },
@@ -200,13 +209,13 @@ export interface ToolInfo {
 export interface AuthInfo { email: string | null; google_auth: boolean }
 
 export const getMe = () =>
-  fetch(`${API_URL}/api/me`, { credentials: 'include' }).then(r => r.json() as Promise<AuthInfo>)
+  fetch(`${API_URL}/api/me`, { credentials: 'include', headers: NGROK_HEADER }).then(r => r.json() as Promise<AuthInfo>)
 
 export const signInUrl = () =>
   `${API_URL}/auth/login?redirect=${encodeURIComponent(location.origin)}`
 
 export const signOut = () =>
-  fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include' })
+  fetch(`${API_URL}/auth/logout`, { method: 'POST', credentials: 'include', headers: NGROK_HEADER })
 
 export const getState = () => request<ServerState>('/api/state')
 
@@ -278,11 +287,61 @@ export const runAction = <T = unknown>(
     body: JSON.stringify({ tool, arguments: args, confirmed }),
   })
 
-export const openEvents = () => {
-  const url = token
+export interface EventStream {
+  onopen: ((ev: Event) => void) | null
+  onmessage: ((ev: MessageEvent) => void) | null
+  onerror: ((ev: Event) => void) | null
+  close(): void
+}
+
+/**
+ * SSE via fetch, not EventSource — because EventSource cannot set custom headers and ngrok's
+ * free tier blocks browser requests without `ngrok-skip-browser-warning`. Exposes the same
+ * onopen / onmessage / onerror surface the caller already uses, and retries on disconnect.
+ */
+export function openEvents(): EventStream {
+  let closed = false
+  const self: EventStream = {
+    onopen: null, onmessage: null, onerror: null,
+    close() { closed = true },
+  }
+  const headers: Record<string, string> = { ...NGROK_HEADER }
+  if (token) headers['x-assistant-token'] = token
+  const url = token && !headers['x-assistant-token']
     ? `${API_URL}/api/events?token=${encodeURIComponent(token)}`
     : `${API_URL}/api/events`
-  return new EventSource(url, { withCredentials: true })
+
+  async function connect() {
+    while (!closed) {
+      try {
+        const res = await fetch(url, { credentials: 'include', headers })
+        if (!res.ok || !res.body) { throw new Error(`${res.status}`) }
+        self.onopen?.(new Event('open') as any)
+        const reader = res.body.getReader()
+        const decoder = new TextDecoder()
+        let buf = ''
+        for (;;) {
+          const { done, value } = await reader.read()
+          if (done || closed) break
+          buf += decoder.decode(value, { stream: true })
+          const parts = buf.split('\n\n')
+          buf = parts.pop()!
+          for (const part of parts) {
+            const dataLine = part.split('\n').find(l => l.startsWith('data:'))
+            if (dataLine) {
+              self.onmessage?.({ data: dataLine.slice(5).trimStart() } as MessageEvent)
+            }
+          }
+        }
+      } catch { /* reconnect below */ }
+      if (!closed) {
+        self.onerror?.(new Event('error'))
+        await new Promise(r => setTimeout(r, 2000))
+      }
+    }
+  }
+  connect()
+  return self
 }
 
 /** "meet_ai__start_recording" → "meet-ai · start recording" */
@@ -319,6 +378,7 @@ function put<T>(path: string, file: Blob, onProgress?: (sent: number) => void): 
     xhr.withCredentials = true
     if (token) xhr.setRequestHeader('x-assistant-token', token)
     xhr.setRequestHeader('content-type', 'application/octet-stream')
+    xhr.setRequestHeader('ngrok-skip-browser-warning', 'true')
     xhr.upload.onprogress = (e) => onProgress?.(e.loaded)
     xhr.onerror = () => reject(new Error(`Can't reach the backend at ${API_URL}.`))
     xhr.onload = () => {
@@ -362,7 +422,7 @@ export const uploadVoice = (file: File, onProgress?: (fraction: number) => void)
 export async function fetchMedia(path: string): Promise<Blob> {
   const response = await fetch(`${API_URL}/api/files?path=${encodeURIComponent(path)}`, {
     credentials: 'include',
-    headers: token ? { 'x-assistant-token': token } : {},
+    headers: { ...NGROK_HEADER, ...(token ? { 'x-assistant-token': token } : {}) },
   })
   if (response.status === 401 && !(await recoverToken())) {
     window.dispatchEvent(new Event('assistant-needs-token'))

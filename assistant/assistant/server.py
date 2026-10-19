@@ -280,7 +280,7 @@ def create_app(
         CORSMiddleware,
         allow_origins=list(origins),
         allow_methods=["GET", "POST", "PUT"],
-        allow_headers=["content-type", "x-assistant-token"],
+        allow_headers=["content-type", "x-assistant-token", "ngrok-skip-browser-warning"],
         allow_credentials=True,
     )
 
