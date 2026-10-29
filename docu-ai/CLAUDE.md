@@ -22,7 +22,9 @@ two disagree, this file wins and `plan.md` should be corrected.
     npm start -- lint <documentId>    # re-run the residue lint against an already-built document
     npm start -- layout <documentId> [maxPages]   # page count + page-break warnings for a built document
     npm start -- trash <documentId>   # move a document docu-ai built to Drive's Trash (restorable for 30 days)
-    npm start -- letter <dir> [out]   # a cover letter in the letter look (resume <dir> for a CV): one file, no cover, exported to PDF
+    npm start -- letter <dir> [out]   # a cover letter in the letter look (resume <dir> for a CV): one file, no cover; writes out.pdf AND out.docx, prints the page count
+    npm start -- export <documentId> [out.pdf|out.docx]   # export a built document; the extension picks the format (no extension: PDF)
+    # build, resume and letter also take  --title "..."  and  --replaces <documentId>  (see "Word, PDF and replacing" below)
     npm run mcp                       # serve preview/build/layout/lint/info/trash over MCP on stdio, for a model to call
 
 Don't confuse the two "lint"s: `npm run lint` is ESLint checking source code quality; `npm start -- lint` is the
@@ -479,6 +481,46 @@ several files for a letter as it does for a résumé. Two things the look cannot
 a **date line** (the model does not know today's date) and **room to sign** (markdown has no gap; a hard-break
 closing is as close as it gets).
 
+## Word, PDF and replacing a document (2026-10-29)
+
+Closes gap-plan step 1 (`../plan.md`, "Gaps found on 2026-10-24"), which the user approved on 2026-10-29.
+
+- **A Word export asks Drive for an array buffer**, as the PDF export always did (`exportDocumentWith`). `../plan.md`
+  (2026-10-24) records it coming back as a `Blob`, read as a string, which threw; that has not been reproduced
+  here (see the last point). A `Blob` is read if a client sends one. **Every export
+  is checked for what it is**: a PDF must open with `%PDF-`, a `.docx` with `PK` (it is a zip). Garbage from Drive,
+  such as a sign-in page, is an error naming the document, never a file handed on as a CV.
+- **`export` takes its format from the name** (`formatForPath`): `.docx` Word, `.pdf` PDF, no extension PDF (what it
+  always did). Any other extension is refused before Drive is asked anything, because a `.txt` that holds a PDF is
+  worse than an error.
+- **`resume` and `letter` write both files and print the layout report.** `out.pdf` and `out.docx` (`outputPair`:
+  `cv`, `cv.pdf` and `cv.docx` all mean that pair), because a CV goes out as whichever one the employer asks for.
+  They now print the page count and any page-break warning, as `build` did; before, only `build` did, and a comment
+  above `reportLayout` that described the residue lint made it read as though `resume` did too (the comment is
+  moved to `reportResidue`). A name given with no extension used to be written as a PDF with exactly that name; it
+  is now `name.pdf` and `name.docx`.
+- **`--title` names the document in Drive.** A CV and a cover letter from one person are both titled with their
+  first heading, the sender's name, and sit in Drive as two documents with the same name. The MCP `build` already
+  took a `title` (its description wrongly said it applied to the cover only); the CLI's `resume` and `letter` now
+  take `--title`, and `build` accepts it as well as its old second argument. Giving both is an error.
+- **`--replaces <id>` moves the old document to the Trash, after the new one is finished.** Three rules, each tested
+  with the Google calls stubbed and their order recorded (`test/replaces.test.ts`), and each shown to be caught by
+  breaking the code on purpose:
+  1. **The old document is checked before anything is built** (`checkReplaceable`): not a document docu-ai built, or
+     already in the Trash, and nothing is spent.
+  2. **Only a clean build replaces anything.** Leftover markdown or a layout warning means the new document is not
+     finished, and the old one is the last good one: it is kept, and the result says why. (The CLI already treats both
+     as exit code 1, so "clean" is the same as "exits 0". A layout that could not be measured is not a problem found.)
+  3. **A failed trash never loses the new document.** `replaceSuperseded` does not throw; the result carries
+     `replaced.trashed: false` and the reason.
+- **`replaces` is not on the MCP door, on purpose.** Through a model it would trash a document inside the approval of a
+  build, which would show an opaque id. The existing `trash` tool avoids exactly that: its approval is previewed by
+  `info`, which names the Doc. The model keeps trashing a superseded Doc with `trash` after a build, as `build`'s
+  description says. Add it to the door only together with a preview of what it would trash.
+- **Not run against Drive yet (2026-10-29):** all of the above is unit-tested with Drive stubbed. The Google login had
+  lapsed (`invalid_grant`), so a real Word export, a real `resume` with both files and the page count, and a real
+  `--replaces` have not been seen. Record them here when they have.
+
 ## Definition of done for a feature
 
 Fixture added → IR asserted → request snapshot reviewed → live doc built → readback assertions pass → residue
@@ -507,7 +549,8 @@ requirement is *presentation*, and no assertion catches a code block split acros
       emit/                   document.ts (orchestrator — the only I/O), namedStyles, text, blocks (code/rules/
                                quotes), table, lists, inline, units, image.ts (classification, sizing,
                                PNG/GIF/JPEG dimension parsing, M8)
-      drive.ts                info, trash, and the full-Drive explanation of a 403 (drive.file scope only)
+      cliArgs.ts              the command line's two decisions, pure: --title/--replaces, and the pair of files written
+      drive.ts                info, trash, export (PDF/Word, checked) and the full-Drive explanation of a 403 (drive.file scope only)
       verify/                 readback.ts (readback + residue lint), pdfFonts.ts (PDF font truth),
                                layout.ts (page count and page-break findings, from the exported PDF)
       probe/                  assumptions.ts — a diagnostic, outside the layer rules and allowed its own I/O

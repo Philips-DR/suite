@@ -18,7 +18,10 @@ export interface DriveLike {
     get(args: { fileId: string; fields: string }): Promise<{ data: DriveFile }>
     list(args: { q: string; fields: string; orderBy: string; pageSize: number; pageToken?: string }): Promise<{ data: { files?: DriveFile[]; nextPageToken?: string | null } }>
     update(args: { fileId: string; requestBody: { trashed: boolean }; fields: string }): Promise<{ data: DriveFile }>
-    export(args: { fileId: string; mimeType: string }): Promise<{ data: ArrayBuffer | Buffer | string }>
+    export(
+      args: { fileId: string; mimeType: string },
+      options?: { responseType: 'arraybuffer' },
+    ): Promise<{ data: ArrayBuffer | Buffer | string | Blob }>
   }
   about: { get(args: { fields: string }): Promise<{ data: { storageQuota?: StorageQuota } }> }
 }
@@ -142,11 +145,38 @@ const EXPORT_MIMES: Record<ExportFormat, string> = {
   docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 }
 
+/**
+ * The format a file name asks for: `.docx` is Word, `.pdf` is PDF, and no extension at all is PDF, which is
+ * what `export` always wrote before it could do anything else. Any other extension is refused rather than
+ * guessed at: a `.txt` that holds a PDF is worse than an error.
+ */
+export function formatForPath(path: string): ExportFormat {
+  const extension = /\.([^./\\]+)$/.exec(path)?.[1]?.toLowerCase()
+  if (extension === undefined || extension === 'pdf') return 'pdf'
+  if (extension === 'docx') return 'docx'
+  throw new Error(`Cannot tell what to export for ".${extension}": use a name ending in .pdf or .docx.`)
+}
+
 export interface ExportResult {
   documentId: string
   format: ExportFormat
   bytes: Buffer
   filename: string
+}
+
+/** A PDF opens with `%PDF-`; a .docx is a zip, and every zip opens with `PK`. */
+const SIGNATURES: Record<ExportFormat, string> = { pdf: '%PDF-', docx: 'PK' }
+const KIND: Record<ExportFormat, string> = { pdf: 'a PDF', docx: 'a Word document' }
+
+async function toBuffer(data: ArrayBuffer | Buffer | string | Blob): Promise<Buffer> {
+  if (Buffer.isBuffer(data)) return data
+  if (data instanceof ArrayBuffer) return Buffer.from(data)
+  if (typeof data === 'string') return Buffer.from(data, 'binary')
+  // What the client hands back for a binary type when it was not asked for an array buffer: a Blob. That is
+  // how a Word export once failed, and `exportDocumentWith` now asks for the array buffer; this keeps a
+  // client that answers differently from turning into a confusing error.
+  if (typeof Blob !== 'undefined' && data instanceof Blob) return Buffer.from(await data.arrayBuffer())
+  throw new Error('Drive sent the exported file as a type this tool does not know how to read.')
 }
 
 export async function exportDocumentWith(
@@ -155,12 +185,15 @@ export async function exportDocumentWith(
   format: ExportFormat,
 ): Promise<ExportResult> {
   const info = await documentInfoWith(drive, documentId)
-  const { data } = await drive.files.export({ fileId: documentId, mimeType: EXPORT_MIMES[format] })
-  const bytes = Buffer.isBuffer(data)
-    ? data
-    : data instanceof ArrayBuffer
-      ? Buffer.from(data)
-      : Buffer.from(data as string, 'binary')
+  const { data } = await drive.files.export(
+    { fileId: documentId, mimeType: EXPORT_MIMES[format] },
+    { responseType: 'arraybuffer' },
+  )
+  const bytes = await toBuffer(data)
+  // A file that is not what it says it is must never be handed on as a CV: say so here.
+  if (!bytes.subarray(0, SIGNATURES[format].length).equals(Buffer.from(SIGNATURES[format], 'latin1'))) {
+    throw new Error(`What Drive sent for "${info.title}" is not ${KIND[format]} (${bytes.length} bytes), so it was not used.`)
+  }
   const ext = format === 'docx' ? '.docx' : '.pdf'
   const safe = info.title.replace(/[/\\?%*:|"<>]/g, '_')
   return { documentId, format, bytes, filename: `${safe}${ext}` }

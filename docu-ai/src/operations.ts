@@ -1,6 +1,6 @@
 import { basename } from 'node:path'
 import type { AuthProvider } from './auth/types.js'
-import { explainFailureWithDrive } from './drive.js'
+import { documentInfo, explainFailureWithDrive, trashDocument, type DocumentInfo } from './drive.js'
 import { buildFromPlan } from './emit/document.js'
 import { loadChapters } from './parse/loadDir.js'
 import { parseMarkdown } from './parse/toAst.js'
@@ -101,6 +101,70 @@ export interface BuildResult {
    * read; never absent, so "no warnings" can only mean the layout was looked at and was fine.
    */
   layout: LayoutResult
+  /** Present only when `replaces` was given: what became of the document this one supersedes. */
+  replaced?: ReplacedResult
+}
+
+export interface ReplacedResult {
+  documentId: string
+  title: string
+  /** True only if the document is now in Drive's Trash. */
+  trashed: boolean
+  /** What happened to it, in a sentence, and if it is still there, why. */
+  note: string
+}
+
+/**
+ * Before a build is spent: is this a document docu-ai may trash? Reads only. A wrong id found here costs
+ * nothing; found after the build it would cost a document nobody asked for. `drive.file` is the only Drive
+ * scope held, so a document docu-ai did not build cannot be seen at all, and is refused here.
+ */
+export async function checkReplaceable(auth: AuthProvider, documentId: string): Promise<DocumentInfo> {
+  const info = await documentInfo(auth, documentId)
+  if (info.trashed) throw new Error(`"${info.title}" is already in the Trash, so there is nothing to replace.`)
+  return info
+}
+
+/**
+ * What is wrong with a finished build, in words: markdown left in it, or a layout warning. Empty means clean.
+ * A layout that could not be measured is not a warning found, and says so on its own (`measured: false`).
+ */
+function problemsWith(built: { residue: string[]; layout: LayoutResult }): string[] {
+  const problems: string[] = []
+  if (built.residue.length > 0) problems.push(`${built.residue.length} piece(s) of markdown left in it`)
+  if (built.layout.measured && built.layout.warnings.length > 0) {
+    problems.push(`${built.layout.warnings.length} layout warning(s)`)
+  }
+  return problems
+}
+
+/**
+ * After a build has come out clean, move the document it supersedes to the Trash, through the same `trash`
+ * every other caller uses. Only a clean build replaces anything: one with leftover markdown or a layout
+ * warning is not finished, and the document it was meant to replace is the last good one. Never throws, since
+ * the new document exists whatever happens here and the caller must still be told about it.
+ */
+export async function replaceSuperseded(
+  auth: AuthProvider,
+  old: DocumentInfo,
+  built: { residue: string[]; layout: LayoutResult },
+): Promise<ReplacedResult> {
+  const base = { documentId: old.documentId, title: old.title }
+  const problems = problemsWith(built)
+  if (problems.length > 0) {
+    return {
+      ...base,
+      trashed: false,
+      note: `Kept "${old.title}": the new document is not finished (${problems.join(', ')}). Fix that and build again.`,
+    }
+  }
+  try {
+    const result = await trashDocument(auth, old.documentId)
+    return { ...base, trashed: true, note: `Moved "${old.title}" to the Trash. ${result.restore}` }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error)
+    return { ...base, trashed: false, note: `The new document is built, but "${old.title}" could not be moved to the Trash: ${reason}` }
+  }
 }
 
 /**
@@ -111,7 +175,7 @@ export interface BuildResult {
  */
 export async function buildDocument(
   auth: AuthProvider,
-  opts: { path: string; title?: string; theme?: Theme; maxPages?: number },
+  opts: { path: string; title?: string; theme?: Theme; maxPages?: number; replaces?: string },
 ): Promise<BuildResult> {
   const theme = opts.theme ?? technical
   const { files, single } = await loadChapters(opts.path)
@@ -123,6 +187,9 @@ export async function buildDocument(
         `${files.map((f) => basename(f.path)).join(', ')}. Build it from the one file.`,
     )
   }
+
+  // Checked before anything is built: a wrong id found now costs nothing.
+  const superseded = opts.replaces ? await checkReplaceable(auth, opts.replaces) : undefined
 
   const chapters = files.map((file) =>
     planChapter(parseMarkdown(file.source), file.slug, basename(file.path)),
@@ -142,7 +209,7 @@ export async function buildDocument(
   })
   const doc = await fetchDocument(auth, built.documentId)
 
-  return {
+  const result: BuildResult = {
     documentId: built.documentId,
     url: built.url,
     title,
@@ -152,6 +219,8 @@ export async function buildDocument(
     imageWarnings: built.imageWarnings,
     layout: await measureLayout(auth, built.documentId, { doc, maxPages: opts.maxPages }),
   }
+  if (superseded) result.replaced = await replaceSuperseded(auth, superseded, result)
+  return result
 }
 
 export interface LayoutReport {

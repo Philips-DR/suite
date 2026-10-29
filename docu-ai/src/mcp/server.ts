@@ -13,7 +13,6 @@ import {
   listDocuments,
   preview,
   trashDocument,
-  type ExportFormat,
   type ThemeName,
 } from '../operations.js'
 import { tolerateSlowConnections } from '../network.js'
@@ -103,7 +102,12 @@ export function createDocuAiServer(auth: AuthProvider): McpServer {
         title: z
           .string()
           .optional()
-          .describe("The document title, shown on the cover. Defaults to the folder's name."),
+          .describe(
+            "The document's title: its name in Drive and, for a folder, the title on the cover. Defaults to " +
+              "the folder's name, or for a single .md file its first heading. Give one to tell two documents " +
+              'by the same person apart in Drive, such as a CV and a cover letter, which would otherwise ' +
+              'both be named after the sender.',
+          ),
         theme: z
           .enum(Object.keys(THEMES) as [ThemeName, ...ThemeName[]])
           .optional()
@@ -278,7 +282,7 @@ export function createDocuAiServer(auth: AuthProvider): McpServer {
     },
     async ({ documentId, format }) => {
       try {
-        const result = await exportDocument(auth, documentId, format as ExportFormat)
+        const result = await exportDocument(auth, documentId, format)
         return ok({
           documentId: result.documentId,
           format: result.format,

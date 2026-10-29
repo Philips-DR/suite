@@ -1,8 +1,14 @@
+import { writeFile } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { GoogleOAuthProvider, hasCachedToken, tokenPath } from './auth/google.js'
+import { parseCommandLine, outputPair } from './cliArgs.js'
+import { formatForPath } from './drive.js'
 import { buildFromPlan, createThemedDocument } from './emit/document.js'
 import type { TextBlock } from './emit/text.js'
-import { buildDocument, layoutDocument, lintDocument, preview, trashDocument, type LayoutResult } from './operations.js'
+import {
+  buildDocument, checkReplaceable, exportDocument, layoutDocument, lintDocument, preview, replaceSuperseded, trashDocument,
+  type LayoutResult, type ReplacedResult,
+} from './operations.js'
 import { loadChapterFiles } from './parse/loadDir.js'
 import { parseMarkdown } from './parse/toAst.js'
 import { planChapter, planDocument } from './plan/fromAst.js'
@@ -12,7 +18,6 @@ import { letter } from './theme/presets/letter.js'
 import { resume } from './theme/presets/resume.js'
 import type { Theme } from './theme/types.js'
 import { technical } from './theme/presets/technical.js'
-import { exportPdf } from './verify/pdfFonts.js'
 import { countParagraphs, fetchDocument, namedStyleSummary, residueFindings } from './verify/readback.js'
 import { tolerateSlowConnections } from './network.js'
 
@@ -23,13 +28,18 @@ const USAGE = `docu-ai — markdown to Google Docs
   npm run m0                         build the M0 proof document
   npm start -- preview <dir|file>    parse + plan a folder or one .md file — no network, no quota spent
   npm start -- build <dir|file> [t]  build a doc: a folder gets a tab per chapter and a cover; one file, a single tab
-  npm start -- resume <dir> [out]    build a single-tab doc with no cover and export it to PDF
+  npm start -- resume <dir> [out]    build a single-tab doc with no cover; writes out.pdf and out.docx, and prints its page count
   npm start -- letter <dir> [out]    the same for a cover letter, in the letter look
-  npm start -- export <docId> [out]  export an already-built document to PDF
+  npm start -- export <docId> [out]  export an already-built document: out.pdf (the default) or out.docx
   npm start -- lint <documentId>     re-run the residue lint against an already-built document
   npm start -- layout <docId> [max]  page count and page-break warnings for a built document (max: page target)
   npm start -- trash <documentId>    move a document docu-ai built to Drive's Trash (30 days to restore it)
   npm run mcp                        serve preview/build/layout/lint/info/trash over MCP on stdio, for a model to call
+
+  build, resume and letter also take:
+    --title "..."       the document's name in Drive (default: its first heading, or the folder's name)
+    --replaces <docId>  move that document to the Trash once this one has come out clean (no leftover
+                        markdown, no layout warning); it is checked before anything is built
 
 See SETUP.md for the one-time Google Cloud setup.
 `
@@ -119,13 +129,8 @@ async function cmdM0(): Promise<void> {
 }
 
 /**
- * Prints the residue lint's verdict for an already-fetched document and sets the exit code — shared
- * by `build` and `resume` (checked right after creating a document) and `lint` (checked against an
- * existing one), so the commands can't quietly drift into reporting this differently.
- *
- * The theme is a parameter rather than hardcoded because the lint's one exemption is code-styled
- * runs, identified by their mono font: a theme whose code font differed from the one passed here
- * would have every inline code span either wrongly exempted or wrongly flagged.
+ * Prints where a document's pages break and sets the exit code if anything is flagged. Shared by `build`,
+ * `resume`, `letter` and `layout`, so a page count is reported the same way wherever it comes from.
  */
 function reportLayout(layout: LayoutResult): void {
   if (!layout.measured) {
@@ -138,9 +143,24 @@ function reportLayout(layout: LayoutResult): void {
   if (layout.warnings.length > 0) process.exitCode = 1
 }
 
+/**
+ * Prints the residue lint's verdict and sets the exit code — shared by `build`, `resume` and `letter`
+ * (checked right after creating a document) and `lint` (checked against an existing one), so the commands
+ * can't quietly drift into reporting this differently.
+ *
+ * The lint's one exemption is code-styled runs, identified by their mono font; which font that is comes from
+ * the theme, and is passed to `residueFindings` by whoever fetched the document, not here.
+ */
 function reportResidue(residue: string[]): void {
   process.stdout.write(`markdown residue: ${residue.length === 0 ? 'none' : residue.join('; ')}\n\n`)
   if (residue.length > 0) process.exitCode = 1
+}
+
+/** What became of the document a build was asked to replace. Anything but "moved to the Trash" is exit code 1. */
+function reportReplaced(replaced: ReplacedResult | undefined): void {
+  if (!replaced) return
+  process.stdout.write(`${replaced.note}\n\n`)
+  if (!replaced.trashed) process.exitCode = 1
 }
 
 /**
@@ -167,11 +187,11 @@ async function cmdPreview(dir: string | undefined): Promise<void> {
  * One chapter per file, one tab per chapter, plus a cover tab (document title + a clickable
  * hand-built table of contents linking to each chapter's own first heading).
  */
-async function cmdBuild(dir: string | undefined, title: string | undefined): Promise<void> {
-  if (!dir) throw new Error('usage: npm start -- build <markdown-folder> [title]')
+async function cmdBuild(dir: string | undefined, title: string | undefined, replaces: string | undefined): Promise<void> {
+  if (!dir) throw new Error('usage: npm start -- build <markdown-folder> [title] [--title "..."] [--replaces <docId>]')
   const auth = GoogleOAuthProvider.fromEnvironment()
 
-  const built = await buildDocument(auth, { path: dir, title })
+  const built = await buildDocument(auth, { path: dir, title, replaces })
 
   process.stdout.write(`${built.chapters.length} chapter(s): ${built.chapters.join(', ')}\n`)
   process.stdout.write(`\n${built.url}\n\n`)
@@ -179,6 +199,7 @@ async function cmdBuild(dir: string | undefined, title: string | undefined): Pro
   process.stdout.write(`paragraphs: ${built.paragraphs}\n`)
   reportResidue(built.residue)
   reportLayout(built.layout)
+  reportReplaced(built.replaced)
 }
 
 /**
@@ -192,13 +213,18 @@ async function cmdBuild(dir: string | undefined, title: string | undefined): Pro
  * The export is part of the command rather than a separate step because a résumé's deliverable is
  * the PDF — the Doc is the intermediate artifact here, which is the reverse of every other command.
  */
-async function cmdResume(dir: string | undefined, outPath: string | undefined): Promise<void> {
-  return cmdOneDocument(dir, outPath, resume, 'résumé', 'resume')
+async function cmdResume(dir: string | undefined, outPath: string | undefined, opts: DocumentOptions): Promise<void> {
+  return cmdOneDocument(dir, outPath, resume, 'résumé', 'resume', opts)
 }
 
 /** A letter is the same shape of document as a résumé — one person, one file, no cover — in its own look. */
-async function cmdLetter(dir: string | undefined, outPath: string | undefined): Promise<void> {
-  return cmdOneDocument(dir, outPath, letter, 'letter', 'letter')
+async function cmdLetter(dir: string | undefined, outPath: string | undefined, opts: DocumentOptions): Promise<void> {
+  return cmdOneDocument(dir, outPath, letter, 'letter', 'letter', opts)
+}
+
+interface DocumentOptions {
+  title?: string
+  replaces?: string
 }
 
 async function cmdOneDocument(
@@ -207,8 +233,9 @@ async function cmdOneDocument(
   theme: Theme,
   noun: string,
   command: string,
+  opts: DocumentOptions,
 ): Promise<void> {
-  if (!dir) throw new Error(`usage: npm start -- ${command} <markdown-folder> [out.pdf]`)
+  if (!dir) throw new Error(`usage: npm start -- ${command} <markdown-folder> [out] [--title "..."] [--replaces <docId>]`)
   const auth = GoogleOAuthProvider.fromEnvironment()
 
   const files = await loadChapterFiles(dir)
@@ -221,9 +248,13 @@ async function cmdOneDocument(
   }
 
   const chapters = files.map((file) => planChapter(parseMarkdown(file.source), file.slug, basename(file.path)))
-  // The document title is the H1 — a résumé's H1 is the candidate's name, which is exactly what the
-  // file should be called in Drive. No folder-name fallback worth having here.
-  const plan = planDocument(chapters, chapters[0]!.title)
+  // The document title is the H1 unless --title says otherwise — a résumé's H1 is the candidate's name, which
+  // is what the file should be called in Drive by default, but a CV and a letter from the same person then
+  // share a title, and --title is how to tell them apart. No folder-name fallback worth having here.
+  const plan = planDocument(chapters, opts.title ?? chapters[0]!.title)
+
+  // Checked before anything is built: a wrong id found now costs nothing.
+  const superseded = opts.replaces ? await checkReplaceable(auth, opts.replaces) : undefined
 
   const built = await buildFromPlan(auth, { theme, plan, cover: false })
   process.stdout.write(`\n${built.url}\n\n`)
@@ -231,20 +262,36 @@ async function cmdOneDocument(
 
   const doc = await fetchDocument(auth, built.documentId)
   process.stdout.write(`paragraphs: ${countParagraphs(doc)}\n`)
-  reportResidue(residueFindings(doc, { codeFont: theme.code.font }))
+  const residue = residueFindings(doc, { codeFont: theme.code.font })
+  reportResidue(residue)
+  const { layout } = await layoutDocument(auth, built.documentId)
+  reportLayout(layout)
 
-  const out = outPath ?? `${command}.pdf`
-  await exportPdf(auth, built.documentId, out)
-  process.stdout.write(`exported pdf: ${out}\n\n`)
+  // Both formats, always: a CV goes out as whichever one the employer asks for. Written before anything is
+  // replaced, because these files are what a résumé build is for.
+  const written = outputPair(outPath, command)
+  for (const [format, path] of [['pdf', written.pdf], ['docx', written.docx]] as const) {
+    const exported = await exportDocument(auth, built.documentId, format)
+    await writeFile(path, exported.bytes)
+    process.stdout.write(`exported ${format === 'docx' ? 'word' : 'pdf'}: ${path}\n`)
+  }
+  process.stdout.write('\n')
+
+  if (superseded) reportReplaced(await replaceSuperseded(auth, superseded, { residue, layout }))
 }
 
-/** Export without rebuilding — for re-exporting after editing the document by hand in Docs. */
+/**
+ * Export without rebuilding — for re-exporting after editing the document by hand in Docs. The name says
+ * which format: `.docx` is Word, `.pdf` (or no extension, as it always was) is PDF.
+ */
 async function cmdExport(documentId: string | undefined, outPath: string | undefined): Promise<void> {
-  if (!documentId) throw new Error('usage: npm start -- export <documentId> [out.pdf]')
-  const auth = GoogleOAuthProvider.fromEnvironment()
+  if (!documentId) throw new Error('usage: npm start -- export <documentId> [out.pdf | out.docx]')
   const out = outPath ?? `${documentId}.pdf`
-  await exportPdf(auth, documentId, out)
-  process.stdout.write(`exported pdf: ${out}\n`)
+  const format = formatForPath(out)   // before anything is asked of Drive: a name it cannot read is no reason to call it
+  const auth = GoogleOAuthProvider.fromEnvironment()
+  const exported = await exportDocument(auth, documentId, format)
+  await writeFile(out, exported.bytes)
+  process.stdout.write(`exported ${format === 'docx' ? 'word' : 'pdf'}: ${out}\n`)
 }
 
 /** Re-checks an already-built document without rebuilding it — e.g. after a human has edited it. */
@@ -276,6 +323,11 @@ async function cmdTrash(documentId: string | undefined): Promise<void> {
 async function main(): Promise<void> {
   tolerateSlowConnections()
   const command = process.argv[2]
+  // Options only where they mean something; anywhere else one is an error rather than silently ignored.
+  const { positionals: args, title, replaces } = parseCommandLine(
+    process.argv.slice(3),
+    command === 'build' || command === 'resume' || command === 'letter',
+  )
   switch (command) {
     case 'auth':
       await cmdAuth()
@@ -287,28 +339,29 @@ async function main(): Promise<void> {
       await cmdM0()
       break
     case 'preview':
-      await cmdPreview(process.argv[3])
+      await cmdPreview(args[0])
       break
     case 'build':
-      await cmdBuild(process.argv[3], process.argv[4])
+      if (title !== undefined && args[1] !== undefined) throw new Error('Give the title once: as the second argument or with --title, not both.')
+      await cmdBuild(args[0], title ?? args[1], replaces)
       break
     case 'resume':
-      await cmdResume(process.argv[3], process.argv[4])
+      await cmdResume(args[0], args[1], { title, replaces })
       break
     case 'letter':
-      await cmdLetter(process.argv[3], process.argv[4])
+      await cmdLetter(args[0], args[1], { title, replaces })
       break
     case 'export':
-      await cmdExport(process.argv[3], process.argv[4])
+      await cmdExport(args[0], args[1])
       break
     case 'lint':
-      await cmdLint(process.argv[3])
+      await cmdLint(args[0])
       break
     case 'layout':
-      await cmdLayout(process.argv[3], process.argv[4])
+      await cmdLayout(args[0], args[1])
       break
     case 'trash':
-      await cmdTrash(process.argv[3])
+      await cmdTrash(args[0])
       break
     case 'status':
       process.stdout.write(

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   documentInfoWith,
   explainFailure,
+  exportDocumentWith,
+  formatForPath,
   listDocumentsWith,
   trashDocumentWith,
   type DriveFile,
@@ -155,5 +157,101 @@ describe('explainFailure', () => {
   it('wraps a thrown non-error rather than losing it', async () => {
     const result = await explainFailure('boom', () => Promise.resolve(undefined))
     expect(result.message).toBe('boom')
+  })
+})
+
+/** A Drive that answers an export with `data`, and records how it was asked. */
+function exporting(data: unknown, file: DriveFile = DOC): DriveLike & { asked: { mimeType: string; responseType: string | undefined }[] } {
+  const asked: { mimeType: string; responseType: string | undefined }[] = []
+  return {
+    asked,
+    files: {
+      get: () => Promise.resolve({ data: file }),
+      list: () => Promise.resolve({ data: { files: [file] } }),
+      update: () => Promise.resolve({ data: file }),
+      export: (args, options) => {
+        asked.push({ mimeType: args.mimeType, responseType: options?.responseType })
+        return Promise.resolve({ data: data as ArrayBuffer })
+      },
+    },
+    about: { get: () => Promise.resolve({ data: {} }) },
+  }
+}
+
+const WORD = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+const asArrayBuffer = (text: string): ArrayBuffer => {
+  const bytes = Buffer.from(text, 'latin1')
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength)
+}
+
+describe('exportDocumentWith', () => {
+  it('asks Drive for an array buffer, which is what makes Word come back as bytes', async () => {
+    // Found 2026-10-24: a .docx export came back as a Blob, which was then read as a string and threw.
+    const d = exporting(asArrayBuffer('PK\u0003\u0004 word'))
+    await exportDocumentWith(d, 'abc', 'docx')
+    expect(d.asked).toEqual([{ mimeType: WORD, responseType: 'arraybuffer' }])
+  })
+
+  it('returns a Word document as bytes, named for the document', async () => {
+    const result = await exportDocumentWith(exporting(asArrayBuffer('PK\u0003\u0004 word')), 'abc', 'docx')
+    expect(result.format).toBe('docx')
+    expect(result.filename).toBe('Philip Baah Afriyie.docx')
+    expect(result.bytes.subarray(0, 2).toString('latin1')).toBe('PK')
+  })
+
+  it('still returns a PDF', async () => {
+    const d = exporting(asArrayBuffer('%PDF-1.7 pdf'))
+    const result = await exportDocumentWith(d, 'abc', 'pdf')
+    expect(result.filename).toBe('Philip Baah Afriyie.pdf')
+    expect(d.asked[0]?.mimeType).toBe('application/pdf')
+  })
+
+  it('reads a Blob, the shape a client gives a binary type when it is not asked for an array buffer', async () => {
+    const blob = new Blob([Buffer.from('PK\u0003\u0004 word', 'latin1')])
+    const result = await exportDocumentWith(exporting(blob), 'abc', 'docx')
+    expect(result.bytes.length).toBe(blob.size)
+  })
+
+  it('reads a Buffer as well', async () => {
+    const result = await exportDocumentWith(exporting(Buffer.from('%PDF-1.4 x')), 'abc', 'pdf')
+    expect(result.bytes.toString('latin1')).toBe('%PDF-1.4 x')
+  })
+
+  it('refuses a file that is not what it says, instead of handing on garbage as a CV', async () => {
+    await expect(exportDocumentWith(exporting(asArrayBuffer('<html>Sign in</html>')), 'abc', 'docx')).rejects.toThrow(
+      /not a Word document \(20 bytes\)/,
+    )
+    await expect(exportDocumentWith(exporting(asArrayBuffer('PK\u0003\u0004 a zip')), 'abc', 'pdf')).rejects.toThrow(
+      /not a PDF/,
+    )
+  })
+
+  it('refuses a type it cannot read, in words', async () => {
+    await expect(exportDocumentWith(exporting({ some: 'object' }), 'abc', 'pdf')).rejects.toThrow(/type this tool does not know/)
+  })
+
+  it('names a title that Drive would not allow in a file name safely', async () => {
+    const d = exporting(asArrayBuffer('%PDF-1.7'), { ...DOC, name: 'CV: A/B "final"' })
+    expect((await exportDocumentWith(d, 'abc', 'pdf')).filename).toBe('CV_ A_B _final_.pdf')
+  })
+})
+
+describe('formatForPath', () => {
+  it('reads Word from .docx and PDF from .pdf, in any case', () => {
+    expect(formatForPath('cv.docx')).toBe('docx')
+    expect(formatForPath('out/CV.DOCX')).toBe('docx')
+    expect(formatForPath('cv.pdf')).toBe('pdf')
+    expect(formatForPath('/tmp/a.b/cv.PDF')).toBe('pdf')
+  })
+
+  it('keeps meaning PDF for a name with no extension, as export always did', () => {
+    expect(formatForPath('cv')).toBe('pdf')
+    expect(formatForPath('./some.dir/cv')).toBe('pdf')
+    expect(formatForPath('abc123')).toBe('pdf')
+  })
+
+  it('refuses an extension it cannot read, rather than guess', () => {
+    expect(() => formatForPath('cv.txt')).toThrow(/Cannot tell what to export for "\.txt": use a name ending in \.pdf or \.docx/)
+    expect(() => formatForPath('cv.doc')).toThrow(/"\.doc"/)
   })
 })
