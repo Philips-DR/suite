@@ -12,7 +12,7 @@ changing the tool.
     ./setup    # idempotent: shared .venv, audiobook's own .venv, npm ci for docu-ai and the web app, speaker models
     ./start    # ./auth, then ./start-docker up: database, backend (API, :8750; launches every tool over MCP stdio) and web app (:8751), in containers
     ./start-docker up [--tailscale] [--ngrok]   # what ./start runs; the flags add a private or a public address
-    ./test     # all seven test suites. Must pass with no credentials, no model, no network
+    ./test     # all eight test suites. Must pass with no credentials, no model, no network
     ./auth     # every login (AWS, Google Docs, Gmail): renews only the dead ones, and copies Google tokens into data/config for the containers; --check to just look
     ./renew-secrets   # a server's logins: sends it fresh AWS credentials + Google tokens over ssh (README → "On a server")
 
@@ -45,7 +45,7 @@ module or a credential**, and keeping it that way is the point of the whole rebu
 
 ## The shared Python environment
 
-assistant, meet-ai, mail-ai and apply-ai share `.venv`. `./setup` installs all four tools'
+assistant, meet-ai, mail-ai, apply-ai and web-ai share `.venv`. `./setup` installs all five tools'
 `requirements.txt` into it and runs `pip check`. **audiobook does not** (2026-10-10): it has its own
 `audiobook/.venv`, built from its own pinned `requirements.txt`, because torch, Docling and Pocket
 TTS are 1.9 GB that nothing else uses (the shared one is 696 MB) and torch must come from PyTorch's

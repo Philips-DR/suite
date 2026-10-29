@@ -13,7 +13,7 @@ ARG NODE=24-slim
 FROM node:${NODE} AS node
 FROM python:${PYTHON} AS python
 
-# --- the suite's shared Python environment (assistant, meet-ai, mail-ai, apply-ai) -------------------------
+# --- the suite's shared Python environment (assistant, meet-ai, mail-ai, apply-ai, web-ai) -----------------
 # Built at the path it will run from, since a venv's scripts name their own location.
 FROM python AS shared-venv
 WORKDIR /app
@@ -21,12 +21,14 @@ COPY assistant/requirements.txt assistant/
 COPY meet-ai/requirements.txt meet-ai/requirements-dev.txt meet-ai/
 COPY mail-ai/requirements.txt mail-ai/requirements-dev.txt mail-ai/
 COPY apply-ai/requirements.txt apply-ai/requirements-dev.txt apply-ai/
+COPY web-ai/requirements.txt web-ai/requirements-dev.txt web-ai/
 RUN --mount=type=cache,target=/root/.cache/pip \
     python -m venv .venv \
  && .venv/bin/pip install -r assistant/requirements.txt \
       -r meet-ai/requirements.txt -r meet-ai/requirements-dev.txt \
       -r mail-ai/requirements.txt -r mail-ai/requirements-dev.txt \
       -r apply-ai/requirements.txt -r apply-ai/requirements-dev.txt \
+      -r web-ai/requirements.txt -r web-ai/requirements-dev.txt \
  && .venv/bin/pip check
 
 # --- audiobook's own: torch (CPU build), Docling, Pocket TTS -- ~1.9 GB nothing else uses -----------

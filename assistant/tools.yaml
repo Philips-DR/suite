@@ -30,6 +30,13 @@ servers:
     env:
       APPLY_AI_ROOTS: ${ASSISTANT_UPLOADS:-../assistant/uploads}
 
+  # Reads web pages, checks that a link answers, and asks GitHub what a stranger sees. Reads only, but it
+  # reaches the internet, so it refuses every address that is not a public one: it cannot be pointed at this
+  # machine's own network. It is given no credential and no path, and has no cookie, login or write.
+  - name: web-ai
+    command: ${WEB_AI_HOME:-../web-ai}/mcp
+    cwd: ${WEB_AI_HOME:-../web-ai}
+
   - name: mail-ai
     command: ${MAIL_AI_HOME:-../mail-ai}/mcp
     cwd: ${MAIL_AI_HOME:-../mail-ai}

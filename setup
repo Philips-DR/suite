@@ -8,7 +8,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 # Fingerprint of everything ./setup installs from; ./setup stores it in .venv/.setup-stamp.
-deps_hash() { cat {assistant,meet-ai,mail-ai,apply-ai,audiobook}/requirements*.txt docu-ai/package-lock.json web/package-lock.json 2>/dev/null | sha256sum | cut -d' ' -f1; }
+deps_hash() { cat {assistant,meet-ai,mail-ai,apply-ai,web-ai,audiobook}/requirements*.txt docu-ai/package-lock.json web/package-lock.json 2>/dev/null | sha256sum | cut -d' ' -f1; }
 
 step() { printf '\n==> %s\n' "$*"; }
 need() { command -v "$1" >/dev/null || { echo "missing: $1 — $2" >&2; exit 1; }; }
@@ -18,14 +18,15 @@ need node    "install Node 24"
 need npm     "install Node 24"
 need ffmpeg  "meet-ai records and decodes audio with it"
 
-step "Python environment (.venv), shared by assistant, meet-ai, mail-ai and apply-ai"
+step "Python environment (.venv), shared by assistant, meet-ai, mail-ai, apply-ai and web-ai"
 [[ -x .venv/bin/python ]] || python3 -m venv .venv
 .venv/bin/pip install -q --upgrade pip
 .venv/bin/pip install -q \
   -r assistant/requirements.txt \
   -r meet-ai/requirements.txt -r meet-ai/requirements-dev.txt \
   -r mail-ai/requirements.txt -r mail-ai/requirements-dev.txt \
-  -r apply-ai/requirements.txt -r apply-ai/requirements-dev.txt
+  -r apply-ai/requirements.txt -r apply-ai/requirements-dev.txt \
+  -r web-ai/requirements.txt -r web-ai/requirements-dev.txt
 .venv/bin/pip check
 
 step "audiobook's own Python environment (audiobook/.venv)"

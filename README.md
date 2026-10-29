@@ -13,6 +13,7 @@ Where it stands and what comes next: [`plan.md`](plan.md). Rules for working on 
 | `docu-ai/` | Turns markdown into a properly formatted Google Doc. |
 | `mail-ai/` | Reads, searches, drafts and sends Gmail. |
 | `apply-ai/` | Checks for a job application: a posting's requirements against what your own material shows, and a draft's claims against what you have actually written. Reads only. |
+| `web-ai/` | Reads a web page (its text and links), checks that a link answers, and asks GitHub what a stranger can see. Reads only; refuses anything that is not on the public internet. |
 | `audiobook/` | Turns a PDF into an audiobook, read in a voice cloned from a short recording. Runs entirely on this computer. |
 
 ## Architecture
@@ -25,7 +26,7 @@ Eight programs, not one. They share a folder, an install and a start command —
   `./start` makes a fresh access token each launch and gives it to both; the web app's server writes
   it into the page as it serves it, so nothing is pasted by hand.
 - **The backend starts the six tools as its own child processes**, talking to each over MCP on
-  stdio — the same protocol a model uses to call them. `meet-ai`, `docu-ai`, `mail-ai`, `apply-ai` and
+  stdio — the same protocol a model uses to call them. `meet-ai`, `docu-ai`, `mail-ai`, `apply-ai`, `web-ai` and
   `audiobook` each also work standalone, from their own folder, with nothing else running.
 - **No tool imports another, and no tool imports the backend.** They meet only through the
   backend's tool calls. A crash or a multi-hour transcription in one tool cannot take down another,
@@ -181,7 +182,7 @@ in "Testing" (`./auth` renews them, and so does this).
 ## Each tool still stands alone
 
 Every tool keeps its own command line, tests and rules (`CLAUDE.md`, `plan.md`), and works
-from its own folder with the assistant not running: `meet-ai/notes`, `mail-ai/mail`, `apply-ai/apply`,
+from its own folder with the assistant not running: `meet-ai/notes`, `mail-ai/mail`, `apply-ai/apply`, `web-ai/web`,
 `cd docu-ai && npm start`, `cd audiobook && .venv/bin/python -m audiobook preview BOOK.pdf`. See each
 folder's README or `CLAUDE.md`.
 

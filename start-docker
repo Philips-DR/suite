@@ -192,6 +192,7 @@ print("HTTPS certificates:            " + ("on" if d.get("CertDomains") else "OF
       run meet-ai   bash -c "cd meet-ai && ../.venv/bin/python -m pytest tests -q -p no:cacheprovider"
       run mail-ai   bash -c "cd mail-ai && ../.venv/bin/python -m pytest tests -q -p no:cacheprovider"
       run apply-ai  bash -c "cd apply-ai && ../.venv/bin/python -m pytest tests -q -p no:cacheprovider"
+      run web-ai    bash -c "cd web-ai && ../.venv/bin/python -m pytest tests -q -p no:cacheprovider"
       run audiobook bash -c "cd audiobook && .venv/bin/python -m pytest tests -q -p no:cacheprovider"
       run docu-ai   bash -c "cd docu-ai && npm test --silent"
       echo; if ((${#failed[@]})); then echo "FAILED: ${failed[*]}"; exit 1; fi; echo "All passed."'
