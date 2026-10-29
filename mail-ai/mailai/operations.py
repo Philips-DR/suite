@@ -15,6 +15,7 @@ from typing import Any
 
 from mailai import store as db
 from mailai.auth import AuthConfig, NotAuthorised, load_credentials
+from mailai.compose import Attachment
 from mailai.sync import FULL_SYNC_DONE, HISTORY_KEY, Progress, sync
 
 
@@ -202,6 +203,8 @@ class DraftReport:
     subject: str
     thread_id: str
     confirmation: str
+    # What was attached, by name and size, so the caller can see it landed.
+    attachments: list[dict[str, Any]] = field(default_factory=list)
 
 
 def _report(draft_id: str, composition, thread_id: str) -> DraftReport:
@@ -210,6 +213,7 @@ def _report(draft_id: str, composition, thread_id: str) -> DraftReport:
         to=composition.to,
         subject=composition.subject,
         thread_id=thread_id,
+        attachments=[{"filename": a.filename, "size": a.size} for a in composition.attachments],
         # Minted here so the caller that just wrote the draft can send it without a second
         # read -- but it is still a fingerprint of content, so it stops working the moment
         # anything edits the draft.
@@ -218,13 +222,19 @@ def _report(draft_id: str, composition, thread_id: str) -> DraftReport:
 
 
 def draft_new(auth: AuthConfig, to: str, subject: str, body: str,
-              cc: str = "", bcc: str = "") -> DraftReport:
-    """Write a new draft. Creates nothing in anyone else's mailbox."""
+              cc: str = "", bcc: str = "",
+              attachments: Sequence[Attachment] = ()) -> DraftReport:
+    """Write a new draft. Creates nothing in anyone else's mailbox.
+
+    Attachments are built (and so checked) by the caller before this is reached; a name or
+    file that is refused never gets as far as Gmail.
+    """
     from mailai import drafts
     from mailai.compose import Composition
 
     service = _compose_service(auth)
-    composition = Composition(to=to, subject=subject, body=body, cc=cc, bcc=bcc)
+    composition = Composition(to=to, subject=subject, body=body, cc=cc, bcc=bcc,
+                              attachments=tuple(attachments))
     created = drafts.create(service, composition)
     return _report(str(created["id"]), composition, "")
 

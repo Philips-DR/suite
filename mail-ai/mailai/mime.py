@@ -35,6 +35,17 @@ def decode_body(data: str) -> str:
         return ""
 
 
+def decode_bytes(data: str) -> bytes:
+    """Gmail's base64url as bytes, and strictly: anything that is not base64 raises.
+
+    decode_body forgives, which is right for text that may read as empty. A file must not
+    be forgiven: the standard decoder silently drops characters outside the alphabet, so a
+    damaged attachment would decode to a smaller file that looks fine.
+    """
+    padded = data + "=" * (-len(data) % 4)
+    return base64.b64decode(padded, altchars=b"-_", validate=True)
+
+
 def headers(payload: dict[str, Any]) -> dict[str, str]:
     """Header names lowercased: Gmail is inconsistent about their case between calls."""
     return {
@@ -100,6 +111,12 @@ def body_text(payload: dict[str, Any]) -> str:
     return ""
 
 
+def attachment_parts(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """The parts that are files, exactly as Gmail gave them (a part with a filename is an
+    attachment, whatever its type)."""
+    return [part for part in _walk(payload) if part.get("filename")]
+
+
 def attachments(payload: dict[str, Any]) -> list[dict[str, Any]]:
     """Filenames and sizes only. Bytes are fetched on demand, never during a sync."""
     return [
@@ -109,6 +126,5 @@ def attachments(payload: dict[str, Any]) -> list[dict[str, Any]]:
             "size": int(part.get("body", {}).get("size", 0) or 0),
             "attachment_id": part.get("body", {}).get("attachmentId"),
         }
-        for part in _walk(payload)
-        if part.get("filename")
+        for part in attachment_parts(payload)
     ]

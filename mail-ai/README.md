@@ -154,6 +154,11 @@ and `discard_draft`. Without it those tools are not refused — they are *not th
 cannot call a tool that was never advertised, which is a stronger guarantee than one that
 checks a flag.
 
+`draft_new` also takes `attachments`: a list of `{filename, data, mime_type?}`, where `data` is
+the file's bytes as standard base64. `review_draft` lists every file with its size, and the
+confirmation covers each file's name and content, so a file swapped after review is refused. The
+CLI's `draft` command takes no files.
+
 `send_draft` is the only tool marked destructive, takes exactly `draft_id` and
 `confirmation`, and is subject to the gate above. `review_draft` is read-only on purpose:
 reading a draft to decide whether to send it must never itself need approval, or approving

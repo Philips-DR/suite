@@ -5,6 +5,7 @@ once the transport is stripped away. No network, no credentials, no Gmail.
 """
 
 import asyncio
+import base64
 import contextlib
 import io
 import json
@@ -158,3 +159,75 @@ def test_review_is_read_only_so_it_can_be_run_unattended(composing_server):
         t for t in asyncio.run(composing_server.list_tools()) if t.name == "review_draft"
     )
     assert review.annotations.read_only_hint is True
+
+
+# ---------------------------------------------------------------------------
+# Attachments through the door
+# ---------------------------------------------------------------------------
+
+CV_BYTES = b"%PDF-1.7 cv bytes"
+
+
+def encoded(data: bytes) -> str:
+    return base64.b64encode(data).decode()
+
+
+@pytest.fixture
+def gmail(monkeypatch):
+    """Drafting goes to a stand-in, so what reaches 'Gmail' can be looked at."""
+    from tests.fake_drafts import FakeDrafts
+
+    service = FakeDrafts()
+    monkeypatch.setattr("mailai.operations._compose_service", lambda auth: service)
+    return service
+
+
+def draft_with_cv(server) -> dict:
+    return call(server, "draft_new", to="hr@example.org", subject="Application",
+                body="Attached.", attachments=[{"filename": "cv.pdf", "data": encoded(CV_BYTES)}])
+
+
+def test_draft_new_takes_attachments_and_the_other_tools_still_take_none(composing_server):
+    tools = {t.name: t for t in asyncio.run(composing_server.list_tools())}
+    assert "attachments" in tools["draft_new"].input_schema["properties"]
+    assert set(tools["send_draft"].input_schema["properties"]) == {"draft_id", "confirmation"}
+    assert set(tools["review_draft"].input_schema["properties"]) == {"draft_id"}
+
+
+def test_a_draft_with_a_file_is_reviewed_and_sent_through_the_door(composing_server, gmail):
+    made = draft_with_cv(composing_server)
+    assert made["attachments"] == [{"filename": "cv.pdf", "size": len(CV_BYTES)}]
+
+    reviewed = call(composing_server, "review_draft", draft_id=made["draft_id"])
+    assert reviewed["confirmation"] == made["confirmation"]
+    assert f"cv.pdf ({len(CV_BYTES)} bytes)" in reviewed["rendered"]
+
+    call(composing_server, "send_draft", draft_id=made["draft_id"],
+         confirmation=reviewed["confirmation"])
+    assert gmail.sent == [made["draft_id"]]
+
+
+def test_a_file_swapped_after_review_is_not_sent_through_the_door(composing_server, gmail):
+    made = draft_with_cv(composing_server)
+    reviewed = call(composing_server, "review_draft", draft_id=made["draft_id"])
+    gmail.replace_attachment(made["draft_id"], "cv.pdf", b"%PDF-1.7 somebody else's cv")
+
+    refused = call(composing_server, "send_draft", draft_id=made["draft_id"],
+                   confirmation=reviewed["confirmation"])
+    assert "error" in refused
+    assert gmail.sent == []
+
+
+@pytest.mark.parametrize("attachments", [
+    [{"filename": "../cv.pdf", "data": encoded(CV_BYTES)}],
+    [{"filename": "cv.pdf", "data": "this is not base64!!"}],
+    [{"filename": "cv.pdf", "data": ""}],
+    # One good file beside a bad one: neither is drafted.
+    [{"filename": "cv.pdf", "data": encoded(CV_BYTES)},
+     {"filename": "a/b.pdf", "data": encoded(CV_BYTES)}],
+])
+def test_a_refused_file_is_an_error_and_makes_no_draft(composing_server, gmail, attachments):
+    result = call(composing_server, "draft_new", to="hr@example.org", subject="Application",
+                  body="Attached.", attachments=attachments)
+    assert "error" in result
+    assert gmail.store == {}

@@ -51,14 +51,20 @@ class Review:
             lines.append(f"Cc: {c.cc}")
         if c.bcc:
             lines.append(f"Bcc: {c.bcc}")
-        lines += [f"Subject: {c.subject}", "", c.body]
+        lines.append(f"Subject: {c.subject}")
+        # Above the body, so a long message cannot push the files out of sight: the
+        # confirmation covers every one of them.
+        lines += [f"Attachment: {a.filename} ({a.size} bytes)" for a in c.attachments]
+        lines += ["", c.body]
         return "\n".join(lines)
 
 
 def review(service, draft_id: str) -> Review:
     """Read a draft and mint the confirmation that would authorise sending it."""
     resource = drafts.get(service, draft_id)
-    composition = draft_body(resource)
+    # A file's bytes are read again here, at review and again at send. If they cannot be
+    # read this raises, and no confirmation exists for a file nobody could check.
+    composition = draft_body(resource, fetch_attachment=drafts.attachment_fetcher(service, resource))
     return Review(
         draft_id=draft_id,
         composition=composition,

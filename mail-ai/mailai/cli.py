@@ -22,6 +22,7 @@ from mailai.operations import (
     status,
     sync_mailbox,
 )
+from mailai.compose import AttachmentUnreadable
 from mailai.sending import SendRefused
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -189,6 +190,10 @@ def main(argv: list[str] | None = None) -> int:
         # refusal from a fault.
         print(f"!  not sent: {error}", file=sys.stderr)
         return 2
+    except AttachmentUnreadable as error:
+        # Neither reviewed nor sent: a file nobody could read cannot be confirmed.
+        print(f"!  {error}", file=sys.stderr)
+        return 1
     except NeedsComposeScope as error:
         print(f"!  {error}", file=sys.stderr)
         return 1

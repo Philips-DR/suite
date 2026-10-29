@@ -17,11 +17,13 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NotRequired, TypedDict
 
 from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from mailai.auth import AuthConfig
+from mailai.compose import Attachment
 from mailai.operations import (
     as_dict,
     discard_draft,
@@ -65,6 +67,15 @@ def approval_preview(preview_tool: str, argument_map: dict[str, str], field: str
             **({"field": field} if field else {}),
         }
     }
+
+
+class AttachmentArgument(TypedDict):
+    """One file for `draft_new`: its name, its bytes as standard base64, and optionally its
+    type (worked out from the name when left out)."""
+
+    filename: str
+    data: str
+    mime_type: NotRequired[str]
 
 
 @dataclass(frozen=True)
@@ -194,15 +205,26 @@ def create_mail_ai_server(paths: ServerPaths, auth: AuthConfig,
         title="Write a new draft",
         description=(
             "Compose a new message and leave it as a draft. Sends nothing. Returns a draft "
-            "id and a confirmation; read it back with review_draft before sending."
+            "id and a confirmation; read it back with review_draft before sending. "
+            "`attachments` is a list of files, each {filename, data, mime_type?}, where data "
+            "is the file's bytes as standard base64. Every file is listed by review_draft and "
+            "covered by the confirmation: changing one afterwards invalidates it. A file with "
+            "no content, a name with a slash or a hidden character, or data that is not "
+            "valid base64 is refused and no draft is made."
         ),
         annotations=ToolAnnotations(
             read_only_hint=False, destructive_hint=False, open_world_hint=True
         ),
     )
-    def _draft_new(to: str, subject: str, body: str, cc: str = "") -> dict:
+    def _draft_new(to: str, subject: str, body: str, cc: str = "",
+                   attachments: list[AttachmentArgument] | None = None) -> dict:
         try:
-            return as_dict(draft_new(compose_auth, to, subject, body, cc=cc))
+            # Built here, before anything reaches Gmail, so a refused file makes no draft.
+            files = [
+                Attachment.from_base64(a["filename"], a["data"], a.get("mime_type", ""))
+                for a in attachments or []
+            ]
+            return as_dict(draft_new(compose_auth, to, subject, body, cc=cc, attachments=files))
         except Exception as error:
             return _failed(error)
 

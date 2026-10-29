@@ -97,6 +97,37 @@ with no way to tell which is right.
 - **`review` must stay read-only.** If reading a draft needs approval, approving becomes two
   approvals and people stop reading the thing they are approving.
 
+## Attachments (2026-10-29)
+
+A CV goes out as a file, and a file is the part of an application nobody re-reads, so the gate
+covers files the way it covers `bcc`.
+
+- **The fingerprint covers every file's name and content, in order.** Adding, removing, renaming,
+  replacing or reordering one changes it. With files, every field sits behind its own length, after a
+  `0xFF` byte that can never start UTF-8 text, so two messages cannot be made to hash the same by moving
+  characters between fields, or between a body and a file. **A message with no files hashes exactly as it
+  did before** (a test pins two literals), so nothing already reviewed changes meaning.
+- **Gmail keeps a file's bytes apart from the draft.** A draft names its files and sizes; the bytes come
+  from a second call (`messages.attachments.get`). `review` makes that call, and `send` makes it again
+  when it recomputes the fingerprint, so the check is on the file as it is at send time. The call lives
+  in `drafts.py` and is a read. `compose.py` stays pure: it is handed a `fetch` function.
+- **If a file's bytes cannot be read, nothing is reviewed or sent** (`AttachmentUnreadable`). A short
+  read counts as unreadable: Gmail says how big each file is, and a fingerprint of part of a file is no
+  check on the whole one that goes out.
+- **Base64 is strict, both ways in.** The standard decoder quietly drops characters outside the
+  alphabet, so a damaged file arrives looking whole. `Attachment.from_base64` and `mime.decode_bytes`
+  refuse instead.
+- **Refused at the door, before Gmail:** an empty file (a failed export must not go out as a CV), and a
+  name that is empty, over 255 characters, `.`/`..`, has a slash, a control character (a line break would
+  add a header), a line or paragraph separator, or a right-to-left override. One bad file means no draft
+  at all, not a draft without it.
+- **`send` still takes only a draft id and a confirmation**; a test says no function in `sending.py`
+  can take a file.
+- **Not yet seen on a real draft.** The stand-in shows attachments as Gmail documents them (a name and a
+  size, no bytes, and an `attachmentId`). Until a real draft has been read back this is the documented
+  shape, not an observed one. How the bytes reach `draft_new` (base64 typed by a model, or a named file
+  from one allowed folder) is undecided: `plan.md`, "Waiting on the user".
+
 ## Approval previews
 
 `send_draft` and `discard_draft` declare, in MCP's `_meta`, that a caller should show
@@ -128,6 +159,12 @@ nobody is looking at.
 
 No network, no credentials, no mailbox. The sync is tested against a fake Gmail that pages
 and keeps a history stream.
+
+**A test that passes proves nothing until it has failed on purpose.** Thirteen deliberate breaks of the
+attachment code were each run against a copy of the source, and one got through: a loosely-read base64
+test whose stray character shifted the padding, so the loose decoder failed for the wrong reason and the
+test passed either way. The fix was a payload whose base64 has no padding, so only strictness can refuse
+it. Break a copy, never the source.
 
 **Name fake state so it cannot collide with the API surface it also presents.** `self.messages`
 shadows `messages()` and `self.history` shadows `history()`; both surface as

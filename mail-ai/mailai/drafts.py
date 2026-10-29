@@ -7,9 +7,11 @@ here can be called by accident and have it leave.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from mailai.compose import Composition, build_raw, draft_body
+from mailai.mime import decode_bytes
 
 
 def create(service, composition: Composition, thread_id: str | None = None) -> dict[str, Any]:
@@ -38,9 +40,27 @@ def get(service, draft_id: str) -> dict[str, Any]:
     return service.users().drafts().get(userId="me", id=draft_id, format="full").execute()
 
 
+def attachment_fetcher(service, resource: dict[str, Any]) -> Callable[[str], bytes]:
+    """The second call Gmail needs to give up a file's bytes. Read-only.
+
+    A draft resource names its files and sizes but not their bytes; those come from
+    `messages.attachments.get`, asked of the message the draft holds.
+    """
+    message_id = str(resource.get("message", {}).get("id", ""))
+
+    def fetch(attachment_id: str) -> bytes:
+        body = service.users().messages().attachments().get(
+            userId="me", messageId=message_id, id=attachment_id
+        ).execute()
+        return decode_bytes(body["data"])
+
+    return fetch
+
+
 def read(service, draft_id: str) -> Composition:
     """What this draft currently says, as the gate will fingerprint it."""
-    return draft_body(get(service, draft_id))
+    resource = get(service, draft_id)
+    return draft_body(resource, fetch_attachment=attachment_fetcher(service, resource))
 
 
 def list_all(service, limit: int = 25) -> list[dict[str, Any]]:
