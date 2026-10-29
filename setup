@@ -7,7 +7,7 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-# Fingerprint of everything ./setup installs from; ./setup stores it, ./start compares (same line in both).
+# Fingerprint of everything ./setup installs from; ./setup stores it in .venv/.setup-stamp.
 deps_hash() { cat {assistant,meet-ai,mail-ai,apply-ai,audiobook}/requirements*.txt docu-ai/package-lock.json web/package-lock.json 2>/dev/null | sha256sum | cut -d' ' -f1; }
 
 step() { printf '\n==> %s\n' "$*"; }
@@ -46,7 +46,7 @@ meet-ai/fetch-models.sh
 
 [[ -f .env ]] || { cp .env.example .env; echo; echo "Wrote .env from .env.example — check the AWS profile in it."; }
 
-deps_hash > .venv/.setup-stamp   # what ./start checks against
+deps_hash > .venv/.setup-stamp   # which requirements this environment was built from
 
 step "Logins"
 ./auth --check || echo "  Sign in with ./auth (it opens a browser only for the logins that need one)."

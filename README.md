@@ -17,14 +17,14 @@ Where it stands and what comes next: [`plan.md`](plan.md). Rules for working on 
 
 ## Architecture
 
-Six programs, not one. They share a folder, an install and a start command — nothing else.
+Eight programs, not one. They share a folder, an install and a start command — nothing else.
 
 - **The web app and the backend are separate programs.** `web/` is a frontend: its own build, its
   own server, port 8751. `assistant/` is an API with no page of its own, port 8750. They only ever
   meet over HTTP, across origins — never an import, a shared build, or a page one hands the other.
   `./start` makes a fresh access token each launch and gives it to both; the web app's server writes
   it into the page as it serves it, so nothing is pasted by hand.
-- **The backend starts the five tools as its own child processes**, talking to each over MCP on
+- **The backend starts the six tools as its own child processes**, talking to each over MCP on
   stdio — the same protocol a model uses to call them. `meet-ai`, `docu-ai`, `mail-ai`, `apply-ai` and
   `audiobook` each also work standalone, from their own folder, with nothing else running.
 - **No tool imports another, and no tool imports the backend.** They meet only through the
@@ -59,18 +59,24 @@ go in `.env`, which `./setup` creates from `.env.example`.
 ./start          # then open http://127.0.0.1:8751/
 ```
 
-One command, two programs: the backend (API on port 8750, which launches the four tools as
-its own children) and the web app (port 8751). Stopping either stops both. A transcription or
-recording in progress is built to outlive a restart and is picked up again next time.
+One command, three containers: the backend (API on port 8750, which launches the tools as its own
+children), the web app (port 8751) and the database (PostgreSQL, which only the backend can reach). It
+checks your logins first (`./auth`), then runs `./start-docker up`, so anything you add goes to that.
+The containers keep running until `./start-docker down`. A transcription or recording in progress is
+built to outlive a restart and is picked up again next time.
 
-Nothing to sign in to: `./start` makes a fresh access token each launch, gives it to both
-programs, and the web app's server puts it in the page. A tab left open across a restart picks
-up the new one by itself. **Buttons → Settings** shows whether the model login, the network and
-each tool are working.
+Nothing to sign in to: every start makes a fresh access token, gives it to both programs, and the web
+app's server puts it in the page. A tab left open across a restart picks up the new one by itself.
+**Buttons → Settings** shows whether the model login, the network and each tool are working.
 
-Each half also runs alone: `assistant/assistant-web` for the backend, `web/serve` for the app
-(or `cd web && npm run dev` for live reload). Run that way without a shared `ASSISTANT_TOKEN`,
-the app asks once for the token the backend prints.
+What the assistant remembers about you, its history of every call, and sign-in sessions are in the
+database (`./data/postgres`). The first start after upgrading from the files moves `memory.json` and
+`audit.jsonl` into it once and renames them to `*.imported`; nothing is deleted.
+
+Each half can still run alone for development: `assistant/assistant-web` for the backend (with no
+`DATABASE_URL` it keeps memory and history in files again), `web/serve` for the app (or
+`cd web && npm run dev` for live reload). Run that way without a shared `ASSISTANT_TOKEN`, the app
+asks once for the token the backend prints.
 
 ```bash
 ./test           # every tool's tests; none needs a login, a model or the network
@@ -78,8 +84,8 @@ the app asks once for the token the backend prints.
 
 ## When you power on the laptop
 
-**If you run it in containers (`./start-docker up`), there is nothing to start.** Docker itself starts
-at boot and brings the suite back with it: all three containers (backend, web, Tailscale) are set to
+**There is nothing to start.** Docker itself starts at boot and brings the suite back with it: every
+container (database, backend, web, and Tailscale if you use it) is set to
 `restart: unless-stopped`, so they return unless you stopped them yourself with `./start-docker down`.
 They come back with the same access token, so a tab or phone that already had the page open keeps
 working. Give it a minute after logging in, then open `http://127.0.0.1:8751/` (or the `suite…ts.net`
@@ -91,11 +97,6 @@ address from your phone).
    think (Settings shows "AWS login needs renewing"). Run `./auth`, or just
    `aws sso login --profile ayadata-bedrock`. The Google logins last about a week.
 3. If it is not there: `./start-docker status` shows what is running; `./start-docker up` starts it.
-
-**If you run it straight on the laptop (`./start`), it does not start itself.** Open a terminal in this
-folder and run `./start`, then open `http://127.0.0.1:8751/`; it runs in that terminal and stops on Ctrl+C or when the terminal closes. Run one
-or the other, never both: they use the same two ports (8750 and 8751), so whichever starts second
-fails to bind.
 
 **It is only reachable while the laptop is awake.** A laptop that sleeps (lid closed, idle) is off the
 network, so your phone cannot reach the suite until it wakes. For all-day access from your phone, keep it

@@ -1,124 +1,20 @@
 #!/usr/bin/env bash
-# The whole suite, as one command -- two separate programs, started side by side:
+# The whole suite, as one command. It checks every login and renews the dead ones, then starts the
+# containers (./start-docker up): the backend with every tool, the web app, and the database.
 #
-#   backend   assistant/assistant-web   http://127.0.0.1:8750  (API; starts meet-ai, docu-ai
-#                                                               and mail-ai as its children)
-#   web app   web/serve                 http://127.0.0.1:8751  (the page you open)
+#   ./start               then open http://127.0.0.1:8751/
+#   ./start --ngrok       also open HTTPS tunnels through ngrok (needs NGROK_AUTHTOKEN in .env)
+#   ./start --tailscale   also join your tailnet (see README.md -> In containers)
 #
-# --ngrok: start two ngrok tunnels (one per program) for HTTPS access from outside this machine.
-# Needs ngrok installed and NGROK_AUTHTOKEN set in .env.
-#
-# Either can be run alone with its own command. Ctrl-C stops both; if either one stops,
-# so does the other, rather than leaving half the suite running. A transcription or
-# recording in progress is built to outlive this and is picked up again next time.
+# Anything after ./start goes to ./start-docker up unchanged. The containers keep running (and come
+# back after a reboot) until ./start-docker down. There is no host-only way to run the suite any more:
+# the database it keeps its memory in is a container, so there is one way and it is this one.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-[[ -x .venv/bin/python ]] || { echo "Not set up yet. Run ./setup first." >&2; exit 1; }
-
-# One place for settings. Exported so the backend and every tool it starts inherit them.
-if [[ -f .env ]]; then set -a; source .env; set +a; fi
-
-# One token for this launch, made here and handed to both programs: the backend requires
-# it, and the web app's server writes it into the page it serves. Nobody copies it anywhere.
-# New on every launch unless .env fixes one.
-if [[ -z "${ASSISTANT_TOKEN:-}" ]]; then
-  ASSISTANT_TOKEN="$(.venv/bin/python -c 'import secrets; print(secrets.token_urlsafe(24))')"
-fi
-export ASSISTANT_TOKEN
-
-use_ngrok=false
-backend_args=()
-for arg in "$@"; do
-  case "$arg" in
-    --ngrok) use_ngrok=true ;;
-    *)       backend_args+=("$arg") ;;
-  esac
-done
-
-# Fingerprint of everything ./setup installs from; ./setup stores it, ./start compares (same line in both).
-deps_hash() { cat {assistant,meet-ai,mail-ai,apply-ai,audiobook}/requirements*.txt docu-ai/package-lock.json web/package-lock.json 2>/dev/null | sha256sum | cut -d' ' -f1; }
-
-# A pull that changed a requirements or lock file leaves the installed packages behind: say so.
-if [[ "$(cat .venv/.setup-stamp 2>/dev/null)" != "$(deps_hash)" ]]; then
-  echo "  Dependencies changed since ./setup last ran (or it never finished): run ./setup." >&2
-fi
-
-# Check every login and renew the dead ones. AWS SSO lapses overnight and the model will not
-# work without it; Google tokens lapse weekly. A renewal that needs a browser opens one; if no
-# browser is available the login stays dead and the start continues (|| true).
+# AWS SSO lapses overnight and the model will not work without it; Google tokens lapse weekly. A renewal
+# that needs a browser opens one; if no browser is available the login stays dead and the start continues.
+# (The pipe makes `|| true` redundant but harmless: sed's status is the one that counts.)
 ./auth 2>&1 | sed 's/^/  /' || true
 
-# Free the two ports first: kill whatever is listening there (a previous ./start, a container...).
-for port in "${ASSISTANT_PORT:-8750}" 8751; do
-  fuser -k -TERM "$port/tcp" >/dev/null 2>&1 && echo "stopped what was using port $port" && sleep 1 || true
-done
-
-# -- ngrok: start tunnels before the backend and web app, so we know the public URLs --------
-ngrok_pid=""
-if $use_ngrok; then
-  command -v ngrok >/dev/null || { echo "ngrok is not installed. Install it: https://ngrok.com/download" >&2; exit 1; }
-  [[ -n "${NGROK_AUTHTOKEN:-}" ]] || { echo "Set NGROK_AUTHTOKEN in .env." >&2; exit 1; }
-  # Write a temporary config with both tunnels. A static domain (NGROK_WEB_DOMAIN) pins the web URL.
-  ngrok_conf="$(mktemp)"
-  cat > "$ngrok_conf" <<YAML
-version: "3"
-tunnels:
-  web:
-    addr: 127.0.0.1:8751
-    proto: http
-$([[ -n "${NGROK_WEB_DOMAIN:-}" ]] && echo "    hostname: $NGROK_WEB_DOMAIN")
-  api:
-    addr: 127.0.0.1:${ASSISTANT_PORT:-8750}
-    proto: http
-YAML
-  ngrok start --all --config "$ngrok_conf" &>/dev/null &
-  ngrok_pid=$!
-  echo "Starting ngrok tunnels..."
-  # Wait for both tunnels to appear on the local API.
-  NGROK_WEB_URL="" NGROK_API_URL=""
-  for _ in $(seq 1 30); do
-    json="$(curl -sf http://127.0.0.1:4040/api/tunnels 2>/dev/null)" || { sleep 1; continue; }
-    eval "$(.venv/bin/python -c '
-import json, sys
-d = json.loads(sys.argv[1])
-for t in d.get("tunnels", []):
-    name, url = t.get("name", ""), t.get("public_url", "")
-    if url.startswith("https://"):
-        if name == "web": print(f"NGROK_WEB_URL={url}")
-        if name == "api": print(f"NGROK_API_URL={url}")
-' "$json" 2>/dev/null)" || true
-    [[ -n "$NGROK_WEB_URL" && -n "$NGROK_API_URL" ]] && break
-    sleep 1
-  done
-  rm -f "$ngrok_conf"
-  if [[ -z "$NGROK_WEB_URL" || -z "$NGROK_API_URL" ]]; then
-    echo "Could not discover ngrok tunnel URLs. Check http://127.0.0.1:4040" >&2
-    kill "$ngrok_pid" 2>/dev/null || true
-    exit 1
-  fi
-  ngrok_web_host="${NGROK_WEB_URL#https://}"
-  ngrok_api_host="${NGROK_API_URL#https://}"
-  # Tell the backend to accept the ngrok origins and host names.
-  export ASSISTANT_ORIGINS="http://127.0.0.1:8751,http://localhost:8751,$NGROK_WEB_URL"
-  export ASSISTANT_HOSTS="$ngrok_web_host,$ngrok_api_host"
-  # Tell the web app the full API URL (ngrok tunnels have different hostnames).
-  export ASSISTANT_REMOTE_API_URL="$NGROK_API_URL"
-  echo "  web:  $NGROK_WEB_URL"
-  echo "  API:  $NGROK_API_URL"
-fi
-
-assistant/assistant-web "${backend_args[@]}" &
-backend=$!
-web/serve &
-web=$!
-
-stop() {
-  kill "$backend" "$web" 2>/dev/null || true
-  [[ -n "$ngrok_pid" ]] && kill "$ngrok_pid" 2>/dev/null || true
-  wait 2>/dev/null || true
-}
-trap stop INT TERM EXIT
-
-# Returns when the first of the two exits; the trap then stops the other.
-wait -n "$backend" "$web"
+exec ./start-docker up "$@"

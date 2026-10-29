@@ -10,6 +10,7 @@ import asyncio
 import httpx
 import pytest
 
+from assistant.audit import FileAuditStore
 from assistant.server import Hub, create_app
 from assistant.session import ApprovalRequest
 from assistant.tools import ApprovalPreview, RemoteTool, ToolRegistry
@@ -152,7 +153,7 @@ def test_a_button_for_a_tool_with_a_preview_confirms_before_acting(tmp_path):
 
 def test_the_gate_suspends_until_the_browser_answers(tmp_path):
     async def scenario():
-        hub = Hub(ToolRegistry([]), config=None, context="", audit_path=tmp_path / "a.jsonl")
+        hub = Hub(ToolRegistry([]), config=None, context="", audit=FileAuditStore(tmp_path / "a.jsonl"))
         tool = RemoteTool(server="s", name="t", qualified_name="s__t", description="",
                           input_schema={}, read_only=False)
         request = ApprovalRequest(tool=tool, arguments={"x": 1}, preview=None, preview_expected=False)
@@ -180,7 +181,7 @@ def test_answering_an_approval_that_does_not_exist_is_a_404(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_notes_reach_the_model_with_the_next_message_and_only_once(tmp_path):
-    hub = Hub(ToolRegistry([]), config=None, context="", audit_path=tmp_path / "a.jsonl")
+    hub = Hub(ToolRegistry([]), config=None, context="", audit=FileAuditStore(tmp_path / "a.jsonl"))
     hub.notes.append("meet_ai.stop_recording({}) -> ok: audio/x.flac")
     first = hub.compose("write it up")
     assert "audio/x.flac" in first and first.endswith("write it up")
@@ -196,7 +197,7 @@ def test_a_failed_turn_rolls_the_conversation_back_and_keeps_the_notes(tmp_path,
         raise RuntimeError("model unreachable")
     monkeypatch.setattr(server, "run_turn", exploding_turn)
 
-    hub = Hub(ToolRegistry([]), config=None, context="", audit_path=tmp_path / "a.jsonl")
+    hub = Hub(ToolRegistry([]), config=None, context="", audit=FileAuditStore(tmp_path / "a.jsonl"))
     hub.notes.append("did something")
     run(hub.run("hello"))
 
@@ -219,8 +220,11 @@ def test_memory_written_mid_session_reaches_the_next_turn(tmp_path, monkeypatch)
     monkeypatch.setattr(server, "run_turn", recording_turn)
 
     fresh = iter(["old context", "context with the new fact"])
-    hub = Hub(ToolRegistry([]), config=None, context="startup", audit_path=tmp_path / "a.jsonl",
-              refresh_context=lambda: next(fresh))
+
+    async def refresh():
+        return next(fresh)
+    hub = Hub(ToolRegistry([]), config=None, context="startup", audit=FileAuditStore(tmp_path / "a.jsonl"),
+              refresh_context=refresh)
     run(hub.run("first"))
     run(hub.run("second"))
     assert seen == ["old context", "context with the new fact"]
@@ -260,10 +264,13 @@ def test_a_button_gets_the_same_spelling_corrections_chat_does(tmp_path):
     import json
     from assistant.tools import LocalTool
 
+    async def echo_arguments(arguments):
+        return json.dumps(arguments)
+
     echo = LocalTool(
         name="echo", description="Returns its arguments.",
         input_schema={"type": "object", "properties": {"lexicon": {"type": "string"}}},
-        read_only=True, handler=lambda arguments: json.dumps(arguments),
+        read_only=True, handler=echo_arguments,
     )
     app = create_app(
         tmp_path / "tools.yaml", tmp_path / "memory.json", tmp_path / "audit.jsonl", token=TOKEN,

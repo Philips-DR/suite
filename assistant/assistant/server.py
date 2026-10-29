@@ -26,7 +26,7 @@ import time
 from collections import deque
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,15 +34,17 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Stre
 from pydantic import BaseModel
 
 from assistant.approval import WEB_PREVIEW_LIMIT, needs_approval, sanitise
+from assistant.audit import AuditStore
 from assistant.auth import (
-    AuthError, SessionStore, clear_cookie, exchange_code, fetch_userinfo,
+    AuthError, MemorySessionStore, PgSessionStore, clear_cookie, exchange_code, fetch_userinfo,
     google_login_url, parse_allowed_emails, pkce_pair, set_cookie,
 )
 from assistant.config import load_tool_servers, model_config_from_environment
+from assistant.db import Database
 from assistant.session import ApprovalRequest, allow_gate, execute, run_turn
 from assistant import uploads as up
 from assistant.documents import document_tools
-from assistant.setup import current_lexicon, prepare
+from assistant.setup import context_for, current_lexicon, lexicon_path_for, prepare, stores_for
 from assistant.status import model_status, network_status, tools_status
 from assistant.tools import RemoteTool, ToolRegistry
 from assistant.watchers import watch, watch_login
@@ -94,15 +96,15 @@ def parsed(output: str) -> Any:
 class Hub:
     """Everything the browser and the model share."""
 
-    def __init__(self, registry: ToolRegistry, config: Any, context: str, audit_path: Path,
-                 refresh_context: Callable[[], str] | None = None) -> None:
+    def __init__(self, registry: ToolRegistry, config: Any, context: str, audit: AuditStore,
+                 refresh_context: Callable[[], Awaitable[str]] | None = None) -> None:
         self.registry = registry
         self.config = config
         self.context = context
         # A server runs for days. Memory written mid-session -- a fact remembered, a spelling
         # corrected -- must reach the model on the next turn, not after a restart.
         self.refresh_context = refresh_context
-        self.audit_path = audit_path
+        self.audit = audit
         self.messages: list[dict[str, Any]] = []
         self.notes: list[str] = []
         self.turn: asyncio.Task | None = None
@@ -150,10 +152,15 @@ class Hub:
         held = list(self.notes)
         await self.emit({"type": "user_message", "text": message})
         if self.refresh_context is not None:
-            self.context = self.refresh_context()
+            try:
+                self.context = await self.refresh_context()
+            except Exception:
+                # Memory failing degrades what the assistant knows, never whether it runs: the turn
+                # goes ahead with the context it already has.
+                pass
         self.messages.append({"role": "user", "content": self.compose(message)})
         try:
-            await run_turn(self.registry, self.config, self.messages, self.audit_path,
+            await run_turn(self.registry, self.config, self.messages, self.audit,
                            context=self.context, gate=self.web_gate, emit=self.emit)
         except Exception as error:
             # A failed turn can leave a tool call without its result, which would poison
@@ -205,23 +212,32 @@ def create_app(
     google_client_secret: str | None = None,
     google_redirect_uri: str | None = None,
     allowed_emails: frozenset[str] = frozenset(),
+    database_url: str | None = None,
 ) -> FastAPI:
     uploads_root = uploads_path or ROOT / "uploads"
     token = token or secrets.token_urlsafe(24)
     holder: dict[str, Hub] = {}
+    # With a database URL, memory, the audit log and sign-in sessions live in PostgreSQL and the two
+    # files are imported into it once; without one they are the files. Connected in the lifespan.
+    database = (Database(database_url, legacy_memory=memory_path, legacy_audit=audit_path)
+                if database_url else None)
+    memory, audit = stores_for(database, memory_path, audit_path)
+    lexicon_path = lexicon_path_for(memory_path)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         config = model_config_from_environment(provider, model)
-        _store, local_tools, context = prepare(memory_path)
+        if database is not None:
+            await database.connect()
+        local_tools, context = await prepare(memory, lexicon_path)
         local_tools = [*local_tools, *document_tools(uploads_root)]
         registry = (registry_factory(local_tools) if registry_factory
                     else ToolRegistry(load_tool_servers(tools_path), local=local_tools))
         # Held open for the life of the server: the tools stay running instead of being
         # relaunched for every request.
         await registry.__aenter__()
-        holder["hub"] = Hub(registry, config, context, audit_path,
-                            refresh_context=lambda: prepare(memory_path)[2])
+        holder["hub"] = Hub(registry, config, context, audit,
+                            refresh_context=lambda: context_for(memory, lexicon_path))
         app.state.hub = holder["hub"]
         # Tells the browser when a long job finishes, so nobody has to keep asking.
         watchers = [
@@ -238,17 +254,21 @@ def create_app(
             for task in watchers:
                 task.cancel()
             await registry.__aexit__(None, None, None)
+            if database is not None:
+                await database.close()
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.token = token
+    app.state.database = database
 
     def hub() -> Hub:
         return holder["hub"]
 
     allowed_hosts = LOCAL_HOSTS | hosts
-    sessions = SessionStore() if google_client_id and google_client_secret else None
+    sessions = ((PgSessionStore(database) if database is not None else MemorySessionStore())
+                if google_client_id and google_client_secret else None)
 
-    def authenticate(request: Request) -> bool:
+    async def authenticate(request: Request) -> bool:
         """Is this request from someone who may use the API? The one place that decides.
 
         Two ways in: the launch token (header or, for EventSource, query param) and a Google
@@ -260,7 +280,7 @@ def create_app(
             return True
         if sessions is not None:
             sid = request.cookies.get("session", "")
-            if sid and sessions.get(sid) is not None:
+            if sid and await sessions.get(sid) is not None:
                 return True
         return False
 
@@ -272,7 +292,7 @@ def create_app(
         path = request.url.path
         if path.startswith("/auth/") or path == "/api/me":
             return await call_next(request)
-        if path.startswith("/api/") and not authenticate(request):
+        if path.startswith("/api/") and not await authenticate(request):
             return JSONResponse({"error": "missing or wrong token"}, status_code=401)
         return await call_next(request)
 
@@ -334,7 +354,7 @@ def create_app(
             if email not in allowed_emails:
                 return JSONResponse({"error": "this account is not allowed"}, status_code=403)
 
-            sid = sessions.create(email)
+            sid = await sessions.create(email)
             secure = request.url.scheme == "https"
             target = redirect or "/"
             if "127.0.0.1" in target:
@@ -347,7 +367,7 @@ def create_app(
         async def auth_logout(request: Request):
             sid = request.cookies.get("session", "")
             if sid:
-                sessions.delete(sid)
+                await sessions.delete(sid)
             secure = request.url.scheme == "https"
             response = JSONResponse({"ok": True})
             response.headers["set-cookie"] = clear_cookie(secure)
@@ -358,7 +378,7 @@ def create_app(
         email = None
         if sessions is not None:
             sid = request.cookies.get("session", "")
-            session = sessions.get(sid) if sid else None
+            session = await sessions.get(sid) if sid else None
             if session:
                 email = session.email
         return {"email": email, "google_auth": sessions is not None}
@@ -429,11 +449,11 @@ def create_app(
 
         arguments = dict(body.arguments)
         if "lexicon" in (tool.input_schema.get("properties") or {}) and "lexicon" not in arguments:
-            lexicon = current_lexicon(memory_path)
+            lexicon = await current_lexicon(memory, lexicon_path)
             if lexicon is not None:
                 arguments["lexicon"] = str(lexicon)
 
-        output, outcome = await execute(h.registry, tool, arguments, h.audit_path,
+        output, outcome = await execute(h.registry, tool, arguments, h.audit,
                                         allow_gate, h.emit, origin="button")
         # Only actions that changed something become notes. A status poll every few seconds
         # would bury the model's context in noise.
@@ -474,7 +494,7 @@ def create_app(
         trip."""
         h = hub()
         out: dict[str, Any] = {
-            "tools": tools_status(h.registry, h.audit_path),
+            "tools": await tools_status(h.registry, h.audit),
             "model": {"provider": h.config.provider, "model": h.config.resolved_model,
                       "profile": h.config.profile, "region": h.config.region},
             "mail_compose": h.registry.find("mail_ai__send_draft") is not None,
@@ -587,17 +607,7 @@ def create_app(
     async def audit_history(limit: int = 200) -> list[dict[str, Any]]:
         """The durable record of every tool call, newest first -- the live event stream only
         covers this run; this survives restarts."""
-        try:
-            lines = audit_path.read_text(encoding="utf-8").splitlines()
-        except OSError:
-            return []
-        rows: list[dict[str, Any]] = []
-        for line in reversed(lines[-max(1, min(limit, 2000)):]):
-            try:
-                rows.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue  # one corrupt line must not hide the rest
-        return rows
+        return await audit.recent(max(1, min(limit, 2000)))
 
     @app.get("/")
     async def root() -> dict[str, Any]:
@@ -645,6 +655,15 @@ def main() -> None:
             print(f"assistant API listening on {args.host}:{args.port} -- NOT localhost-only. Reachable by "
                   f"whatever can reach this port; publish it to 127.0.0.1 or a private network only.", flush=True)
             print(f"  allowed Host names beyond localhost: {', '.join(sorted(hosts)) or '(none)'}", flush=True)
+        database = holder["app"].state.database
+        if database is None:
+            print("memory and history: files (no DATABASE_URL)", flush=True)
+        else:
+            print("memory and history: PostgreSQL", flush=True)
+            labels = {"facts": "facts", "audit": "audit rows", "audit_skipped": "unreadable audit lines skipped"}
+            moved = ", ".join(f"{n} {labels[name]}" for name, n in database.imported.items() if n)
+            if moved:
+                print(f"  imported from the old files, which are now renamed .imported: {moved}", flush=True)
         print(f"access token: {holder['app'].state.token}", flush=True)
         if not fixed:
             print("  (new on every launch; set ASSISTANT_TOKEN in .env to keep one across restarts)",
@@ -657,7 +676,8 @@ def main() -> None:
                      google_client_id=os.environ.get("GOOGLE_CLIENT_ID") or None,
                      google_client_secret=os.environ.get("GOOGLE_CLIENT_SECRET") or None,
                      google_redirect_uri=os.environ.get("GOOGLE_REDIRECT_URI") or None,
-                     allowed_emails=parse_allowed_emails(os.environ.get("ASSISTANT_ALLOWED_EMAILS")))
+                     allowed_emails=parse_allowed_emails(os.environ.get("ASSISTANT_ALLOWED_EMAILS")),
+                     database_url=os.environ.get("DATABASE_URL") or None)
     holder["app"] = app
     # Loopback unless ASSISTANT_HOST says otherwise, and it says otherwise only in the container
     # setup, whose compose file publishes the port to 127.0.0.1 and to a private Tailscale

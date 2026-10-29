@@ -55,10 +55,60 @@ to find once — an `AttributeError` from the rename above, presenting as a hang
   it is more accurate than any retrieval. `relevant()` is the seam; narrow it only when the
   prompt genuinely gets too big.
 - **Memory failing degrades what the assistant knows, never whether it runs.** A missing or
-  malformed store loads as empty.
+  malformed file loads as empty; a turn whose memory cannot be read (the database went away) goes ahead
+  with the context it already had (`Hub.run`).
 - **Memory is background, not instruction.** It is framed that way in the prompt because a
   remembered line is data the user wrote once, not an order outranking what they say now.
 - **Both memory tools are gated.** Writing about a person should be visible as it happens.
+
+## The database (`db.py`, `migrations/`)
+
+Memory, the audit log and sign-in sessions live in PostgreSQL when `DATABASE_URL` is set, which only the
+container setup does (`compose.yaml` builds it). Unset, they are the files they were -- `memory.json`,
+`audit.jsonl`, sessions in a dict -- and that is what every test uses, so `./test` needs no database. Each
+is an abstract store with two implementations (`MemoryStore`, `AuditStore`, `SessionStore`), and **every
+store method is `async`**, which is why `LocalTool.handler`, `prepare`, `context_for`, `tools_status` and
+`audit.record` are too. Raw asyncpg and plain SQL, no ORM, no Alembic.
+
+- **Migrations are numbered files, applied once, never edited.** `migrate()` runs every file in
+  `migrations/` not yet in the `migrations` table, each in its own transaction (a half-applied file leaves
+  nothing and is retried), under an advisory lock. A change to the schema is a new, higher-numbered file.
+- **`users`, `dossiers` and `dossier_refs` exist and nothing uses them.** They are the schema multi-user and
+  dossiers will need (`../plan.md`), laid down so those are not a migration of live data. `user_id` is
+  nullable on `facts` and `audit_log` until then.
+- **The old files are imported once, then renamed `*.imported`** (`import_legacy_files`, on connect). Facts
+  merge by id; the audit log is imported only into an empty table, so a file that could not be renamed is
+  not imported twice. A fact whose kind the table refuses (a hand-edited file) is kept as `fact`. Nothing is
+  deleted: to go back, rename the files and drop the database.
+- **The stores read the pool when called, not when built**, so `create_app` builds them before the event
+  loop exists and the lifespan connects. `app.state.database` is how `main()` prints which store is in use.
+- **A tool must never get the database address.** Tools inherit the backend's environment, so
+  `tool_environment()` removes `DATABASE_URL` (`WITHHELD_FROM_TOOLS`). Note that it does not remove the other
+  secrets the backend holds (`ASSISTANT_TOKEN`, `GOOGLE_CLIENT_SECRET`): they were inherited before and still are.
+- **Failure modes follow the rules above.** `audit.record` never raises (a failed write is logged);
+  audit reads that fail return nothing; a session lookup that fails is "not signed in" (the guard must answer,
+  not crash); a memory write that fails raises, so the tool reports it.
+
+Four things worth knowing, each checked directly against a real server (2026-10-28):
+
+- **Facts keep their order through `updated_at`, which defaults to `clock_timestamp()`, not `now()`.**
+  `now()` is one value for a whole transaction: six facts inserted as f e d c b a came back a b c d e f
+  with `now()` (they tied, and the id broke the tie) and f e d c b a with `clock_timestamp()`. The import
+  writes every fact in one transaction.
+- **A subject is matched with Python's `lower()`, not SQL's.** SQL's follows the database's locale. In this
+  image's `en_US.utf8` the two agree on `AYÉ`; in a database made with the `C` locale SQL gives `ayÉ` and a
+  name with an accent would stop matching its own correction. Matching in Python is the same in every locale.
+- **An asyncpg pool belongs to the event loop it was made in.** Used from a second `asyncio.run` it fails with
+  `InterfaceError: another operation is in progress`. The tests therefore run each Postgres scenario inside
+  one `asyncio.run`, and do not share a store across calls.
+- **The postgres container runs as your uid, not its own.** Without `user:` the data folder on the host is
+  owned by uid 70 and cannot be deleted or moved without sudo. The image needs the uid to exist in
+  `/etc/passwd`, so compose mounts the host's, read-only.
+
+Testing it: `tests/test_database.py`. The Postgres tests skip unless `TEST_DATABASE_URL` names a server they
+may create databases on (each test makes one and drops it), so point it at a throwaway:
+`docker run --rm -d -p 127.0.0.1:55432:5432 -e POSTGRES_PASSWORD=test postgres:16-alpine`, then
+`TEST_DATABASE_URL=postgres://postgres:test@127.0.0.1:55432/postgres ../.venv/bin/python -m pytest tests/test_database.py`.
 
 ## Honest reporting
 

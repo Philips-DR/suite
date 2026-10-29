@@ -13,13 +13,12 @@ Three kinds of check, each at the level that owns the thing checked:
 
 from __future__ import annotations
 
-import json
 import re
 import socket
 import time
-from pathlib import Path
 from typing import Any
 
+from assistant.audit import AuditStore
 from assistant.config import BEDROCK, ModelConfig
 from assistant.tools import LOCAL_SERVER, ToolRegistry
 
@@ -90,20 +89,9 @@ def model_status(config: ModelConfig) -> dict[str, Any]:
             "role": role, "detail": "Signed in."}
 
 
-def tools_status(registry: ToolRegistry, audit_path: Path) -> list[dict[str, Any]]:
+async def tools_status(registry: ToolRegistry, audit: AuditStore) -> list[dict[str, Any]]:
     """Each tool server: connected, how many tools, and how its last write call went."""
-    last: dict[str, dict[str, Any]] = {}
-    try:
-        lines = audit_path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        lines = []
-    for line in lines:
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        server = str(row.get("tool", "")).split("__", 1)[0]
-        last[server] = row  # the file is in time order, so the last one wins
+    last = await audit.last_by_server()
 
     servers: dict[str, int] = {}
     for tool in registry.tools:

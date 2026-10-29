@@ -6,16 +6,25 @@ mail-ai's Gmail). Scopes are openid and email only. See CLAUDE.md, "Authenticati
 from __future__ import annotations
 
 import hashlib
+import logging
 import secrets
 import time
+from abc import ABC, abstractmethod
 from base64 import urlsafe_b64encode
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
 import httpx
 
+if TYPE_CHECKING:
+    from assistant.db import Database
+
 GOOGLE_AUTH_ENDPOINT = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_ENDPOINT = "https://oauth2.googleapis.com/token"
 GOOGLE_USERINFO_ENDPOINT = "https://openidconnect.googleapis.com/v1/userinfo"
+
+log = logging.getLogger("assistant.auth")
 
 SESSION_MAX_AGE = 7 * 24 * 3600  # 7 days
 PENDING_MAX_AGE = 600  # 10 minutes for Google's consent screen
@@ -29,31 +38,25 @@ class Session:
         self.expires_at = expires_at
 
 
-class SessionStore:
-    """In-memory sessions and pending OAuth state. Lost on restart -- the user signs in again."""
+class SessionStore(ABC):
+    """Signed-in sessions, and the short-lived state of a sign-in in progress.
+
+    A session is kept by the subclass: in memory (lost on restart, so the user signs in again) or in
+    PostgreSQL (survives one). The pending state, which lives for the ten minutes Google's consent
+    screen can take, stays in memory in both: losing it only means starting that sign-in over.
+    """
 
     def __init__(self) -> None:
-        self._sessions: dict[str, Session] = {}
         self._pending: dict[str, tuple[str, str, float]] = {}
 
-    def create(self, email: str) -> str:
-        sid = secrets.token_urlsafe(32)
-        self._sessions[sid] = Session(email, time.time() + SESSION_MAX_AGE)
-        if len(self._sessions) % 50 == 0:
-            self._sweep()
-        return sid
+    @abstractmethod
+    async def create(self, email: str) -> str: ...
 
-    def get(self, sid: str) -> Session | None:
-        s = self._sessions.get(sid)
-        if s is None:
-            return None
-        if s.expires_at <= time.time():
-            del self._sessions[sid]
-            return None
-        return s
+    @abstractmethod
+    async def get(self, sid: str) -> Session | None: ...
 
-    def delete(self, sid: str) -> None:
-        self._sessions.pop(sid, None)
+    @abstractmethod
+    async def delete(self, sid: str) -> None: ...
 
     def save_pending(self, state: str, verifier: str, redirect: str) -> None:
         self._pending[state] = (verifier, redirect, time.time() + PENDING_MAX_AGE)
@@ -64,10 +67,69 @@ class SessionStore:
             return None
         return entry[0], entry[1]
 
-    def _sweep(self) -> None:
+    def _sweep_pending(self) -> None:
         now = time.time()
-        self._sessions = {k: v for k, v in self._sessions.items() if v.expires_at > now}
         self._pending = {k: v for k, v in self._pending.items() if v[2] > now}
+
+
+class MemorySessionStore(SessionStore):
+    """Sessions in a dict. Lost on restart -- the user signs in again."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._sessions: dict[str, Session] = {}
+
+    async def create(self, email: str) -> str:
+        sid = secrets.token_urlsafe(32)
+        self._sessions[sid] = Session(email, time.time() + SESSION_MAX_AGE)
+        if len(self._sessions) % 50 == 0:
+            now = time.time()
+            self._sessions = {k: v for k, v in self._sessions.items() if v.expires_at > now}
+            self._sweep_pending()
+        return sid
+
+    async def get(self, sid: str) -> Session | None:
+        s = self._sessions.get(sid)
+        if s is None:
+            return None
+        if s.expires_at <= time.time():
+            del self._sessions[sid]
+            return None
+        return s
+
+    async def delete(self, sid: str) -> None:
+        self._sessions.pop(sid, None)
+
+
+class PgSessionStore(SessionStore):
+    """Sessions in the sessions table, so a deploy does not sign anyone out."""
+
+    def __init__(self, database: "Database") -> None:
+        super().__init__()
+        self._db = database
+
+    async def create(self, email: str) -> str:
+        sid = secrets.token_urlsafe(32)
+        expires = datetime.fromtimestamp(time.time() + SESSION_MAX_AGE, timezone.utc)
+        async with self._db.pool.acquire() as conn, conn.transaction():
+            await conn.execute("DELETE FROM sessions WHERE expires_at <= now()")
+            await conn.execute("INSERT INTO sessions (sid, email, expires_at) VALUES ($1, $2, $3)",
+                               sid, email, expires)
+        self._sweep_pending()
+        return sid
+
+    async def get(self, sid: str) -> Session | None:
+        try:
+            row = await self._db.pool.fetchrow(
+                "SELECT email, expires_at FROM sessions WHERE sid = $1 AND expires_at > now()", sid)
+        except Exception:
+            # A request this cannot vouch for is not signed in; the guard must answer, not crash.
+            log.warning("a session could not be looked up", exc_info=True)
+            return None
+        return Session(row["email"], row["expires_at"].timestamp()) if row else None
+
+    async def delete(self, sid: str) -> None:
+        await self._db.pool.execute("DELETE FROM sessions WHERE sid = $1", sid)
 
 
 def pkce_pair() -> tuple[str, str]:

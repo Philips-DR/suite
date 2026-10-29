@@ -12,7 +12,7 @@ def tools_for(root):
 
 
 def call(tool, **arguments):
-    return json.loads(tool.handler(arguments))
+    return json.loads(asyncio.run(tool.handler(arguments)))
 
 
 def test_a_read_cannot_leave_the_uploads_folder(tmp_path):

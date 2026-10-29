@@ -10,8 +10,8 @@ changing the tool.
 ## Commands
 
     ./setup    # idempotent: shared .venv, audiobook's own .venv, npm ci for docu-ai and the web app, speaker models
-    ./start    # backend (API, :8750; launches every tool over MCP stdio) + web app (:8751)
-    ./start-docker up [--tailscale]   # the same in containers; reachable from your other devices
+    ./start    # ./auth, then ./start-docker up: database, backend (API, :8750; launches every tool over MCP stdio) and web app (:8751), in containers
+    ./start-docker up [--tailscale] [--ngrok]   # what ./start runs; the flags add a private or a public address
     ./test     # all seven test suites. Must pass with no credentials, no model, no network
     ./auth     # every login (AWS, Google Docs, Gmail): renews only the dead ones, and copies Google tokens into data/config for the containers; --check to just look
     ./renew-secrets   # a server's logins: sends it fresh AWS credentials + Google tokens over ssh (README → "On a server")
@@ -21,10 +21,9 @@ changing the tool.
 `web/` is the frontend: its own folder, packages, build and server (`web/serve`, port 8751).
 `assistant/` is the backend: an API on port 8750 that serves no page. They meet only over HTTP,
 across origins, with one access token — never an import, a shared build, a proxy, or a page the
-backend hands out. `./start` makes the token (random per launch), gives it to both, and the web
-app's server writes it into the page; nobody pastes it. `./start` runs both side by side and
-stops both when either stops. See `assistant/CLAUDE.md` for what the split forced (token hand-over,
-CORS ordering).
+backend hands out. `./start-docker up` (which `./start` runs) makes the token (random per launch),
+gives it to both, and the web app's server writes it into the page; nobody pastes it. They run as
+separate containers. See `assistant/CLAUDE.md` for what the split forced (token hand-over, CORS ordering).
 
 ## One folder, not one program
 
@@ -116,6 +115,9 @@ The suite also runs in Docker, which is how it is reached from a phone or anothe
   audiobook is the exception, because it reads no setting for where its folders are, so the image
   symlinks `voices`, `output`, `.cache` and `.env` into `/data/audiobook`. `start-docker import` copies
   what the host folders already hold, once, never overwriting.
+  The database is state too: `./data/postgres`, a `postgres:16-alpine` container run as your uid, with no
+  published port, which only the backend reaches. It holds the assistant's memory, audit log and sign-in
+  sessions (`assistant/CLAUDE.md` → "The database"); the tools keep their own files and never see it.
 - **Nothing is published beyond `127.0.0.1`**, and the backend and web app listen on `0.0.0.0` *inside*
   the container network only (`ASSISTANT_HOST`, `WEB_HOST`). That is the one deliberate relaxation of
   "bind to localhost"; the token and the Host check still apply to everything. Reaching it from
@@ -141,8 +143,8 @@ The suite also runs in Docker, which is how it is reached from a phone or anothe
 
 ## Settings
 
-`.env` (from `.env.example`, never committed) is read by `./start` and exported, so every tool
-inherits it. It holds only what is genuinely suite-wide: the AWS profile and region, the port.
+`.env` (from `.env.example`, never committed) is read by `./start-docker` and passed to the containers, so
+every tool inherits it. It holds only what is genuinely suite-wide: the AWS profile and region, the port.
 A tool's own paths stay in `assistant/tools.yaml`, the one file that knows every tool exists.
 
 ## Working in this repo — rules learned the hard way
@@ -154,8 +156,8 @@ A tool's own paths stay in `assistant/tools.yaml`, the one file that knows every
 - **Tools are launched once, when the backend starts.** A change to meet-ai, docu-ai or mail-ai
   (or to the backend) is not live until the backend restarts. The web app is different: its
   server serves `web/dist` live, so `cd web && npm run build` updates a running app.
-- **Restart by stopping the backend**: `pkill -f "m assistant[.]server"` — `./start` then stops
-  the web app too — and run `./start` again. The brackets matter: an unbracketed pattern such as
+- **Restart with `./start-docker up`**, which recreates only what changed (see "In containers"). To kill a
+  process by name, as when a test run leaves a server behind, the brackets matter: an unbracketed pattern such as
   `pkill -f "vite preview"` matches the shell running it and kills that instead. **The pattern must
   not appear anywhere else in the command you run**: the whole command text is the shell's own
   command line, so `pkill -f "vite[ ]preview"` still kills it whenever the same command also

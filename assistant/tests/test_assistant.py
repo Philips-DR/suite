@@ -5,12 +5,13 @@ only thing standing between a model's intention and a write, and it must not dep
 model behaving well to work.
 """
 
+import asyncio
 import json
 
 import pytest
 
 from assistant.approval import approve, describe, needs_approval
-from assistant.audit import SUMMARY_LIMIT, record
+from assistant.audit import SUMMARY_LIMIT, FileAuditStore
 from assistant.config import ANTHROPIC, BEDROCK, ModelConfig, ToolServer, load_tool_servers, resolve_provider
 from assistant.tools import RemoteTool
 
@@ -152,8 +153,9 @@ def test_each_provider_has_its_own_default():
 
 def test_every_call_appends_one_line(tmp_path):
     path = tmp_path / "audit.jsonl"
-    record(path, tool="a", outcome="ok")
-    record(path, tool="b", outcome="declined")
+    audit = FileAuditStore(path)
+    asyncio.run(audit.record(tool="a", outcome="ok"))
+    asyncio.run(audit.record(tool="b", outcome="declined"))
     rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
     assert [r["tool"] for r in rows] == ["a", "b"]
     assert all("at" in r for r in rows)
@@ -161,14 +163,14 @@ def test_every_call_appends_one_line(tmp_path):
 
 def test_long_results_are_summarised_rather_than_stored_whole(tmp_path):
     path = tmp_path / "audit.jsonl"
-    record(path, tool="a", outcome="ok", result="x" * (SUMMARY_LIMIT * 3))
+    asyncio.run(FileAuditStore(path).record(tool="a", outcome="ok", result="x" * (SUMMARY_LIMIT * 3)))
     row = json.loads(path.read_text(encoding="utf-8"))
     assert len(row["result"]) == SUMMARY_LIMIT
 
 
 def test_a_broken_log_never_breaks_the_work(tmp_path):
     """The audit log is important, but not more important than the task succeeding."""
-    record(tmp_path / "nope" / "x" / "audit.jsonl" / "impossible" / "a.jsonl", tool="a")
+    asyncio.run(FileAuditStore(tmp_path / "nope" / "x" / "audit.jsonl" / "impossible" / "a.jsonl").record(tool="a"))
 
 
 # ---------------------------------------------------------------------------
@@ -184,10 +186,9 @@ def test_a_tool_reporting_its_own_failure_is_recorded_as_a_failure(tmp_path):
     failed = ToolOutcome(text="invalid_grant", is_error=True)
     worked = ToolOutcome(text="{}", is_error=False)
 
-    record(tmp_path / "a.jsonl", tool="docu_ai__build",
-           outcome="failed" if failed.is_error else "ok")
-    record(tmp_path / "a.jsonl", tool="docu_ai__preview",
-           outcome="failed" if worked.is_error else "ok")
+    audit = FileAuditStore(tmp_path / "a.jsonl")
+    asyncio.run(audit.record(tool="docu_ai__build", outcome="failed" if failed.is_error else "ok"))
+    asyncio.run(audit.record(tool="docu_ai__preview", outcome="failed" if worked.is_error else "ok"))
 
     rows = [json.loads(l) for l in (tmp_path / "a.jsonl").read_text(encoding="utf-8").splitlines()]
     assert [r["outcome"] for r in rows] == ["failed", "ok"]

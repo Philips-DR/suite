@@ -43,7 +43,7 @@ fi
 dc() { docker compose "${files[@]}" "${profiles[@]}" "$@"; }
 
 make_data() {
-  mkdir -p data/assistant/uploads data/config/docu-ai data/config/mail-ai data/docu-ai data/mail-ai \
+  mkdir -p data/assistant/uploads data/postgres data/config/docu-ai data/config/mail-ai data/docu-ai data/mail-ai \
            data/meet-ai/audio data/meet-ai/transcripts data/cache/huggingface \
            data/audiobook/{voices,voice,output,cache,jobs}
   mkdir -p "${AWS_CONFIG_DIR:-$HOME/.aws}"   # else Docker would make it, owned by root

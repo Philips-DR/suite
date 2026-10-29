@@ -11,11 +11,10 @@ import asyncio
 import time
 import uuid
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from assistant.approval import Asker, approve, needs_approval
-from assistant.audit import record
+from assistant.audit import AuditStore
 from assistant.config import ANTHROPIC, ModelConfig
 from assistant.tools import RemoteTool, ToolRegistry
 
@@ -135,7 +134,7 @@ async def execute(
     registry: ToolRegistry,
     tool: RemoteTool,
     arguments: dict[str, Any],
-    audit_path: Path,
+    audit: AuditStore,
     gate: Gate,
     emit: EventSink = _discard,
     origin: str = "chat",
@@ -158,8 +157,8 @@ async def execute(
         request = ApprovalRequest(tool=tool, arguments=arguments, preview=preview,
                                   preview_expected=tool.preview is not None)
         if not await gate(request):
-            record(audit_path, tool=tool.qualified_name, arguments=arguments,
-                   outcome="declined", origin=origin)
+            await audit.record(tool=tool.qualified_name, arguments=arguments,
+                               outcome="declined", origin=origin)
             await emit({"type": "tool_finished", "tool": tool.qualified_name,
                         "outcome": "declined", "origin": origin})
             return "The user declined to run this. Do not attempt it another way.", "declined"
@@ -186,8 +185,7 @@ async def execute(
         output, outcome, error = f"tool failed: {exc}", "failed", str(exc)
 
     if not quiet:
-        record(
-            audit_path,
+        await audit.record(
             tool=tool.qualified_name,
             arguments=arguments,
             outcome=outcome,
@@ -205,7 +203,7 @@ async def run_turn(
     registry: ToolRegistry,
     config: ModelConfig,
     messages: list[dict[str, Any]],
-    audit_path: Path,
+    audit: AuditStore,
     ask: Asker = input,
     context: str = "",
     gate: Gate | None = None,
@@ -260,7 +258,7 @@ async def run_turn(
                 continue
 
             output, outcome = await execute(
-                registry, tool, dict(block.input or {}), audit_path, gate, emit
+                registry, tool, dict(block.input or {}), audit, gate, emit
             )
             results.append({
                 "type": "tool_result",

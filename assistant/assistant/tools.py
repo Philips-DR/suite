@@ -13,7 +13,7 @@ import sys
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -24,6 +24,19 @@ from assistant.config import ToolServer
 # names themselves contain single ones and a collision here would route a call to the
 # wrong server.
 QUALIFIER = "__"
+
+# What the backend knows that a tool must not. A tool inherits the backend's environment (that is how
+# credentials and paths reach it), so anything the backend alone may use has to be taken out of it:
+# a tool holding the database address could read memory, which no tool may.
+WITHHELD_FROM_TOOLS = ("DATABASE_URL",)
+
+
+def tool_environment(extra: dict[str, str]) -> dict[str, str]:
+    """The environment a tool is started with: this process's, less what is the backend's alone, plus what
+    tools.yaml injects for that tool."""
+    inherited = {k: v for k, v in os.environ.items() if k not in WITHHELD_FROM_TOOLS}
+    return {**inherited, **extra}
+
 
 # Built-in tools are namespaced like any server, so a model cannot tell them apart from a
 # real one and the gate treats them identically.
@@ -76,7 +89,7 @@ class LocalTool:
     description: str
     input_schema: dict[str, Any]
     read_only: bool
-    handler: Callable[[dict[str, Any]], str]
+    handler: Callable[[dict[str, Any]], Awaitable[str]]
     # What the approval gate shows instead of raw arguments -- a whole document as a JSON
     # string cannot be reviewed. A remote tool declares its preview in _meta; a local one
     # simply renders it.
@@ -164,7 +177,7 @@ class ToolRegistry:
             cwd=server.cwd,
             # The child inherits this process's environment plus whatever tools.yaml adds,
             # which is how credentials and paths reach a tool without it discovering them.
-            env={**os.environ, **server.env},
+            env=tool_environment(server.env),
         )
         read, write = await self._stack.enter_async_context(stdio_client(params))
         session = await self._stack.enter_async_context(ClientSession(read, write))
@@ -250,7 +263,7 @@ class ToolRegistry:
         """
         if tool.server == LOCAL_SERVER:
             try:
-                return ToolOutcome(text=self._local[tool.name].handler(arguments), is_error=False)
+                return ToolOutcome(text=await self._local[tool.name].handler(arguments), is_error=False)
             except Exception as exc:
                 return ToolOutcome(text=str(exc), is_error=True)
 

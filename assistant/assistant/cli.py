@@ -7,10 +7,12 @@ import asyncio
 import logging
 import os
 import sys
+from contextlib import nullcontext
 from pathlib import Path
 
 from assistant.config import PROVIDERS, load_tool_servers, model_config_from_environment
-from assistant.setup import prepare
+from assistant.db import Database
+from assistant.setup import lexicon_path_for, prepare, stores_for
 from assistant.session import run_turn
 from assistant.tools import ToolRegistry
 
@@ -56,42 +58,48 @@ def build_parser() -> argparse.ArgumentParser:
 async def _run(args: argparse.Namespace) -> int:
     servers = load_tool_servers(Path(args.tools))
     config = model_config_from_environment(args.provider, args.model)
-    audit_path = Path(args.audit)
+    memory_path, audit_path = Path(args.memory), Path(args.audit)
 
-    store, local_tools, context = prepare(Path(args.memory), use_memory=not args.no_memory)
+    database_url = os.environ.get("DATABASE_URL")
+    database = Database(database_url, legacy_memory=memory_path, legacy_audit=audit_path) if database_url else None
+    memory, audit = stores_for(database, memory_path, audit_path)
+    store = None if args.no_memory else memory
 
-    async with ToolRegistry(servers, local=local_tools) as registry:
-        if args.list:
-            for tool in registry.tools:
-                mark = "read-only" if tool.read_only else "WRITES"
-                print(f"  {tool.qualified_name:36} {mark}")
-            return 0
+    async with database or nullcontext():
+        local_tools, context = await prepare(store, lexicon_path_for(memory_path))
 
-        known = len(store.load()) if store else 0
-        print(f"{len(registry.tools)} tools from {len(servers)} server(s). "
-              f"{config.provider}, {config.resolved_model}."
-              + (f" {known} fact(s) remembered." if known else ""))
-
-        messages: list[dict] = []
-        if args.request:
-            messages.append({"role": "user", "content": " ".join(args.request)})
-            print(f"\n{await run_turn(registry, config, messages, audit_path, context=context)}\n")
-            return 0
-
-        print("Ctrl-D to leave.\n")
-        while True:
-            try:
-                line = input("> ").strip()
-            except (EOFError, KeyboardInterrupt):
-                print()
+        async with ToolRegistry(servers, local=local_tools) as registry:
+            if args.list:
+                for tool in registry.tools:
+                    mark = "read-only" if tool.read_only else "WRITES"
+                    print(f"  {tool.qualified_name:36} {mark}")
                 return 0
-            if not line:
-                continue
-            messages.append({"role": "user", "content": line})
-            try:
-                print(f"\n{await run_turn(registry, config, messages, audit_path, context=context)}\n")
-            except Exception as exc:  # one bad turn should not end the session
-                print(f"!  {exc}\n", file=sys.stderr)
+
+            known = len(await store.load()) if store else 0
+            print(f"{len(registry.tools)} tools from {len(servers)} server(s). "
+                  f"{config.provider}, {config.resolved_model}."
+                  + (f" {known} fact(s) remembered." if known else ""))
+
+            messages: list[dict] = []
+            if args.request:
+                messages.append({"role": "user", "content": " ".join(args.request)})
+                print(f"\n{await run_turn(registry, config, messages, audit, context=context)}\n")
+                return 0
+
+            print("Ctrl-D to leave.\n")
+            while True:
+                try:
+                    line = input("> ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    print()
+                    return 0
+                if not line:
+                    continue
+                messages.append({"role": "user", "content": line})
+                try:
+                    print(f"\n{await run_turn(registry, config, messages, audit, context=context)}\n")
+                except Exception as exc:  # one bad turn should not end the session
+                    print(f"!  {exc}\n", file=sys.stderr)
 
 
 def main(argv: list[str] | None = None) -> int:

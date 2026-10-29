@@ -44,7 +44,7 @@ def _inside_uploads(root: Path, path: str) -> Path:
     return target
 
 
-def _read(root: Path, arguments: dict[str, Any]) -> str:
+async def _read(root: Path, arguments: dict[str, Any]) -> str:
     try:
         target = _inside_uploads(root, str(arguments.get("path", "")))
     except up.UploadError as error:
@@ -54,7 +54,7 @@ def _read(root: Path, arguments: dict[str, Any]) -> str:
                        "truncated": len(text) > MAX_READ_CHARS}, ensure_ascii=False)
 
 
-def _write(root: Path, arguments: dict[str, Any]) -> str:
+async def _write(root: Path, arguments: dict[str, Any]) -> str:
     title = str(arguments.get("title", "")).strip()
     markdown = str(arguments.get("markdown", ""))
     if not markdown.strip():
@@ -124,7 +124,7 @@ def _render(root: Path, arguments: dict[str, Any]) -> str:
     return f"{head}\n\n{markdown}"
 
 
-def _list(root: Path) -> str:
+async def _list(root: Path) -> str:
     listing = up.listing(root)
     return json.dumps({
         # `draft` marks what the assistant wrote itself: never the user's own material, so never a source.

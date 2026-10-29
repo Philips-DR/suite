@@ -18,8 +18,8 @@ from assistant.memory import KINDS, MemoryStore
 from assistant.tools import LocalTool
 
 
-def _remember(store: MemoryStore, arguments: dict[str, Any]) -> str:
-    fact = store.add(
+async def _remember(store: MemoryStore, arguments: dict[str, Any]) -> str:
+    fact = await store.add(
         kind=str(arguments.get("kind", "fact")),
         subject=str(arguments["subject"]),
         content=str(arguments["content"]),
@@ -27,17 +27,17 @@ def _remember(store: MemoryStore, arguments: dict[str, Any]) -> str:
     return json.dumps({"remembered": fact.id, "kind": fact.kind, "subject": fact.subject})
 
 
-def _forget(store: MemoryStore, arguments: dict[str, Any]) -> str:
-    removed = store.remove(str(arguments["id"]))
+async def _forget(store: MemoryStore, arguments: dict[str, Any]) -> str:
+    removed = await store.remove(str(arguments["id"]))
     if removed is None:
         return json.dumps({"error": f"no fact with id {arguments['id']}"})
     return json.dumps({"forgot": removed.id, "subject": removed.subject})
 
 
-def _recall(store: MemoryStore) -> str:
+async def _recall(store: MemoryStore) -> str:
     return json.dumps({"facts": [
         {"id": f.id, "kind": f.kind, "subject": f.subject, "content": f.content, "created": f.created}
-        for f in store.load()
+        for f in await store.load()
     ]}, ensure_ascii=False)
 
 
