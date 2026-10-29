@@ -36,6 +36,10 @@ for arg in "$@"; do
     *)           service="$arg" ;;
   esac
 done
+if $use_ngrok && [[ "$cmd" == up && -z "${NGROK_AUTHTOKEN:-}" ]]; then
+  echo "--ngrok needs NGROK_AUTHTOKEN in .env (see .env.example)." >&2
+  exit 1
+fi
 dc() { docker compose "${files[@]}" "${profiles[@]}" "$@"; }
 
 make_data() {

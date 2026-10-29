@@ -107,7 +107,9 @@ services:
     image: ngrok/ngrok:latest
     restart: unless-stopped
     environment:
-      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:?set NGROK_AUTHTOKEN in .env}
+      # Not required here: compose checks a required variable for every service, even one in a profile
+      # that is off, which stopped `./start` for anyone not using ngrok. start-docker asks for it on --ngrok.
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
     command: start --all --config /etc/ngrok.yml
     volumes:
       - ./data/.ngrok.yml:/etc/ngrok.yml:ro
