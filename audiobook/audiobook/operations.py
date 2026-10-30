@@ -5,6 +5,7 @@ Nothing here prints or exits.
 """
 
 import json
+import re
 from collections import Counter
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -201,6 +202,84 @@ def list_audiobooks(root: Path | None = None) -> list[dict]:
             "updated": max(f.stat().st_mtime for f in files),
         })
     return sorted(books, key=lambda b: -b["updated"])
+
+
+# `output/voices` holds the samples `voice test` makes, not a book, so it is never a book to remove.
+NOT_A_BOOK = {"voices"}
+# The jobs that work on a book's output folder. A voice job does not.
+BOOK_JOBS = ("render", "analyse")
+
+
+def book_folder(book: str, root: Path | None = None) -> Path:
+    """The output folder of one book, by the name `list_audiobooks` gave it.
+
+    A name and never a path: a model supplies it, and a path would reach anywhere. The folder, when it is
+    there, must be a real folder directly inside the output folder, never a link."""
+    root = root or Path("output")
+    if not book or book != book.strip() or book.startswith(".") or re.search(r"[\x00-\x1f/\\]", book):
+        raise ValueError(f"not the name of a book: {book!r}")
+    if book in NOT_A_BOOK:
+        raise ValueError(f"{book} holds voice samples, not a book")
+    folder = root / book
+    if folder.is_symlink():
+        raise ValueError(f"{book} is a link, not a book's folder")
+    if folder.exists() and folder.resolve().parent != root.resolve():
+        raise ValueError(f"{book} is not directly inside the output folder")
+    return folder
+
+
+def _book_files(folder: Path) -> list[Path]:
+    """What a book's folder holds, which must be plain files: if it holds anything else, nothing is touched."""
+    entries = sorted(folder.iterdir())
+    odd = [e.name for e in entries if e.is_symlink() or not e.is_file()]
+    if odd:
+        raise ValueError(f"{folder.name} holds something other than files ({', '.join(odd[:3])}), so it was left alone")
+    return entries
+
+
+def working_on(book: str, jobs_dir: Path) -> str | None:
+    """What is being done to this book right now ("render" or "analyse"), or None."""
+    job = background.current(jobs_dir)
+    if job is not None and job.kind in BOOK_JOBS and Path(job.target).stem == book:
+        return job.kind
+    return None
+
+
+def describe_audiobook(book: str, jobs_dir: Path, root: Path | None = None) -> dict:
+    """What is stored for one book, in words a person can approve a delete from. Reads only."""
+    folder = book_folder(book, root)
+    busy = working_on(book, jobs_dir)
+    if not folder.is_dir():
+        return {"book": book, "exists": False, "files": [], "bytes": 0,
+                "summary": f"Nothing is stored for \u201c{book}\u201d in the output folder."}
+    files = [{"name": f.name, "bytes": f.stat().st_size} for f in _book_files(folder)]
+    total = sum(f["bytes"] for f in files)
+    shown = ", ".join(f"{f['name']} ({f['bytes'] / 1e6:.1f} MB)" for f in files[:10])
+    if len(files) > 10:
+        shown += f", and {len(files) - 10} more"
+    lines = [f"\u201c{book}\u201d: {len(files)} file(s), {total / 1e6:.1f} MB, in the output folder.", shown or "(empty folder)"]
+    if busy:
+        lines.insert(0, f"A {busy} of this book is running, so it cannot be deleted until it is stopped.")
+    lines.append("Deleting removes only these files. Every voice and the shared reading and speech caches are not "
+                 "touched.")
+    return {"book": book, "exists": True, "files": files, "bytes": total, "running": busy, "summary": "\n".join(lines)}
+
+
+def delete_audiobook(book: str, jobs_dir: Path, root: Path | None = None) -> dict:
+    """Remove one book's output folder: its audio and working files. Refused while that book is being read or
+    rendered. Deleting what is not there removes nothing and says so."""
+    folder = book_folder(book, root)
+    busy = working_on(book, jobs_dir)
+    if busy:
+        raise background.JobError(f"a {busy} of {book} is running; stop it before deleting its audio")
+    if not folder.is_dir():
+        return {"book": book, "deleted": False, "files": 0, "bytes": 0}
+    files = _book_files(folder)
+    size = sum(f.stat().st_size for f in files)
+    for f in files:
+        f.unlink()
+    folder.rmdir()
+    return {"book": book, "deleted": True, "files": len(files), "bytes": size}
 
 
 def check_voice(voice: str, allow_file: bool = True) -> str:

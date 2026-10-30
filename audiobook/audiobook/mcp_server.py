@@ -38,6 +38,14 @@ def _failed(error: Exception) -> dict:
 
 READ = ToolAnnotations(read_only_hint=True, open_world_hint=False)
 WRITE = ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=False)
+DESTROY = ToolAnnotations(read_only_hint=False, destructive_hint=True, idempotent_hint=True, open_world_hint=False)
+
+
+def approval_preview(preview_tool: str, argument_map: dict[str, str], field: str | None = None) -> dict:
+    """Declare, in MCP's `_meta`, which read-only tool on this server shows what a destructive one will do, so
+    an approval prompt can show that instead of a bare name. (A copy of mail-ai's, not an import: tools do not
+    import each other.) A caller that honours it must check the named tool is read-only."""
+    return {"approval": {"preview_tool": preview_tool, "argument_map": argument_map, **({"field": field} if field else {})}}
 
 
 def create_audiobook_server(paths: ServerPaths) -> MCPServer:
@@ -71,6 +79,40 @@ def create_audiobook_server(paths: ServerPaths) -> MCPServer:
     def _list_audiobooks() -> dict:
         try:
             return {"audiobooks": operations.list_audiobooks()}
+        except FAILURES as error:
+            return _failed(error)
+
+    @server.tool(
+        name="describe_audiobook",
+        title="What is stored for a book",
+        description=(
+            "The files stored for one book in the output folder -- names and sizes -- and whether a render or "
+            "reading of it is running. Takes the book's name exactly as list_audiobooks gives it, never a path. "
+            "This is what the approval for delete_audiobook shows. Reads only."
+        ),
+        annotations=READ,
+    )
+    def _describe_audiobook(book: str) -> dict:
+        try:
+            return operations.describe_audiobook(book, paths.jobs_dir)
+        except FAILURES as error:
+            return _failed(error)
+
+    @server.tool(
+        name="delete_audiobook",
+        title="Delete a book's audio",
+        description=(
+            "Delete the finished audio and working files of one book (its folder in the output folder), by the "
+            "name list_audiobooks gives, never a path. Cannot be undone. Does NOT delete the uploaded PDF, any "
+            "voice, or the shared reading and speech caches, and refuses while that book is being read or "
+            "rendered. Only when the user asked to delete that book's audio."
+        ),
+        annotations=DESTROY,
+        meta=approval_preview("describe_audiobook", {"book": "book"}, field="summary"),
+    )
+    def _delete_audiobook(book: str) -> dict:
+        try:
+            return operations.delete_audiobook(book, paths.jobs_dir)
         except FAILURES as error:
             return _failed(error)
 

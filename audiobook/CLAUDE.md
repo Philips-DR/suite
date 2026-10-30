@@ -132,7 +132,7 @@ as clearest.
   top: `book_overview`, `chapter_text`, corrections, `list_audiobooks`, `start_*`, `job_status`. What
   both front doors call.
 - `audiobook/background.py` — analysing, rendering and voice work as detached background jobs.
-- `audiobook/mcp_server.py` — the MCP door (12 tools); `./mcp` launches it.
+- `audiobook/mcp_server.py` — the MCP door (14 tools); `./mcp` launches it.
 - `audiobook/voices.py` — `add_voice` (window search scored by WavLM similarity), `test_voice`,
   `list_voices`; metadata in `voices/NAME.json`.
 - `audiobook/__main__.py` — CLI and `.env` loading.
@@ -200,9 +200,21 @@ How it was joined to the suite, and the rules that came out of running it for re
   PDF's content hash, so a re-uploaded copy of a book is already "read".
 - **Everything that can be wrong is checked before a job exists** (`operations.start_render`: analysed,
   voice, speed, chapters): a render failing in its first second is a job nobody should have to poll.
-- **The gate is the tools' own annotations.** Six tools only read (`list_*`, `preview_book`,
-  `read_chapter`, `get_corrections`, `job_status`); the five that start work or write a file are not
-  read-only, so chat asks first and `tests/test_mcp_door.py` pins the split.
+- **The gate is the tools' own annotations.** Seven tools only read (`list_*`, `describe_audiobook`,
+  `preview_book`, `read_chapter`, `get_corrections`, `job_status`); the seven that start work, write a file or
+  delete one are not read-only, so chat asks first and `tests/test_mcp_door.py` pins the split.
+- **Deleting a book's audio (2026-10-30), `delete_audiobook`.** It removes `output/<book>/` and nothing else.
+  Not the PDF (the suite's assistant owns uploads), not a voice, and **not the two shared caches**: the spoken
+  chunks in `.cache/audio/<voice id>/` are keyed by voice and text, so they belong to no one book, and Docling's
+  `.cache/docling/<pdf hash>.json` is kept on purpose so a re-uploaded book is already read. Its rules, each with
+  a test that fails without it: the argument is a **name, never a path**; `output/voices` (the samples
+  `voice test` makes, which `list_audiobooks` also lists as a "book") is refused; a link is refused, even one
+  to another book's folder (it passes every location check and would empty the other book); a folder holding
+  anything but plain files is left exactly as it was; and it is **refused while a render or reading of that book
+  runs** (matched by the job's PDF name, so a job on another book or a voice does not block it). Deleting what
+  is not there removes nothing and says so. Its approval shows `describe_audiobook`'s summary (file names and
+  sizes, a warning if the book is busy, what is not touched), declared in `_meta` like mail-ai's send.
+  `<book>.corrections.txt` sits beside the PDF in the assistant's uploads folder, so it is left behind.
 - **Cloning needs a consent statement, and the model must not write it.** `start_voice_clone` refuses an
   empty `consent`, its description tells the model to ask the user, and the text is kept in
   `voices/NAME.json`. In chat the approval card shows it before anything runs.
