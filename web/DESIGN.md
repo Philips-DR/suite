@@ -54,6 +54,7 @@ odd card left alone on a row is a bug.
 | Progress | `.bar` > `<div style={{width}}/>`, or `<Ring value label/>` (`charts/Ring`) |
 | Big numbers | `.stat` tiles: see `pages/Overview.tsx` (`Stat`) |
 | Drop files on a card | `<DropZone accepts onFiles label>` (`ui/DropZone`) plus `PickFiles` (`components/Upload`) |
+| Ask before deleting | `<ConfirmDelete title facts keeps verb ready busy error onConfirm onCancel>` (`ui/ConfirmDelete`): says what goes and what is not touched, Cancel has the focus, the delete button waits until `ready`. It is drawn into `<body>` through a portal: inside a card whose entrance animates `transform`, a `position: fixed` dialog is fixed to the card, and its button presses the row underneath (found live) |
 | Play audio | `open({key, title, blob})` from `usePlayerActions()` (`player/engine`); the page shows `<AudioPlayer onClose>` (`ui/AudioPlayer`) for the current file. Never an `<audio>` of your own: the one player lives above the pages, so playback survives moving between them, and `ui/MiniPlayer` docks it when the full one is not in view |
 | Icons | import from `ui/icons.ts` only (lucide). 16px in buttons, 17–20px in tiles. `aria-hidden` on decoration |
 | Tables | `<div className="table-wrap stack-rows"><table>…`, with `data-label="Column"` on each `<td>`: on a phone each row becomes a stacked block |

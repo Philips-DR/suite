@@ -5,15 +5,16 @@
 // not markdown is listed as skipped, never uploaded to silently do nothing.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { getUploads, isMarkdown, splitDocs, uploadDocs, type UploadedDocs } from '../api'
-import { call } from '../call'
+import { deleteUpload, getUploads, isMarkdown, splitDocs, uploadDocs, type UploadedDocs } from '../api'
+import { ask, call } from '../call'
 import { HBars } from '../charts/HBars'
 import { toolColor } from '../charts/palette'
 import { useAppState } from '../state'
 import { CardHead } from '../ui/CardHead'
+import { ConfirmDelete } from '../ui/ConfirmDelete'
 import { DropZone } from '../ui/DropZone'
 import { Empty } from '../ui/Empty'
-import { IconCheck, IconChevron, IconDocuments, IconDownload, IconExternal, IconFolder, IconRefresh, IconUpload } from '../ui/icons'
+import { IconCheck, IconChevron, IconDocuments, IconDownload, IconExternal, IconFolder, IconRefresh, IconTrash, IconUpload } from '../ui/icons'
 import { ago } from '../ui/time'
 import { usePoll } from '../usePoll'
 import { PickFiles, UploadProgress } from './Upload'
@@ -32,7 +33,7 @@ interface BuiltDoc {
 
 const blockCount = (blocks: Record<string, number>) => Object.values(blocks).reduce((n, v) => n + v, 0)
 
-function Batch({ docs, index }: { docs: UploadedDocs; index: number }) {
+function Batch({ docs, index, onDeleted }: { docs: UploadedDocs & { at: number }; index: number; onDeleted: () => void }) {
   const [preview, setPreview] = useState<Preview | null>(null)
   const [title, setTitle] = useState('')
   // docu-ai's two looks. A CV is one page of one person, so the choice only exists for one file.
@@ -40,6 +41,23 @@ function Batch({ docs, index }: { docs: UploadedDocs; index: number }) {
   const [built, setBuilt] = useState<BuiltDoc | null>(null)
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
+  const [asking, setAsking] = useState(false)
+  const [removing, setRemoving] = useState(false)
+  const [removeError, setRemoveError] = useState('')
+
+  const remove = async () => {
+    setRemoving(true)
+    setRemoveError('')
+    try {
+      await deleteUpload('docs', docs.name)
+      setAsking(false)
+      onDeleted()
+    } catch (e) {
+      setRemoveError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setRemoving(false)
+    }
+  }
 
   const run = async (what: string, work: () => Promise<void>) => {
     setBusy(what)
@@ -118,6 +136,23 @@ function Batch({ docs, index }: { docs: UploadedDocs; index: number }) {
         </div>
       )}
       {error && <p className="error">{error}</p>}
+      <div className="row batch-actions">
+        <button className="ghost" disabled={busy !== ''} onClick={() => { setRemoveError(''); setAsking(true) }}>
+          <IconTrash size={14} aria-hidden />Delete this upload
+        </button>
+      </div>
+      {asking && (
+        <ConfirmDelete
+          title={`Delete “${docs.name}”?`}
+          facts={[['Files', docs.files.join(', ')], ['Uploaded', ago(docs.at * 1000)]]}
+          keeps="The markdown is removed from this computer. Google Docs already built from it are not touched."
+          verb="Delete"
+          busy={removing}
+          error={removeError}
+          onConfirm={() => void remove()}
+          onCancel={() => setAsking(false)}
+        />
+      )}
     </div>
   )
 }
@@ -149,9 +184,35 @@ function downloadBase64(data: string, filename: string, mime: string) {
   window.setTimeout(() => URL.revokeObjectURL(href), 10_000)
 }
 
-function DriveDocRow({ doc }: { doc: DriveDoc }) {
+function DriveDocRow({ doc, onTrashed }: { doc: DriveDoc; onTrashed: () => void }) {
   const [busy, setBusy] = useState('')
   const [error, setError] = useState('')
+  // What docu-ai says it is about to trash (its own `info`, as the gate shows in chat); null while not asking.
+  const [preview, setPreview] = useState<string | null>(null)
+  const [asking, setAsking] = useState(false)
+  const [trashError, setTrashError] = useState('')
+
+  const trash = async (confirmed: boolean) => {
+    setBusy('trash')
+    setTrashError('')
+    setError('')
+    try {
+      const result = await ask('docu_ai__trash', { documentId: doc.documentId }, confirmed)
+      if (result.confirm) {
+        setPreview(result.preview ?? '')
+        setAsking(true)
+      } else {
+        setAsking(false)
+        onTrashed()
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      if (asking) setTrashError(message)
+      else setError(message)
+    } finally {
+      setBusy('')
+    }
+  }
 
   const download = async (format: 'pdf' | 'docx') => {
     setBusy(format)
@@ -187,8 +248,25 @@ function DriveDocRow({ doc }: { doc: DriveDoc }) {
           <IconDownload size={14} aria-hidden />
           {busy === 'docx' ? 'Exporting…' : 'DOCX'}
         </button>
+        <button className="ghost" disabled={busy !== ''} onClick={() => void trash(false)} aria-label={`Move “${doc.title}” to the bin`}>
+          <IconTrash size={14} aria-hidden />
+          {busy === 'trash' && !asking ? 'Checking…' : 'Bin'}
+        </button>
       </div>
       {error && <p className="error small">{error}</p>}
+      {asking && (
+        <ConfirmDelete
+          title={`Move “${doc.title}” to the bin?`}
+          keeps="It stays in Google Drive's Trash for 30 days, where you can restore it from Drive."
+          verb="Move to bin"
+          busy={busy === 'trash'}
+          error={trashError}
+          onConfirm={() => void trash(true)}
+          onCancel={() => setAsking(false)}
+        >
+          {preview && <pre className="confirm-preview">{preview}</pre>}
+        </ConfirmDelete>
+      )}
     </li>
   )
 }
@@ -275,7 +353,7 @@ function DriveDocuments() {
         <>
           <ul className="drive-list stagger">
             {(page?.documents ?? []).map((d) => (
-              <DriveDocRow key={d.documentId} doc={d} />
+              <DriveDocRow key={d.documentId} doc={d} onTrashed={() => void load(tokenStack[tokenStack.length - 1])} />
             ))}
           </ul>
           {(hasPrev || hasNext) && (
@@ -353,7 +431,7 @@ export function Documents() {
       {batches.length > 0 ? (
         <div className="stagger panel">
           <h2 className="section-title">Ready to build</h2>
-          {batches.map((d, i) => <Batch key={d.path} docs={d} index={i} />)}
+          {batches.map((d, i) => <Batch key={d.path} docs={d} index={i} onDeleted={() => void uploads.reload()} />)}
         </div>
       ) : (
         <div className="card">

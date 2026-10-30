@@ -1,0 +1,28 @@
+/* The question before a delete. Laid out like the command palette: a backdrop, one card, above everything. */
+
+.confirm-root { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 16px; }
+.confirm-backdrop { position: absolute; inset: 0; background: var(--overlay); animation: fade-in var(--dur-2) var(--ease); backdrop-filter: blur(3px); }
+.confirm {
+  position: relative;
+  width: min(460px, 100%);
+  max-height: 90dvh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-2);
+  animation: pop-in var(--dur-3) var(--ease);
+}
+.confirm h2 { margin: 0; font-size: var(--fs-lg); overflow-wrap: anywhere; }
+.confirm-facts { margin: 0; display: grid; gap: 6px; }
+.confirm-facts div { display: flex; justify-content: space-between; gap: 16px; }
+.confirm-facts dt { color: var(--ink-3); }
+.confirm-facts dd { margin: 0; text-align: right; font-weight: 600; overflow-wrap: anywhere; }
+.confirm-warning { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 10px 12px; color: var(--bad); background: var(--bad-soft); border-radius: var(--r-control); font-size: var(--fs-sm); }
+.confirm-warning svg { flex: none; margin-top: 2px; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.confirm-preview { margin: 0; padding: 10px 12px; max-height: 30dvh; overflow: auto; background: var(--surface-2); border-radius: var(--r-control); font: inherit; font-size: var(--fs-sm); white-space: pre-wrap; overflow-wrap: anywhere; }

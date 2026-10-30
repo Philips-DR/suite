@@ -11,20 +11,21 @@
 // speech and render time, which is the tool's own per-chapter figures added up (and says so).
 
 import { useEffect, useRef, useState, type ComponentType, type CSSProperties, type ReactNode } from 'react'
-import { AUDIO_EXTS, fetchMedia, getUploads, isAudio, uploadBook, uploadVoice } from '../api'
+import { AUDIO_EXTS, deleteUpload, fetchMedia, getUploads, isAudio, uploadBook, uploadVoice, type Uploads } from '../api'
 import { ChartCard } from '../charts/ChartCard'
 import { HBars } from '../charts/HBars'
 import { toolColor } from '../charts/palette'
 import { Ring } from '../charts/Ring'
 import { useCountUp } from '../charts/useWidth'
-import { call } from '../call'
+import { ask, call } from '../call'
 import { CardHead } from '../ui/CardHead'
 import { usePlayer, usePlayerActions } from '../player/engine'
 import { AudioPlayer } from '../ui/AudioPlayer'
+import { ConfirmDelete, sizeOf } from '../ui/ConfirmDelete'
 import { DropZone } from '../ui/DropZone'
 import {
   IconAlert, IconAudiobooks, IconCheck, IconClose, IconDocuments, IconDownload, IconFail, IconMeetings,
-  IconOk, IconPlay, IconRefresh, IconSpark, IconStop, IconUpload, IconZap,
+  IconOk, IconPlay, IconRefresh, IconSpark, IconStop, IconTrash, IconUpload, IconZap,
 } from '../ui/icons'
 import { fileName, usePoll } from '../usePoll'
 import { PickFiles, UploadProgress } from './Upload'
@@ -375,8 +376,76 @@ function JobCard({ job, reload }: { job: BookJob | null; reload: () => Promise<v
 
 // ---------------------------------------------------------------------------
 
-function Library({ book, setBook }: { book: string; setBook: (path: string) => void }) {
-  const uploads = usePoll(getUploads, 30000)
+interface UploadsPoll { data: Uploads | null; error: string; reload: () => Promise<void> }
+
+/** Delete one audiobook: its finished audio and, when it came from an upload, the uploaded PDF. What goes is
+ * read first with the tool that only reads, so the question names it; the delete tool is called only on a
+ * confirmed press, never to find out what it would do. */
+function DeleteBook({ book, upload, onCancel, onChanged, onDone }: {
+  book: string
+  upload: { name: string; bytes: number } | null
+  onCancel: () => void
+  onChanged: () => void
+  onDone: () => void
+}) {
+  const [summary, setSummary] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let live = true
+    call<{ summary: string }>('audiobook__describe_audiobook', { book }).then(
+      (r) => { if (live) setSummary(r.summary) },
+      (e) => { if (live) setError(message(e)) },
+    )
+    return () => { live = false }
+  }, [book])
+
+  const confirm = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      await ask('audiobook__delete_audiobook', { book }, true)
+    } catch (e) {
+      setError(message(e))
+      setBusy(false)
+      return
+    }
+    // The audio is gone from here on, whatever happens to the PDF.
+    onChanged()
+    if (upload) {
+      try {
+        await deleteUpload('book', upload.name)
+      } catch (e) {
+        setError(`The audio is deleted, but the PDF could not be: ${message(e)}`)
+        setBusy(false)
+        onChanged()
+        return
+      }
+      onChanged()
+    }
+    setBusy(false)
+    onDone()
+  }
+
+  return (
+    <ConfirmDelete
+      title={`Delete “${book}”?`}
+      facts={upload ? [['Uploaded PDF', `${upload.name} (${sizeOf(upload.bytes)})`]] : undefined}
+      keeps={upload ? 'The uploaded PDF goes too.' : 'The PDF is not an upload, so it stays where it is.'}
+      verb={summary === null && !error ? 'Checking…' : 'Delete'}
+      ready={summary !== null}
+      busy={busy}
+      error={error}
+      onConfirm={() => void confirm()}
+      onCancel={onCancel}
+    >
+      {summary !== null && <pre className="confirm-preview">{summary}</pre>}
+    </ConfirmDelete>
+  )
+}
+
+function Library({ book, setBook, uploads, onDelete }: { book: string; setBook: (path: string) => void; uploads: UploadsPoll; onDelete: (book: string) => void }) {
   const [typed, setTyped] = useState(book)
   const [uploading, setUploading] = useState<{ name: string; fraction: number } | null>(null)
   const [error, setError] = useState('')
@@ -398,7 +467,9 @@ function Library({ book, setBook }: { book: string; setBook: (path: string) => v
   }
 
   const open = (path: string) => { setTyped(path); setBook(path) }
+  useEffect(() => { if (!book) setTyped('') }, [book])
   const mine = uploads.data?.books ?? []
+  const picked = mine.find((b) => b.path === book)
 
   return (
     <DropZone
@@ -443,6 +514,11 @@ function Library({ book, setBook }: { book: string; setBook: (path: string) => v
                     </li>
                   ))}
                 </ul>
+                {picked && (
+                  <button className="ghost ab-delete" onClick={() => onDelete(stem(picked.name))}>
+                    <IconTrash size={14} aria-hidden />Delete “{picked.name}” and its audio…
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -970,7 +1046,7 @@ function Voices({ voices, loaded, running, reloadJob }: { voices: Voice[]; loade
 
 // ---------------------------------------------------------------------------
 
-function Finished({ refreshKey, book }: { refreshKey: string; book: string }) {
+function Finished({ refreshKey, book, onDelete }: { refreshKey: string; book: string; onDelete: (book: string) => void }) {
   const books = usePoll(() => call<{ audiobooks: AudioBook[] }>('audiobook__list_audiobooks'), 30000)
   useEffect(() => { void books.reload() }, [refreshKey])
   const list = books.data?.audiobooks ?? []
@@ -994,6 +1070,11 @@ function Finished({ refreshKey, book }: { refreshKey: string; book: string }) {
               <div className="ab-files">
                 {b.files.map((f) => <AudioFile key={`${f.path}:${f.modified}`} path={f.path} size={f.megabytes} />)}
               </div>
+              {b.book !== 'voices' && (
+                <button className="ghost ab-delete" onClick={() => onDelete(b.book)}>
+                  <IconTrash size={14} aria-hidden />Delete this audiobook…
+                </button>
+              )}
             </details>
           )
         })}
@@ -1007,6 +1088,9 @@ function Finished({ refreshKey, book }: { refreshKey: string; book: string }) {
 
 export function Audiobooks() {
   const [book, setBook] = useState('')
+  const [deleting, setDeleting] = useState<string | null>(null)
+  const [changed, setChanged] = useState(0)
+  const uploads = usePoll(getUploads, 30000)
   const status = usePoll(() => call<{ job: BookJob | null }>('audiobook__job_status'), 3000)
   const voiceList = usePoll(() => call<{ voices: Voice[] }>('audiobook__list_voices'), 30000)
   const job = status.data?.job ?? null
@@ -1016,18 +1100,35 @@ export function Audiobooks() {
   const justFinished = job?.state === 'done' ? job.id : ''
   useEffect(() => { if (justFinished) void voiceList.reload() }, [justFinished])
 
+  // The uploaded PDF behind a finished book, if there is one: matched by name, as the output folder is.
+  const uploadFor = (name: string) => uploads.data?.books.find((b) => stem(b.name) === name) ?? null
+  const gone = deleting !== null ? uploadFor(deleting) : null
+
   return (
     <div className="panel ab-page" style={style({ '--ab': toolColor('audiobook') })}>
-      <Library book={book} setBook={setBook} />
+      <Library book={book} setBook={setBook} uploads={uploads} onDelete={setDeleting} />
       <JobCard job={job} reload={status.reload} />
       {book && (
         <Book key={book} pdf={book} voices={voiceList.data?.voices ?? []} job={job} reloadJob={status.reload} />
       )}
       <div className="grid-split ab-lower">
-        <Finished refreshKey={progressKey} book={book} />
+        <Finished refreshKey={`${progressKey}:${changed}`} book={book} onDelete={setDeleting} />
         <Voices voices={voiceList.data?.voices ?? []} loaded={voiceList.data !== null} running={job?.state === 'running'} reloadJob={status.reload} />
       </div>
       {(status.error || voiceList.error) && <p className="error">{status.error || voiceList.error}</p>}
+      {deleting !== null && (
+        <DeleteBook
+          key={deleting}
+          book={deleting}
+          upload={gone ? { name: gone.name, bytes: gone.bytes } : null}
+          onCancel={() => setDeleting(null)}
+          onChanged={() => { setChanged((n) => n + 1); void uploads.reload() }}
+          onDone={() => {
+            if (book && stem(book) === deleting) setBook('')
+            setDeleting(null)
+          }}
+        />
+      )}
     </div>
   )
 }

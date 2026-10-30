@@ -47,6 +47,7 @@ export {
   Table2 as IconTable,
   ChartColumn as IconChart,
   Upload as IconUpload,
+  Trash2 as IconTrash,
   X as IconClose,
   Zap as IconZap,
 } from 'lucide-react'

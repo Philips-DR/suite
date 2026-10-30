@@ -147,6 +147,8 @@ export type EventType =
   | 'turn_error'
   | 'notice'
   | 'upload'
+  | 'upload_deleted'
+  | 'chat_cleared'
 
 export interface AssistantEvent {
   seq: number
@@ -269,6 +271,16 @@ export const getStatus = (live = false) => request<Status>(`/api/status${live ? 
 
 export const sendChat = (message: string) =>
   request<{ accepted: boolean }>('/api/chat', { method: 'POST', body: JSON.stringify({ message }) })
+
+/** Delete the conversation (the model's memory of it and what Chat shows). Refused while a message is being worked on. */
+export const clearChat = () => request<{ cleared: number }>('/api/chat/clear', { method: 'POST' })
+
+export type UploadKind = 'audio' | 'book' | 'voice' | 'docs'
+export interface DeletedUpload { kind: UploadKind; name: string; files: number; bytes: number }
+
+/** Delete one upload, by the kind and name the listing gave. Only buttons can: no tool offers it. */
+export const deleteUpload = (kind: UploadKind, name: string) =>
+  request<DeletedUpload>('/api/uploads/delete', { method: 'POST', body: JSON.stringify({ kind, name }) })
 
 export const answerApproval = (id: string, approve: boolean) =>
   request<{ approved: boolean }>(`/api/approvals/${encodeURIComponent(id)}`, {

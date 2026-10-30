@@ -5,7 +5,7 @@
 // recordings every 15 s, uploads every 30 s.
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react'
-import { AUDIO_EXTS, getUploads, isAudio, uploadAudio, type Uploads } from '../api'
+import { AUDIO_EXTS, deleteUpload, getUploads, isAudio, uploadAudio, type Uploads } from '../api'
 import { canRecordInBrowser, useBrowserRecorder } from '../useBrowserRecorder'
 import { call } from '../call'
 import { toolColor } from '../charts/palette'
@@ -14,12 +14,14 @@ import { ShareBar } from '../charts/ShareBar'
 import { useCountUp } from '../charts/useWidth'
 import { useAppState } from '../state'
 import { CardHead } from '../ui/CardHead'
+import { ConfirmDelete, sizeOf } from '../ui/ConfirmDelete'
 import { DropZone } from '../ui/DropZone'
 import { Empty } from '../ui/Empty'
 import {
   IconActivity, IconAlert, IconCheck, IconChevron, IconDocuments, IconFail, IconMeetings, IconOk,
-  IconRefresh, IconSearch, IconSpark, IconStop, IconUpload,
+  IconRefresh, IconSearch, IconSpark, IconStop, IconTrash, IconUpload,
 } from '../ui/icons'
+import { ago } from '../ui/time'
 import { clock, fileName, usePoll } from '../usePoll'
 import { PickFiles, UploadProgress } from './Upload'
 import '../styles/panels/meetings.css'
@@ -361,7 +363,25 @@ function Transcriber({ job, status, recordings, uploads, audio, setAudio, onWrit
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [uploading, setUploading] = useState<{ name: string; fraction: number } | null>(null)
+  const [asking, setAsking] = useState(false)
+  const [removing, setRemoving] = useState(false)
+  const [removeError, setRemoveError] = useState('')
   const running = job?.state === 'running'
+
+  const remove = async (name: string, path: string) => {
+    setRemoving(true)
+    setRemoveError('')
+    try {
+      await deleteUpload('audio', name)
+      if (audio.trim() === path) setAudio('')
+      setAsking(false)
+      await uploads.reload()
+    } catch (e) {
+      setRemoveError(messageOf(e))
+    } finally {
+      setRemoving(false)
+    }
+  }
 
   const upload = async ([file]: File[]) => {
     if (!file) return
@@ -400,6 +420,8 @@ function Transcriber({ job, status, recordings, uploads, audio, setAudio, onWrit
   ]
   const shown = choices.slice(0, 6)
   const chosen = audio.trim()
+  // Only a file somebody uploaded is deleted here; a recording meet-ai made itself is not an upload.
+  const picked = uploads.data?.audio.find((a) => a.path === chosen)
   const JobIcon = job?.state === 'done' ? IconOk : job?.state === 'failed' ? IconFail : IconAlert
 
   return (
@@ -504,6 +526,11 @@ function Transcriber({ job, status, recordings, uploads, audio, setAudio, onWrit
                 {choices.length > shown.length && (
                   <p className="hint">{choices.length - shown.length} more in the file box's list.</p>
                 )}
+                {picked && (
+                  <button type="button" className="ghost mt-pick-delete" onClick={() => { setRemoveError(''); setAsking(true) }}>
+                    <IconTrash size={14} aria-hidden />Delete “{picked.name}”
+                  </button>
+                )}
               </div>
             )}
 
@@ -540,6 +567,18 @@ function Transcriber({ job, status, recordings, uploads, audio, setAudio, onWrit
           </div>
         )}
         {(error || status.error) && <Problem>{error || status.error}</Problem>}
+        {asking && picked && (
+          <ConfirmDelete
+            title={`Delete “${picked.name}”?`}
+            facts={[['Size', sizeOf(picked.bytes)], ['Uploaded', ago(picked.at * 1000)]]}
+            keeps="The recording is removed from this computer. Transcripts and notes already made from it are not touched."
+            verb="Delete"
+            busy={removing}
+            error={removeError}
+            onConfirm={() => void remove(picked.name, picked.path)}
+            onCancel={() => setAsking(false)}
+          />
+        )}
       </DropZone>
     </section>
   )

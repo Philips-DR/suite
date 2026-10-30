@@ -262,3 +262,5 @@
   .ab-group > summary { padding-inline: 12px; }
   .ab-files { padding-inline: 6px; }
 }
+
+.ab-delete { margin-top: 8px; align-self: flex-start; }

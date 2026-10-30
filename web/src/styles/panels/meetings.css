@@ -358,3 +358,5 @@
   .mt-saved-next button { min-height: 44px; }
   .mt-job-next button { min-height: 44px; width: 100%; }
 }
+
+.mt-pick-delete { margin-top: 8px; align-self: flex-start; }

@@ -5,11 +5,12 @@
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { AUDIO_EXTS, isAudio, isMarkdown, sendChat, splitDocs, toolLabel, uploadAudio, uploadDocs, type AssistantEvent } from '../api'
+import { AUDIO_EXTS, clearChat, isAudio, isMarkdown, sendChat, splitDocs, toolLabel, uploadAudio, uploadDocs, type AssistantEvent } from '../api'
 import { useAppState } from '../state'
 import { BrandMark } from '../ui/Shell'
 import { DropZone } from '../ui/DropZone'
-import { IconAttach, IconCheck, IconClose, IconCopy, IconSend, IconSpark } from '../ui/icons'
+import { IconAttach, IconCheck, IconClose, IconCopy, IconSend, IconSpark, IconTrash } from '../ui/icons'
+import { ConfirmDelete } from '../ui/ConfirmDelete'
 import { PickFiles, UploadProgress } from './Upload'
 import { ApprovalCard } from './ApprovalCard'
 import '../styles/panels/chat.css'
@@ -63,6 +64,9 @@ export function Chat() {
   const [attached, setAttached] = useState<string[]>([])
   const [uploading, setUploading] = useState<{ name: string; fraction: number } | null>(null)
   const [atBottom, setAtBottom] = useState(true)
+  const [clearing, setClearing] = useState(false)
+  const [clearBusy, setClearBusy] = useState(false)
+  const [clearError, setClearError] = useState('')
   const scroller = useRef<HTMLDivElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
   const field = useRef<HTMLTextAreaElement>(null)
@@ -123,6 +127,26 @@ export function Chat() {
     }
   }
 
+  // A cleared chat starts empty. The server keeps a button's own result, which Overview and Activity list, but
+  // Chat shows nothing from before the last clear (found live: a "You pressed" chip outlived Clear chat).
+  const clearedAt = Math.max(0, ...events.filter((e) => e.type === 'chat_cleared').map((e) => e.seq))
+  const visible = events.filter((e) => e.seq > clearedAt)
+  const asked = visible.filter((e) => e.type === 'user_message').length
+  const canClear = connected && !busy && pending.length === 0
+
+  const doClear = async () => {
+    setClearBusy(true)
+    setClearError('')
+    try {
+      await clearChat()
+      setClearing(false)
+    } catch (err) {
+      setClearError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setClearBusy(false)
+    }
+  }
+
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault()
@@ -137,7 +161,7 @@ export function Chat() {
     if (cluster.length) rows.push(<div className="tool-cluster" key={key}>{cluster.map((e) => <ToolChip key={e.seq} event={e} />)}</div>)
     cluster = []
   }
-  for (const event of events) {
+  for (const event of visible) {
     switch (event.type) {
       case 'tool_finished':
         // Read-only button presses are status polls; they would flood the transcript.
@@ -191,6 +215,13 @@ export function Chat() {
       disabled={!connected || uploading !== null}
     >
       <h1 className="sr-only">Chat</h1>
+      {asked > 0 && (
+        <div className="chat-tools">
+          <button className="ghost" onClick={() => { setClearError(''); setClearing(true) }} disabled={!canClear} title={busy ? 'Wait for the reply to finish' : undefined}>
+            <IconTrash size={14} aria-hidden />Clear chat
+          </button>
+        </div>
+      )}
       <div className="transcript" aria-live="polite" ref={scroller}>
         {/* Empty means nothing to show, not no events: a background notice is an event too. */}
         {rows.length === 0 && !busy && pending.length === 0 && (
@@ -260,6 +291,18 @@ export function Chat() {
       </form>
       <p className="composer-hint muted small">Enter to send · Shift+Enter for a new line · drop a recording or a markdown file to attach it</p>
       {error && <p className="error composer-error">{error}</p>}
+      {clearing && (
+        <ConfirmDelete
+          title="Clear this conversation?"
+          facts={[['Your messages', String(asked)]]}
+          keeps="The assistant forgets this conversation. What it remembers about you (Memory), your uploads and documents, and History are not touched."
+          verb="Clear chat"
+          busy={clearBusy}
+          error={clearError}
+          onConfirm={() => void doClear()}
+          onCancel={() => setClearing(false)}
+        />
+      )}
     </DropZone>
   )
 }

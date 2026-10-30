@@ -114,7 +114,11 @@ export function StateProvider({ children }: { children: ReactNode }) {
         refresh().catch(() => {})
       }
       source.onmessage = (message: MessageEvent<string>) => {
-        dispatch({ type: 'event', event: JSON.parse(message.data) as AssistantEvent })
+        const event = JSON.parse(message.data) as AssistantEvent
+        dispatch({ type: 'event', event })
+        // The server decides what counts as conversation; this page takes its pruned history rather than
+        // keeping a second copy of that rule.
+        if (event.type === 'chat_cleared') refresh().catch(() => {})
       }
       source.onerror = () => {
         dispatch({ type: 'connected', value: false })
