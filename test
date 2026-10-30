@@ -14,6 +14,7 @@ run web-ai    bash -c "cd web-ai && $PY -m pytest tests -q"
 run audiobook bash -c "cd audiobook && $AUDIOBOOK_PY -m pytest tests -q"
 run docu-ai   bash -c "cd docu-ai && npm test --silent"
 run web       bash -c "cd web && npx tsc --noEmit && npm test --silent"
+run publish   bash -c "cd publish && $PY -m pytest -q -p no:cacheprovider"
 echo
 if ((${#failed[@]})); then echo "FAILED: ${failed[*]}"; exit 1; fi
 echo "All passed."

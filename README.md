@@ -81,6 +81,7 @@ asks once for the token the backend prints.
 
 ```bash
 ./test           # every tool's tests; none needs a login, a model or the network
+./publish-check  # before a push: what GitHub does not have yet, checked for secrets and personal details
 ```
 
 ## When you power on the laptop

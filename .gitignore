@@ -6,3 +6,6 @@ client_secret*.json
 
 # The container setup keeps all its state here (start-docker makes it).
 data/
+
+# Private words for ./publish-check to watch for. It is the list of what must not go out, so it never goes out.
+.publish-watch

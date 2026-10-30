@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Before a push to the public repository: what is about to leave this machine, checked for secrets and
+# personal details. Reads git and this machine's login files; writes nothing; never prints a secret.
+#
+#   ./publish-check          the commits GitHub does not have yet: every added line, message and author
+#   ./publish-check --all    every commit ever made, for secrets only (the history was left as it is, 2026-10-30)
+#
+# Exit 0: nothing found. 1: something to fix before pushing. 2: something to look at first.
+# Private words with no shape (a name) go one per line in .publish-watch, which git ignores.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")"
+exec .venv/bin/python -I publish/check.py "$@"

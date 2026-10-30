@@ -12,9 +12,10 @@ changing the tool.
     ./setup    # idempotent: shared .venv, audiobook's own .venv, npm ci for docu-ai and the web app, speaker models
     ./start    # ./auth, then ./start-docker up: database, backend (API, :8750; launches every tool over MCP stdio) and web app (:8751), in containers
     ./start-docker up [--tailscale] [--ngrok]   # what ./start runs; the flags add a private or a public address
-    ./test     # all eight test suites. Must pass with no credentials, no model, no network
+    ./test     # all nine test suites (the eight tools' and publish-check's). Must pass with no credentials, no model, no network
     ./auth     # every login (AWS, Google Docs, Gmail): renews only the dead ones, and copies Google tokens into data/config for the containers; --check to just look
     ./renew-secrets   # a server's logins: sends it fresh AWS credentials + Google tokens over ssh (README → "On a server")
+    ./publish-check   # before every push: the commits GitHub lacks, for secrets (exit 1) and personal details (exit 2); --all for every commit
 
 ## The web app and the backend are separate programs
 
@@ -151,6 +152,12 @@ A tool's own paths stay in `assistant/tools.yaml`, the one file that knows every
 
 ## Working in this repo — rules learned the hard way
 
+- **Run `./publish-check` before every push.** `suite` is public. It reads the commits GitHub does not have:
+  exit 1 is a secret (a key's shape, or a value from this machine's own login files) or a credentials file, and
+  the push must not happen; exit 2 is a personal detail not already public (an email, a phone number, a server
+  id), to show the user. It never prints a secret whole. Its tests build fakes from pieces, so none is written
+  out whole in this repo: keep it that way, or it flags itself. Private words with no shape go in the
+  git-ignored `.publish-watch`.
 - **Stage by explicit path, never `git add -A`.** `docu-ai/plan.md` carries the user's own
   uncommitted edit; it has been kept out of every commit and must stay out unless they ask.
 - **Commit as the user**: this machine has no git identity configured, so use
