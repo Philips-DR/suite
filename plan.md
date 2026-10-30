@@ -5,14 +5,14 @@ rough, what is waiting on a decision, and the next steps in order. Update it whe
 change — a new session should be able to pick up from here without the conversation that got us
 here. Each tool keeps its own `plan.md` or `CLAUDE.md` for its internals; this covers the whole.
 
-As of **2026-10-30**. **Deleting from the web app was built and run for real on 2026-10-30** (see "Built and verified"; committed locally, not pushed). The application-tailoring checks (`apply-ai`, docu-ai's layout and trash, the draft marker) were
+As of **2026-10-30**. **Deleting from the web app was built and run for real on 2026-10-30** (see "Built and verified"; committed and pushed). **The job-application workflow was run end to end through the model on 2026-10-30** (the African Languages Lab application; see "Built and verified"). The application-tailoring checks (`apply-ai`, docu-ai's layout and trash, the draft marker) were
 built and run for real through the chat on two real postings on 2026-10-15, and are committed (`92d0f24`). A third
 application on 2026-10-24 showed eight gaps; the plan to close them is under "Gaps found on 2026-10-24" below, and
 **none of it is built yet**. On 2026-10-25 the database, caching and multi-user architecture was decided: Postgres
 first, then Redis, then multi-user, then RAG — see "Database, caching and multi-user" below. **Layer 1 (Postgres) was
 built and run for real on 2026-10-28; Redis, multi-user and RAG are not built. On 2026-10-29 Redis was deferred to
 layer 3 (the user's call), after the queries it would cache were timed and cost 1 to 10 ms.** Containers are now the primary
-runtime (locked decision 10), and `./start` now runs `./start-docker up`. The job-application workflow's first piece, **`web-ai` (reads a web page), was built on 2026-10-28**, and **mail-ai attachments on 2026-10-29** (tested and run on the real PDFs against a stand-in Gmail; not yet tried on a real Gmail draft); the end-to-end run is not. Deployment to the company instance is pinned
+runtime (locked decision 10), and `./start` now runs `./start-docker up`. The job-application workflow's first piece, **`web-ai` (reads a web page), was built on 2026-10-28**, and **mail-ai attachments on 2026-10-29** (tested and run on the real PDFs against a stand-in Gmail; a real Gmail draft with attachments was made and read back on 2026-10-30), and the end-to-end run through the model on 2026-10-30. Deployment to the company instance is pinned
 (below). audiobook joined on 2026-10-10 (`98c60e3`).
 
 ## What this is
@@ -102,7 +102,11 @@ Each was tested (`./test`) and run for real; the real runs found most of the bug
 
 | 10-30 | **Files reach an email by path (job-application workflow step 3, and decision 13).** docu-ai `save_export` writes an exported Word or PDF file into the assistant's `uploads/exports` (`DOCU_AI_EXPORTS`) and returns its path, never its bytes; it is not read-only, and its approval shows the document's title (`info`). mail-ai `draft_new` takes `{path}`, read only from that folder (`MAIL_AI_ATTACH_ROOT`; links, outside paths, folders and oversized files refused), with 10 MB in all, base64 still taken for a small file. `export` (the web app's download) now tells a model never to use it to attach. **Run for real, without the model:** the real African Languages Lab CV and letter saved as Word files through the gate (654,050 and 651,163 bytes, `PK`), attached by path to one Gmail draft to the user's own address, read back by `review_draft` with the same confirmation (so Gmail holds the same bytes: the first real read-back of attachments), discarded through the gate, the user's draft to the recruiter untouched, the test files removed. Inside the container both tool processes were seen to hold the same folder. Tests: docu-ai 17 new, mail-ai 18 new; ten deliberate breaks, each caught. **Found:** a first version held invisible reversing characters in docu-ai's source; written as escapes now, and a scan of every changed file finds none. **Not run:** the model following these descriptions through a whole application (the AWS login had lapsed). **Not changed, noted:** `mail-ai/mailai/compose.py` (from 2026-10-29) keeps its list of reversing marks as the invisible characters themselves; it works, but reads as empty. | `docu-ai/CLAUDE.md` → save_export; `mail-ai/CLAUDE.md` → Attachments |
 
-Test counts on 2026-10-30 (one `./test` run, all passed): assistant 191 + 8 Postgres tests that skip without `TEST_DATABASE_URL`, meet-ai 113, mail-ai 150, apply-ai 87, web-ai 149, audiobook 107, docu-ai 386 (+1 skipped, the live test), web 39 (+ typecheck).
+| 10-30 | **The job-application workflow, end to end through the model (workflow step 4).** The 2026-10-24 application run again in the real chat (Opus 4.6 on Bedrock, the running containers), opened with the user's own words from that day and `https://www.africanlanguageslab.com`; the email draft addressed to the user's own address, not the recruiter. The model read the homepage, Opportunities and Full-time roles and found the AI/ML Engineer link itself; that page builds itself in script, so `read_page` returned no text and a warning, and the model asked for the posting. Given the job site's public data address, it read job 37 (the 100-job list came back cut before job 37, so it fetched `/api/jobs/37` itself). Then: `requirements` first (it passed a marked draft as material, was refused, and retried without it); seven gaps asked in one message; GitHub checked with `github_visibility` and the false "Repositories are private" line removed; `claims` on both drafts, the letter's three dropped limits fixed and re-checked (a fourth left, with a stated reason that holds); the CV built at 3 pages against a 2-page target, the docu-ai project cut and said so, re-checked, rebuilt at 2; the 3-page Doc trashed through the gate; both saved as Word with `save_export`; one Gmail draft with both attached by path. Nothing sent; every approval read in full first. **Looked at:** both Docs as PDF (CV 2 pages, letter 1, no markdown left) and the Word files' text; Gmail's read-back gave the draft's own confirmation, so it holds the same bytes. Then everything the run made was removed (the draft discarded, three Docs in Drive's bin, three draft folders and both files deleted) and checked gone; the user's real draft to the recruiter and final Docs untouched; memory unchanged at 15 facts. **Found:** four things, under "Still open" → tailoring a CV. | — |
+
+| 10-30 | **apply-ai: career claims, private code and the email body (the user's go-ahead, the same day).** `claims` takes `public_links`, the addresses web-ai found a stranger can open: a sentence calling code private is a `public link` finding when the address it names, or a repository on a code host, is public, and `unchecked` (saying how to check) when nothing was passed. "Spent my career" and its kin are watched phrases. The description says to check the email body before `draft_new`, and to check addresses before calling code private. `CV - ML Engineer` (the assistant's own, 2026-09-28) now carries the `.draft` marker. **Run:** 103 apply-ai tests (16 new) and thirteen deliberate breaks, each caught; seven real documents, old code against new, changed only where they should; the backend rebuilt (`./start-docker up`) and the chat driven for real: the model checked an email body unasked, fixed what it found and re-checked; asked to check a "repositories are private" line, it looked GitHub up, passed the addresses and told the user the line was false. **Not followed:** a line the user dictated went to `draft_new` without a re-check. Every draft was declined at the gate; nothing reached Gmail. | `apply-ai/CLAUDE.md` → Verified for real (2026-10-30) |
+
+Test counts on 2026-10-30 (one `./test` run, all passed): assistant 191 + 8 Postgres tests that skip without `TEST_DATABASE_URL`, meet-ai 113, mail-ai 150, apply-ai 103, web-ai 149, audiobook 107, docu-ai 386 (+1 skipped, the live test), web 39 (+ typecheck).
 
 ## Known rough edges
 
@@ -187,6 +191,10 @@ Sizes are rough. Steps 1 and 2 change docu-ai and mail-ai, so confirm with the u
 4. **apply-ai (small to medium, stays network-free).** Accept link-check results and employer text as data, as it
    takes `facts` today. Flag a "private" or "confidential" claim next to a link that resolves publicly. Tune the two
    false alarms seen: a negated "not deployed to production", and a limit still present in reworded text.
+   **Partly done 2026-10-30:** link results are taken (`public_links`) and a private claim is flagged. Not done:
+   employer text as data (a real letter's "ACL 2026" paper was still flagged), and both false alarms (seen again
+   the same day: "has not been deployed to production", the negator four words back; and a limit carried in the
+   next sentence).
 5. **Dossiers and fact provenance (large; do it with "Agent memory and a database" below).** A dossier is a
    generic record of one goal: a title, a status, ordered references (a Google Doc id, a Gmail draft id, a file, a
    URL) and facts scoped to it. No job logic in the assistant. Each fact gets a source (who said it, when) and a
@@ -211,7 +219,7 @@ else here.
 
 ## Job application workflow (2026-10-25)
 
-**Planned, not built.** The goal: post a URL — a company website or a job listing — and the
+**Built, and run end to end through the model on 2026-10-30** (see "Built and verified"). The goal: post a URL — a company website or a job listing — and the
 assistant scans the site, understands the company, finds vacancies, tailors a CV, drafts a cover
 letter, and sends the application email with attachments. Every destructive step has an approval gate.
 
@@ -285,7 +293,7 @@ PDFs." apply-ai's descriptions already say "USE THIS FIRST" — no change.
 | 2b | mail-ai: draft_body reconstruction, fingerprint | 2a | **done 2026-10-29**
 | 2c | mail-ai: MCP parameters + review rendering + tests | 2b | **done 2026-10-29**
 | 3 | Orchestration descriptions (web-ai, docu-ai, mail-ai) | 1c + 2c | **done 2026-10-30** (with files by path: docu-ai `save_export`, mail-ai `{path}`)
-| 4 | End-to-end test on a real application | 3 | the model's run waits on the AWS login; the route without the model was run for real 2026-10-30
+| 4 | End-to-end test on a real application | 3 | **done 2026-10-30**, through the model (see "Built and verified")
 
 Phases 1 and 2 are independent and can be built in parallel. Dossiers come later (needs Postgres).
 
@@ -464,6 +472,23 @@ when the prompt gets too big.
     assistant to name a tool or `write_draft` to move into apply-ai; neither was done.
   - **Existing drafts have no `.draft` marker** (the real `CV - …` and `Cover Letter - …` folders in
     `assistant/uploads/docs`), so a model can still pass them as the user's material. Mark them by hand, or ask.
+    **It happened on 2026-10-30:** `CV - ML Engineer` (the assistant's own, written 2026-09-28 per the audit log)
+    was read and passed to `requirements` as the user's material until the user said otherwise. It was marked the
+    same day. The host copies under `assistant/uploads/docs`, which nothing reads now, were not.
+  - **The model asks to remember instructions as facts** (2026-10-30). Told "leave out published research" and
+    "leave it out unless my CV shows it", it asked to remember "no published research" and "no … experience beyond
+    what CV shows" as facts about the user, and three spellings of the referrer's name nobody gave. Both declined
+    at the gate; only the person approving stops it.
+  - **What the claims check did not see** (2026-10-30): a sweeping sentence with no figure, tool or watched word
+    passed ("AI for Africans, by Africans — is work I have spent my career doing"), and the email body was never
+    checked. **Both addressed the same day** (see "Built and verified"): "spent my career" is watched, and the model
+    checked an email body unasked. Still true: a sweeping claim worded any other way passes, since the list is
+    literal.
+  - **A line the user dictates is not re-checked** (2026-10-30). Asked to add "my repositories are private ... as
+    my CV says", the model went straight to `draft_new`; the check would have caught it (shown when asked). The
+    check stays advisory: only the person approving stops this.
+  - **A spelling fact rewrote the employer's name** (2026-10-30): memory's `AyaData` spelling turned the CV's
+    "Ayadata GH" into "AyaData GH". The CVs already sent say "Ayadata".
   - A failed build still leaves a stray Doc (a letter with no `# heading` failed in docu-ai after creating it).
   - Letters: the model chose the `technical` look and needed four drafts to fit one page; the `resume` look
     then made them cramped (the user: "ugly, not well formatted"). docu-ai now has a `letter` look (10.5pt, 115%
@@ -546,7 +571,7 @@ Decisions or input only the user can give. Don't guess these.
    9–10 under "Waiting on the user" are answered. Decision 8 (web-ai) is answered: yes, driven by
    the job application workflow (see above), and **web-ai is built (2026-10-28)**. Still open in that workflow:
    ~~the descriptions that wire the steps together~~ (built 2026-10-30, with files by path),
-   and the end-to-end run on a real application, through the model (needs the AWS login). Decisions 11 and 12 are about web-ai. The user asked for the plan on 2026-10-24.
+   and ~~the end-to-end run on a real application, through the model~~ (done 2026-10-30). Decisions 11 and 12 are about web-ai. The user asked for the plan on 2026-10-24.
 
 ## Picking this up in a new session
 
