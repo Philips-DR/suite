@@ -20,7 +20,7 @@ GOLDEN = HERE / "golden/paper.preview.md"
 
 def paper_plan():
     doc = DoclingDocument.model_validate_json(gzip.decompress(FIXTURE.read_bytes()))
-    return build_plan(doc, fallback_title="2609.09153v1")
+    return build_plan(doc, file_name="2609.09153v1")
 
 
 def test_paper_preview_matches_golden():

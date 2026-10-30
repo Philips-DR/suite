@@ -1,7 +1,6 @@
 """Render chapters to audio, caching each chunk so interrupted runs resume where they stopped."""
 
 import hashlib
-import re
 import subprocess
 import time
 from dataclasses import dataclass
@@ -12,6 +11,7 @@ import numpy as np
 import scipy.io.wavfile
 
 from .chunk import chunk_paragraph
+from .names import chapter_stem, slugify, speed_suffix
 from .plan import Chapter
 from .preview import CHARS_PER_SECOND, RENDER_SPEED
 from .tts import Narrator
@@ -22,10 +22,6 @@ PARAGRAPH_PAUSE = 0.6
 HEADING_PAUSE_BEFORE = 0.8
 HEADING_PAUSE_AFTER = 0.5
 TITLE_PAUSE = 1.2
-
-
-def slugify(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:60] or "chapter"
 
 
 def _silence(seconds: float, sample_rate: int) -> np.ndarray:
@@ -137,10 +133,6 @@ def _tempo(speed: float) -> list[str]:
     return [] if speed == 1 else ["-af", f"atempo={speed}"]
 
 
-def speed_suffix(speed: float) -> str:
-    return "" if speed == 1 else f"-{speed:g}x"
-
-
 def encode_mp3(wav: Path, mp3: Path, title: str, album: str, track: int, speed: float = 1) -> None:
     subprocess.run(
         ["ffmpeg", "-y", "-loglevel", "error", "-i", str(wav), *_tempo(speed), "-c:a", "libmp3lame", "-q:a", "4",
@@ -195,7 +187,7 @@ def render_book(
     for number, chapter in chapters:
         tracker.chapter, tracker.chapter_title = number, chapter.title
         audio = render_chapter(chapter, render, sr, tracker)
-        stem = f"{number:02d}-{slugify(chapter.title)}{speed_suffix(speed)}"
+        stem = f"{chapter_stem(number, chapter.title)}{speed_suffix(speed)}"
         wav = out_dir / f"{stem}.wav"
         scipy.io.wavfile.write(wav, sr, _to_int16(audio))
         mp3 = out_dir / f"{stem}.mp3"

@@ -19,7 +19,7 @@ pytestmark = pytest.mark.skipif(not FIXTURE.exists(), reason="local book fixture
 @pytest.fixture(scope="module")
 def plan():
     doc = DoclingDocument.model_validate_json(gzip.decompress(FIXTURE.read_bytes()))
-    return build_plan(doc, fallback_title="The Final Quest", author="Rick Joyner")
+    return build_plan(doc, file_name="final-quest", title="The Final Quest", author="Rick Joyner")
 
 
 def test_chapters_follow_the_books_contents(plan):

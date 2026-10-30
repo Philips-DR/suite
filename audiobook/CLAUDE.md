@@ -123,8 +123,12 @@ as clearest.
 - `audiobook/extract.py` — Docling conversion, cached in `.cache/docling/<pdf sha256>.json`; PDFs
   with no text layer are re-run with OCR (RapidOCR, torch backend).
 - `audiobook/plan.py` — pure `DoclingDocument → BookPlan`: walk (skip labels + their children),
-  heading levels from numbering, chapters, section filters, citations, paragraph joining,
-  front matter, empty headings, then corrections + `speech.for_speech`. Every drop is a `Skipped`.
+  chapter labels placed, heading levels from numbering, the book's own contents page, the title,
+  chapters, section filters, citations, paragraph joining, front matter, empty headings, then
+  corrections + `speech.for_speech`. Every drop is a `Skipped`.
+- `audiobook/names.py` — pure: a title and author from a file name (download sites' tags), the cut at
+  the title page's heading, placeholder titles, and a chapter's audio file name (`render` makes it,
+  `operations` finds it again).
 - `audiobook/speech.py` — pure rewrites for what the voice misreads, each verified by synthesis +
   Whisper (see its docstring); per-book corrections (`book.corrections.txt` next to the PDF).
 - `audiobook/preview.py` — pure `BookPlan → preview.md` (chapter table, exact text, skipped summary).
@@ -165,11 +169,48 @@ as clearest.
 - Docling tags some dialogue paragraphs as `list_item`; paragraph joining must treat them like
   paragraphs.
 - Title/author come from the PDF's metadata (`pdf_metadata`, via pypdfium2) — ebook title pages are
-  often images.
+  often images — unless it is a placeholder a program filled in (`about:blank` from Chrome, `Microsoft Word
+  - x.docx`). Without one, see "How a book's title and chapters are found" below.
 - Measured on the book (163 pages, calibre ebook): Docling 6 min 8 s (~2.3 s/page), no OCR needed.
 - OCR: RapidOCR's default onnxruntime backend isn't installed — use `backend="torch"`. Measured on
   2 scanned pages: 98% word accuracy; errors are run-together words ("theagent") and dropped
   spaces, e.g. "et al.,2024" (citation regex tolerates it). Slow: ~1 min/page under load.
+
+## How a book's title and chapters are found (2026-10-30)
+
+From a real ebook (*Dreams and Visions*, a Z-Library PDF, 154 pages). Before: its title was "Praise for", its
+16 chapters were 15 words each (4 to 13 seconds of audio), and "Introduction" was the whole book, 4 h 09 min
+in one file. After: 19 chapters, each starting on its own first page, named as its contents page names them.
+
+- **Docling read the contents page as headings**, each entry ("Chapter 1 God's Purpose…") followed by a line
+  about it, so every entry was a chapter. `find_contents` leaves out an entry: a top-level heading that is the
+  same chapter as a later one (its label, "chapter 3", or else its words), with at most 60 words before the next
+  *top-level* heading, two or more of them. Counted to the next heading instead, a real chapter that opens
+  straight onto a section is taken for one when a book numbers its chapters again in each part (tested).
+  The entry's text names the chapter ("God's Purpose…", where the chapter's page says "GOD'S PURPOSE…" or has
+  no title at all), and a "Contents" heading goes with them.
+- **"Chapter 3" on a line of its own is text to Docling, and not in its place**: at the foot of the chapter's
+  first page, after the title, or with no title heading at all (8 of 16 chapters). `place_chapter_labels`
+  makes it a heading at the top of its page; an unnumbered heading right after it on the same page joins it.
+  Only a label read as *text* moves: one read as a heading is in its place, and moving it would take the end
+  of the chapter before when two chapters share a page. **Not handled:** a text label mid-page in a book
+  whose chapters run on without a page break would still take that page's start.
+- **A chapter's own title page right under its announcement** ("Chapter 16 A Charge to Dreamers", then "A
+  CHARGE TO DREAMERS") is skipped as a `repeated heading`, so it is not read twice.
+- **The title**, in order: the PDF's own; the file name cut where a heading on the title page ends
+  ("Dreams and Visions Understanding Your Dreams…" and "DREAMS AND VISIONS" → "Dreams and Visions"); the file
+  name when it is two words or more; the book's first heading (a paper's title, when the file is
+  `2609.09153v1` or `paper`). A file name loses what download sites add: "(Z-Library)", "(Author [Last,
+  First])" → the author, Library Genesis's "Author - Title (Year, Publisher) - libgen.li". Before the book is
+  read (`book_overview` of an unread PDF, `start_analysis`'s job), only the metadata and the file name exist.
+- **Each chapter's audio is found by its whole file name** (`names.chapter_audio`): number and title, any
+  speed. `book_overview` gives each chapter its files and lists the rest as `other_audio` (the .m4b, and files
+  from an earlier reading whose chapters were numbered differently, which the page shows apart). Jobs carry the
+  book's `title`, so the page and Overview stop naming a book by its 120-character file name.
+- **Run for real:** the book re-planned from its Docling cache (only pages 15–17 left out as contents, 392
+  words); `list_audiobooks` in the container; in Chrome, a never-seen PDF uploaded, read by itself, its
+  chapters shown, deleted. Twenty deliberate breaks of these rules, each caught by a test. **Not run:** a
+  render with the new chapters (the book's audio is still the old split, shown as "From an earlier reading").
 
 ## Architecture rules
 

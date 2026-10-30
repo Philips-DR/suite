@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import background
+from .names import chapter_audio, title_from_file_name
 from .plan import BookPlan, build_plan
 from .preview import RENDER_SPEED, chapter_label, format_duration, render_preview, speech_seconds
 from .speech import parse_corrections
@@ -35,7 +36,20 @@ def plan_book(pdf: Path) -> BookPlan:
     from .extract import extract, pdf_metadata  # Docling is slow to import; keep it off the CLI's startup path.
 
     title, author = pdf_metadata(pdf)
-    return build_plan(extract(pdf), fallback_title=title or pdf.stem, author=author, corrections=load_corrections(pdf))
+    return build_plan(extract(pdf), file_name=pdf.stem, title=title, author=author, corrections=load_corrections(pdf))
+
+
+def unread_names(pdf: Path) -> tuple[str, str | None]:
+    """A book's title and author before Docling has read it, when its title page is not yet known: the PDF's
+    own, else its file name's, else the file name as it is."""
+    from .extract import pdf_metadata
+
+    try:
+        own_title, own_author = pdf_metadata(pdf)
+    except RuntimeError:  # pdfium cannot open it: the reading will say so in its own log
+        own_title = own_author = None
+    named, named_author = title_from_file_name(pdf.stem)
+    return own_title or named or pdf.stem, own_author or named_author
 
 
 def corrections_path(pdf: Path) -> Path:
@@ -134,20 +148,33 @@ def book_overview(pdf: Path) -> dict:
     from .extract import is_extracted
 
     if not is_extracted(pdf):
-        return {"pdf": str(pdf), "analysed": False,
+        title, author = unread_names(pdf)
+        return {"pdf": str(pdf), "analysed": False, "title": title, "author": author,
                 "hint": "Docling has not read this PDF yet. start_analysis does that in the "
                         "background (about 2-4 seconds a page, cached afterwards)."}
     plan = plan_book(pdf)
     total = sum(c.spoken_chars for c in plan.chapters)
     skipped = Counter(s.reason for c in plan.chapters for s in c.skipped)
+    files = _audio_files(output_dir(pdf))
+    names = [f.name for f in files]
+    claimed: set[str] = set()
+
+    def audio(number: int, chapter) -> list[dict]:
+        found = chapter_audio(names, number, chapter.title)
+        claimed.update(name for name, _ in found)
+        return [{**_audio_entry(output_dir(pdf) / name), "speed": speed} for name, speed in found]
+
     return {
         "pdf": str(pdf), "analysed": True, "title": plan.title, "author": plan.author,
         "chapters": [
             {"number": i, "label": chapter_label(i, c), "appendix": c.appendix,
              "words": sum(len(s.text.split()) for s in c.segments),
-             "speech": format_duration(speech_seconds(c.spoken_chars))}
+             "speech": format_duration(speech_seconds(c.spoken_chars)),
+             "audio": audio(i, c)}
             for i, c in enumerate(plan.chapters, 1)
         ],
+        # The whole book's .m4b, and files from an earlier reading whose chapters were found differently.
+        "other_audio": [_audio_entry(f) for f in files if f.name not in claimed],
         "speech": format_duration(speech_seconds(total)),
         "render_time": format_duration(speech_seconds(total) / RENDER_SPEED),
         "citations_removed": sum(c.citations_removed for c in plan.chapters),
@@ -187,18 +214,44 @@ def voice_choices() -> list[dict]:
     return [asdict(v) for v in list_voices()]
 
 
+def _audio_files(folder: Path) -> list[Path]:
+    """A book's audio, newest first."""
+    if not folder.is_dir():
+        return []
+    return sorted((f for f in folder.iterdir() if f.suffix in AUDIO and f.is_file()), key=lambda f: -f.stat().st_mtime)
+
+
+def _audio_entry(f: Path) -> dict:
+    return {"name": f.name, "path": str(f.resolve()), "megabytes": round(f.stat().st_size / 1e6, 1),
+            "modified": f.stat().st_mtime}
+
+
+def book_names(folder: Path) -> tuple[str, str | None]:
+    """A book's title and author as its last reading found them (the plan.json reading the book writes), else
+    as its folder's name, which is the PDF's, gives them."""
+    try:
+        plan = json.loads((folder / "plan.json").read_text())
+        if isinstance(plan, dict) and isinstance(plan.get("title"), str) and plan["title"].strip():
+            return plan["title"], plan.get("author") if isinstance(plan.get("author"), str) else None
+    except (OSError, ValueError):
+        pass
+    title, author = title_from_file_name(folder.name)
+    return title or folder.name, author
+
+
 def list_audiobooks(root: Path | None = None) -> list[dict]:
-    """Every book with audio in the output folder: its files, newest first."""
+    """Every book with audio in the output folder: its title, author and files, newest first. `book` is the
+    folder's name, which is the PDF's without .pdf, and is what describe and delete take."""
     root = root or Path("output")
     books = []
     for folder in sorted(p for p in root.glob("*") if p.is_dir()) if root.is_dir() else []:
         files = sorted(f for f in folder.iterdir() if f.suffix in AUDIO)
         if not files:
             continue
+        title, author = book_names(folder) if folder.name not in NOT_A_BOOK else ("Voice samples", None)
         books.append({
-            "book": folder.name, "folder": str(folder.resolve()),
-            "files": [{"name": f.name, "path": str(f.resolve()), "megabytes": round(f.stat().st_size / 1e6, 1),
-                       "modified": f.stat().st_mtime} for f in files],
+            "book": folder.name, "title": title, "author": author, "folder": str(folder.resolve()),
+            "files": [_audio_entry(f) for f in files],
             "updated": max(f.stat().st_mtime for f in files),
         })
     return sorted(books, key=lambda b: -b["updated"])
@@ -300,7 +353,8 @@ def check_voice(voice: str, allow_file: bool = True) -> str:
 def start_analysis(pdf: Path, jobs_dir: Path) -> dict:
     """Run Docling over a PDF in the background. It is the slow first step; everything after it
     (preview, reading the text, rendering) works from its cache."""
-    return asdict(background.start("analyse", str(pdf), jobs_dir, ["preview", str(pdf)]))
+    title = unread_names(pdf)[0]
+    return asdict(background.start("analyse", str(pdf), jobs_dir, ["preview", str(pdf)], title=title))
 
 
 def start_render(pdf: Path, voice: str, jobs_dir: Path, chapters: str | None = None,
@@ -313,13 +367,14 @@ def start_render(pdf: Path, voice: str, jobs_dir: Path, chapters: str | None = N
         raise ValueError("this PDF has not been analysed yet: call start_analysis first")
     check_speed(speed)
     voice = check_voice(voice)
-    selected = parse_selection(chapters, len(plan_book(pdf).chapters)) if chapters else None
+    plan = plan_book(pdf)
+    selected = parse_selection(chapters, len(plan.chapters)) if chapters else None
     arguments = ["render", str(pdf), "--voice", voice, "--speed", f"{speed:g}"]
     if selected:
         arguments += ["--chapters", chapters]
     if m4b:
         arguments.append("--m4b")
-    return asdict(background.start("render", str(pdf), jobs_dir, arguments))
+    return asdict(background.start("render", str(pdf), jobs_dir, arguments, title=plan.title))
 
 
 def get_corrections(pdf: Path) -> dict:

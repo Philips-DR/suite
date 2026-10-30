@@ -71,8 +71,9 @@ def create_audiobook_server(paths: ServerPaths) -> MCPServer:
         name="list_audiobooks",
         title="List finished audio",
         description=(
-            "Every book that has audio on disk -- chapter MP3s and M4B audiobooks -- with each "
-            "file's path and size, newest first. Reads only."
+            "Every book that has audio on disk -- chapter MP3s and M4B audiobooks -- with its title and "
+            "author and each file's path and size, newest first. Call a book by its title; `book` is its "
+            "folder's name (the PDF's file name), which describe_audiobook and delete_audiobook take. Reads only."
         ),
         annotations=READ,
     )
@@ -122,7 +123,9 @@ def create_audiobook_server(paths: ServerPaths) -> MCPServer:
         description=(
             "A PDF's chapters as they would be narrated: number, title, words, length of speech, "
             "and how long the render would take, with what was left out (tables, formulas, "
-            "citations, page furniture) counted by reason. The chapter numbers are what "
+            "citations, page furniture, the book's own contents page) counted by reason, and each chapter's "
+            "finished audio, if it has been rendered (`other_audio`: the whole-book .m4b, and files from an "
+            "earlier reading whose chapters were found differently). The chapter numbers are what "
             "start_render's `chapters` takes. Instant once the PDF has been analysed; if it has "
             "not, it says analysed=false and start_analysis is the next step. Reads only."
         ),

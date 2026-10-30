@@ -5,6 +5,8 @@ from pathlib import Path
 
 from docling_core.types.doc import DoclingDocument
 
+from .names import is_placeholder_title
+
 CACHE_DIR = Path(".cache/docling")
 
 
@@ -13,11 +15,13 @@ def pdf_hash(pdf: Path) -> str:
 
 
 def pdf_metadata(pdf: Path) -> tuple[str | None, str | None]:
-    """(title, author) from the PDF's document info, when set."""
+    """(title, author) from the PDF's document info, when set to something that names the book: a title the
+    program that made the PDF filled in by itself ("about:blank", "Microsoft Word - draft.docx") is not one."""
     import pypdfium2  # installed with Docling
 
     info = pypdfium2.PdfDocument(str(pdf)).get_metadata_dict()
-    return (info.get("Title") or "").strip() or None, (info.get("Author") or "").strip() or None
+    title = (info.get("Title") or "").strip()
+    return (None if is_placeholder_title(title) else title) or None, (info.get("Author") or "").strip() or None
 
 
 def is_extracted(pdf: Path) -> bool:

@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 from docling_core.types.doc import DoclingDocument
 
-from audiobook import operations
+from audiobook import background, operations
+from audiobook.names import chapter_stem
 from audiobook.plan import build_plan
 
 FIXTURE = Path(__file__).parent / "fixtures/paper.docling.json.gz"
@@ -16,7 +17,7 @@ FIXTURE = Path(__file__).parent / "fixtures/paper.docling.json.gz"
 def analysed(monkeypatch, tmp_path):
     """A PDF the tool believes Docling has already read, with the real plan of the test paper."""
     doc = DoclingDocument.model_validate_json(gzip.decompress(FIXTURE.read_bytes()))
-    plan = build_plan(doc, fallback_title="paper")
+    plan = build_plan(doc, file_name="paper")
     monkeypatch.setattr("audiobook.extract.is_extracted", lambda pdf: True)
     monkeypatch.setattr(operations, "plan_book", lambda pdf: plan)
     pdf = tmp_path / "paper.pdf"
@@ -59,6 +60,11 @@ def test_an_unanalysed_pdf_says_what_to_do_instead_of_waiting(monkeypatch, tmp_p
     pdf.write_bytes(b"%PDF")
     overview = operations.book_overview(pdf)
     assert overview["analysed"] is False and "start_analysis" in overview["hint"]
+    # Named before it is read, from its file name: the library listed it as the whole of that.
+    named = tmp_path / "Ann Writer - Rivers of Light (2004, Some House ) - libgen.li-1.pdf"
+    named.write_bytes(b"%PDF")
+    overview = operations.book_overview(named)
+    assert (overview["title"], overview["author"]) == ("Rivers of Light", "Ann Writer")
     with pytest.raises(ValueError, match="start_analysis"):
         operations.chapter_text(pdf, 1)
     with pytest.raises(ValueError, match="start_analysis"):
@@ -72,6 +78,52 @@ def test_overview_of_the_paper(analysed):
     assert labels[:3] == ["Opening", "1. Introduction", "2. Related Work"]
     assert overview["chapters"][0]["number"] == 1
     assert overview["skipped"] and overview["render_time"]
+
+
+def test_the_overview_gives_each_chapter_its_audio_and_keeps_the_rest_apart(analysed, monkeypatch, tmp_path):
+    """So the page can put a play button on a chapter's own row. A file from an earlier reading, when the chapters
+    were found differently, has the same number and another title: it belongs to no chapter of this one."""
+    monkeypatch.chdir(tmp_path)  # output/ is relative to the tool's own folder
+    folder = tmp_path / "output/paper"
+    folder.mkdir(parents=True)
+    title = operations.plan_book(analysed).chapters[1].title
+    mine = f"{chapter_stem(2, title)}-0.95x.mp3"
+    for name in (mine, "02-an-older-reading-0.95x.mp3", "procedural-graphs-0.95x.m4b"):
+        (folder / name).write_bytes(b"x")
+    overview = operations.book_overview(analysed)
+    assert [(a["name"], a["speed"]) for a in overview["chapters"][1]["audio"]] == [(mine, 0.95)]
+    assert overview["chapters"][0]["audio"] == []
+    assert {a["name"] for a in overview["other_audio"]} == {"02-an-older-reading-0.95x.mp3", "procedural-graphs-0.95x.m4b"}
+
+
+def test_a_listed_book_carries_its_title_not_only_its_file_name(tmp_path):
+    """The folder is named for the PDF, which can be 120 characters of title, subtitle, author and download site."""
+    read = tmp_path / "Dreams Long Subtitle Here (Ann Writer [Writer, Ann]) (Z-Library)"
+    unread = tmp_path / "Rivers and Seas A Guide (Bo Lake) (z-lib.org)"
+    for folder in (read, unread, tmp_path / "voices"):
+        folder.mkdir()
+        (folder / "01-opening.mp3").write_bytes(b"x")
+    (read / "plan.json").write_text('{"title": "Dreams", "author": "Ann Writer", "chapters": []}')
+    books = {b["book"]: (b["title"], b["author"]) for b in operations.list_audiobooks(tmp_path)}
+    assert books[read.name] == ("Dreams", "Ann Writer")  # as reading the book found it
+    assert books[unread.name] == ("Rivers and Seas A Guide", "Bo Lake")  # from the file name alone
+    assert books["voices"] == ("Voice samples", None)
+
+
+def test_a_job_names_its_book_by_title(analysed, monkeypatch, tmp_path):
+    """The job card and the Overview showed "Rendering: <120 characters of file name>.pdf"."""
+    started = []
+
+    def start(kind, target, jobs_dir, arguments, title=None):
+        started.append(title)
+        return background.Job(id="j", kind=kind, target=target, log="", started_at="now", title=title)
+
+    monkeypatch.setattr(operations.background, "start", start)
+    unread = tmp_path / "Rivers and Seas A Guide (Bo Lake) (Z-Library).pdf"
+    unread.write_bytes(b"%PDF-1.4 stand-in")  # pdfium cannot open it, so its file name names it
+    assert operations.start_analysis(unread, tmp_path / "jobs")["title"] == "Rivers and Seas A Guide"
+    operations.start_render(analysed, "alba", tmp_path / "jobs")
+    assert started[-1].startswith("Procedural Graphs")  # as reading the book found it
 
 
 def test_reading_a_chapter_pages_through_it(analysed):

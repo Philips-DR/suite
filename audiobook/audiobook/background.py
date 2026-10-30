@@ -82,6 +82,7 @@ class Job:
     eta: str | None = None  # time left, as the render prints it: h:mm:ss
     outputs: list[str] = field(default_factory=list)
     detail: str = ""
+    title: str | None = None  # the book as a person names it, for a page to show; `target` is the file
 
 
 def _job_file(jobs_dir: Path, job_id: str) -> Path:
@@ -306,7 +307,7 @@ def cancel(jobs_dir: Path, job_id: str | None = None) -> Job:
 
 
 def start(kind: str, target: str, jobs_dir: Path, arguments: list[str],
-          command: list[str] | None = None) -> Job:
+          command: list[str] | None = None, title: str | None = None) -> Job:
     """Launch `python -m audiobook <arguments>` in the background and return at once. `target`
     must appear among the arguments verbatim: it is how a live process is recognised as ours.
 
@@ -316,7 +317,7 @@ def start(kind: str, target: str, jobs_dir: Path, arguments: list[str],
     `command` exists so tests can substitute a stand-in for the real thing.
     """
     with _START:
-        return _start(kind, target, Path(jobs_dir), arguments, command)
+        return _start(kind, target, Path(jobs_dir), arguments, command, title)
 
 
 def _unique_id(jobs_dir: Path, kind: str) -> str:
@@ -328,7 +329,8 @@ def _unique_id(jobs_dir: Path, kind: str) -> str:
     return job_id
 
 
-def _start(kind: str, target: str, jobs_dir: Path, arguments: list[str], command: list[str] | None) -> Job:
+def _start(kind: str, target: str, jobs_dir: Path, arguments: list[str], command: list[str] | None,
+           title: str | None = None) -> Job:
     jobs_dir.mkdir(parents=True, exist_ok=True)
 
     running = current(jobs_dir)
@@ -351,7 +353,7 @@ def _start(kind: str, target: str, jobs_dir: Path, arguments: list[str], command
             stderr=subprocess.STDOUT, start_new_session=True,
         )
 
-    job = Job(id=job_id, kind=kind, target=target, log=str(log), pid=process.pid,
+    job = Job(id=job_id, kind=kind, target=target, log=str(log), pid=process.pid, title=title,
               arguments=arguments, started_at=datetime.now().isoformat(timespec="seconds"))
     _save(jobs_dir, job)
 
