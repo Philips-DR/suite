@@ -37,14 +37,17 @@ CLAIMS_NEXT = (
     "Resolve every finding before `write_draft`: cut the claim, or ask the user and record the answer, then pass "
     "it in `facts` and check again. A finding marked `also_in_the_posting` may only be the employer, place or "
     "role being named; if the sentence says the user DID or HAS it, it is a claim and needs the user's word. Read "
-    "each `weakly_traced` sentence against the material. In your reply, say which findings you kept and why. "
+    "each `weakly_traced` sentence against the material. An `unchecked` finding means the draft says code is "
+    "private and nothing has looked: check the addresses with web-ai and call this again with `public_links`. "
+    "In your reply, say which findings you kept and why. "
     "`clean: true` means nothing this check looks for was unsupported; it does not prove the sentences are true."
 )
 
 LIMITS = (
-    "This checks figures, words that overstate (how often, how much, who did it, how big or real, what level), "
-    "tools, languages, degrees and names against the material. It cannot tell that a sentence is true: a claim "
-    "worded without any of those can still be wrong. The nearest line is shown so a person can judge quickly."
+    "This checks figures, words that overstate (how often, how much, who did it, how big or real, how long, what "
+    "level), tools, languages, degrees and names against the material, and a claim that code is private against "
+    "the addresses found public. It cannot tell that a sentence is true: a claim worded without any of those can "
+    "still be wrong. The nearest line is shown so a person can judge quickly."
 )
 
 
@@ -117,11 +120,11 @@ def requirements_report(posting: str, paths: list[str], facts: list[str], roots:
 
 
 def claims_report(draft: str, paths: list[str], facts: list[str], posting: str = "",
-                  roots: list[Path] | None = None) -> dict[str, Any]:
+                  roots: list[Path] | None = None, *, public_links: list[str] | None = None) -> dict[str, Any]:
     if not draft.strip():
         raise ValueError("the draft is empty")
     lines = gather(paths, facts, roots)
-    report = check_claims(draft, lines, posting)
+    report = check_claims(draft, lines, posting, public_links)
 
     unknown_names = [f for f in report.names if not f.in_posting]
     posting_names = sorted({f.token for f in report.names if f.in_posting}, key=str.lower)

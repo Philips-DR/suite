@@ -26,11 +26,14 @@ from dataclasses import dataclass, field
 from applyai.sources import Line, units
 from applyai.text import content_stems, negated, numbers, stem, tokens
 from applyai.vocabulary import (
+    ABOUT_CODE,
+    CODE_HOSTS,
     COMMON_CAPITALISED,
     DEGREE_LEVELS,
     DEGREE_NAMES,
     HEDGES,
     LANGUAGES,
+    PRIVACY,
     TOOLS,
     WATCH_CATEGORY,
     watch_words_in,
@@ -49,7 +52,11 @@ december jan feb mar apr jun jul aug sep sept oct nov dec""".split())
 _DATE_ONLY = re.compile(r"^\W*(?:\d{1,2}\s+)?[A-Za-z]{3,9}\.?\s+(?:\d{1,2},?\s+)?\d{4}\W*$")
 
 # Order findings are shown in: the ones that overstate or invent first, names last.
-KIND_ORDER = ("figure", "claim word", "dropped limit", "credential", "tool", "language", "name")
+KIND_ORDER = ("figure", "claim word", "public link", "unchecked", "dropped limit", "credential", "tool", "language",
+              "name")
+UNCHECKED = ("the draft says code is “{}”, and nothing has checked whether it is: check each address with web-ai "
+             "(github_visibility for a GitHub account or repository, check_link for another) and pass every one a "
+             "stranger can open as `public_links`, or [] if none is")
 
 
 @dataclass
@@ -193,12 +200,45 @@ def dropped_limits(draft_units: list[str], material: _Material) -> list[Finding]
     return findings
 
 
-def check_claims(draft: str, lines: list[Line], posting: str = "") -> Report:
+_LINK = re.compile(r"(?<![@\w.-])(?:https?://)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}(?:/[^\s)\]>\"'<,;]*)?", re.I)
+
+
+def _address(url: str) -> str:
+    """One spelling for one address: "https://www.github.com/Philips-DR/" and "github.com/philips-dr" agree."""
+    url = re.sub(r"^[a-z][a-z0-9+.-]*://", "", url.strip().lower())
+    return url.removeprefix("www.").rstrip("/.").removesuffix(".git")
+
+
+def _addresses(text: str) -> list[str]:
+    return [_address(m.group(0)) for m in _LINK.finditer(text)]
+
+
+def _covers(mentioned: str, public: str) -> bool:
+    """A mentioned address names a public one: the same address, or an account that holds it. A repository
+    under a public account is not itself shown public by the account."""
+    return public == mentioned or public.startswith(mentioned + "/")
+
+
+def _privacy_said(unit: str) -> str | None:
+    """The word a sentence uses to say something is kept out of sight. "Not private" says the opposite."""
+    for m in PRIVACY.finditer(unit):
+        said = m.group(0)
+        if said.lower().startswith("not ") or not negated(unit, said):
+            return said
+    return None
+
+
+def check_claims(draft: str, lines: list[Line], posting: str = "", public: list[str] | None = None) -> Report:
+    """`public` is every address a stranger was found able to open (by web-ai; this has no network). None
+    means nothing was checked, which is not the same as [] -- checked, and none is public."""
     material = _Material(lines)
     posting_words = {t.lower() for t in tokens(posting)}
     posting_numbers = set(numbers(posting))
     report = Report(units_checked=0)
     seen: set[tuple[str, str, str]] = set()
+    # One address per entry, even when a list arrives as one string ("a b c" or "a, b, c"): it did, in a real run.
+    public_as_given = {_address(u): u for entry in public or [] for u in re.split(r"[\s,]+", entry) if u}
+    in_draft = _addresses(draft)
 
     def add(bucket: list[Finding], unit: str, kind: str, token: str, why: str, nearest: dict | None, posting_has: bool) -> None:
         key = (unit, kind, token.lower())
@@ -266,6 +306,29 @@ def check_claims(draft: str, lines: list[Line], posting: str = "") -> Report:
                     n.lower() for n in tools_named(unit)} and tok not in LANGUAGES:
                 add(report.names, unit, "name", tok, f"“{tok}” does not appear in your material",
                     material.nearest(stems), tok.lower() in posting_words)
+
+        # Checked against the world, not the material: the material itself said "Repositories are private".
+        said = _privacy_said(unit)
+        if said:
+            here = _addresses(unit)
+            about_code = bool(ABOUT_CODE.search(unit)) or any(a.split("/")[0] in CODE_HOSTS for a in here)
+            if public is None:
+                if about_code:
+                    add(report.findings, unit, "unchecked", said, UNCHECKED.format(said), None, False)
+            else:
+                named = [p for p in public_as_given if any(_covers(a, p) for a in here)]
+                # A repository, not an account: every account page is public, which says nothing about its code.
+                hosted = [p for p in public_as_given
+                          if p.split("/")[0] in CODE_HOSTS and p.count("/") >= 2] if about_code else []
+                found = named or hosted
+                if found:
+                    # Shown: what the draft links to, else what sits under an account it links to, else any. A CV's
+                    # header links the account, which would otherwise put every repository level with the two it cites.
+                    tiers = ([p for p in found if p in in_draft],
+                             [p for p in found if any(_covers(a, p) for a in in_draft)], found)
+                    shown = ", ".join(public_as_given[p] for p in next(t for t in tiers if t)[:5])
+                    add(report.findings, unit, "public link", said,
+                        f"the draft says “{said}”, but these were found public: {shown}", None, False)
 
         if len(stems) >= MIN_UNIT_STEMS_FOR_OVERLAP:
             covered = len(stems & material.all_stems) / len(stems)

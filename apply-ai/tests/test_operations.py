@@ -94,6 +94,26 @@ def test_claims_names_from_the_posting_are_separated_from_unknown_ones(cv, tmp_p
     assert {n["token"] for n in report["names_to_review"]} == {"Wageningen"}
 
 
+def test_a_private_claim_is_unchecked_until_links_are_passed_and_then_judged_by_them(cv, tmp_path):
+    draft = "- My repositories are private; I am happy to grant access."
+    unchecked = claims_report(draft, [cv], [], "", [tmp_path])
+    assert unchecked["clean"] is False and [f["kind"] for f in unchecked["findings"]] == ["unchecked"]
+    assert "public_links" in unchecked["next_step"]
+    public = claims_report(draft, [cv], [], "", [tmp_path], public_links=["https://github.com/Philips-DR/docu-ai"])
+    assert [f["kind"] for f in public["findings"]] == ["public link"]
+    assert claims_report(draft, [cv], [], "", [tmp_path], public_links=[])["clean"] is True
+
+
+def test_the_command_line_takes_public_addresses_and_an_empty_list(cv, tmp_path, capsys):
+    from applyai.cli import main
+    draft = tmp_path / "letter.md"
+    draft.write_text("- My repositories are private.\n")
+    assert main(["claims", str(draft), cv]) == 0 and "[unchecked] private" in capsys.readouterr().out
+    assert main(["claims", str(draft), cv, "--public", "https://github.com/a/b"]) == 0
+    assert "[public link] private" in capsys.readouterr().out
+    assert main(["claims", str(draft), cv, "--public"]) == 0 and "Clean." in capsys.readouterr().out
+
+
 def test_an_empty_draft_and_a_missing_source_are_errors(cv, tmp_path):
     with pytest.raises(ValueError, match="empty"):
         claims_report("  ", [cv], [], "", [tmp_path])

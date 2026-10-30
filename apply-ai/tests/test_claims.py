@@ -199,6 +199,112 @@ def test_amplifiers_that_the_material_does_not_use_are_flagged():
     assert {("claim word", "extensive"), ("claim word", "numerous")} <= kinds(report)
 
 
+# A real letter (2026-10-30): a lab's mission "is work I have spent my career doing", for a CV showing one
+# three-year job. No figure and no watched word, so it passed.
+def test_a_claim_that_spans_a_whole_career_is_flagged():
+    finding = next(f for f in run("- AI for Africans, by Africans, is work I have spent my career doing.").findings
+                   if f.token == "spent my career")
+    assert finding.kind == "claim word" and "(how long)" in finding.why
+    assert ("claim word", "lifelong") in kinds(run("- A lifelong interest in object detection on drone imagery."))
+
+
+def test_a_whole_career_claim_the_material_makes_is_supported():
+    draft = "- I have spent my career building object detection models on drone imagery."
+    assert ("claim word", "spent my career") in kinds(run(draft))
+    fact = "Spent my career building object detection models on drone imagery"
+    assert ("claim word", "spent my career") not in kinds(run(draft, extra=[fact]))
+
+
+# A real CV and letter (2026-10-24) said "Repositories are private" when most were public. The CV itself said
+# it, so the material supported it; only opening the links could tell, and this tool has no network.
+PRIVATE = "- Repositories are private; I'm glad to grant access on request."
+
+
+def private_findings(draft: str, public: list[str] | None, extra: list[str] | None = None):
+    return [f for f in check_claims(draft, material(extra), "", public).findings if f.kind in ("public link", "unchecked")]
+
+
+def test_a_private_claim_about_code_is_flagged_when_the_code_was_found_public():
+    found = private_findings(PRIVATE, ["https://github.com/Philips-DR/docu-ai", "https://www.africanlanguageslab.com"],
+                             extra=["Repositories are private; I'm glad to grant access on request."])
+    assert [(f.kind, f.token) for f in found] == [("public link", "private")]
+    assert "github.com/Philips-DR/docu-ai" in found[0].why
+    assert "africanlanguageslab" not in found[0].why     # a public web page is not public code
+
+
+def test_a_private_claim_about_code_that_nothing_checked_says_how_to_check_it():
+    found = private_findings(PRIVATE, None)
+    assert [(f.kind, f.token) for f in found] == [("unchecked", "private")]
+    assert "github_visibility" in found[0].why and "public_links" in found[0].why
+
+
+def test_checked_with_none_public_is_not_a_finding():
+    assert private_findings(PRIVATE, []) == []
+
+
+def test_saying_code_is_not_private_is_not_a_private_claim():
+    assert private_findings("- The code is not private: github.com/x/y.", None) == []
+    assert private_findings("- The code is not private: github.com/x/y.", ["https://github.com/x/y"]) == []
+
+
+def test_a_private_claim_that_is_not_about_code_is_left_alone():
+    # "code-switched" is not code, and client data is not a repository.
+    for draft in ("- Fine-tuned Whisper on private, code-switched farmer speech.",
+                  "- Kept client survey data confidential."):
+        assert private_findings(draft, ["https://github.com/Philips-DR/suite"]) == [], draft
+        assert private_findings(draft, None) == [], draft
+
+
+def test_an_address_in_the_sentence_found_public_is_named_whatever_its_host():
+    found = private_findings("- My portfolio, philip-portfolio-five.vercel.app, is private.",
+                             ["https://philip-portfolio-five.vercel.app/", "https://github.com/Philips-DR/suite"])
+    assert len(found) == 1 and "vercel.app" in found[0].why and "github.com" not in found[0].why
+
+
+def test_one_address_written_two_ways_is_one_address():
+    # A model passes what web-ai returned; a draft writes the address its own way.
+    found = private_findings("- My portfolio at https://www.Philip-Portfolio-Five.vercel.app/ is private.",
+                             ["philip-portfolio-five.vercel.app"])
+    assert len(found) == 1 and found[0].kind == "public link"
+    assert len(private_findings("- My code at github.com/a/b is private.", ["https://www.github.com/A/B.git"])) == 1
+
+
+def test_the_public_addresses_shown_are_the_ones_the_draft_links_to():
+    draft = ("- Voice AI survey platform: [github.com/Philips-DR/voice-ai-survey-platform]"
+             "(https://github.com/Philips-DR/voice-ai-survey-platform)\n" + PRIVATE)
+    found = private_findings(draft, ["https://github.com/Philips-DR/suite",
+                                     "https://github.com/Philips-DR/voice-ai-survey-platform"])
+    assert len(found) == 1 and "voice-ai-survey-platform" in found[0].why and "/suite" not in found[0].why
+
+
+def test_a_linked_repository_outranks_ones_only_under_a_linked_account():
+    # The real CV links the account in its header and two repositories in its projects.
+    names = ("suite", "audiobook", "assistant", "meet-ai", "mail-ai", "voice-ai-survey-platform")
+    public = [f"https://github.com/Philips-DR/{n}" for n in names]
+    header = "GitHub: [github.com/Philips-DR](https://github.com/Philips-DR)\n"
+    why = private_findings(header + "- Survey platform: github.com/Philips-DR/voice-ai-survey-platform\n" + PRIVATE,
+                           public)[0].why
+    assert "voice-ai-survey-platform" in why and "/suite" not in why
+    # With only the account linked, its repositories are what is shown.
+    assert "/suite" in private_findings(header + PRIVATE, public)[0].why
+
+
+def test_a_list_that_arrives_as_one_string_is_still_a_list():
+    found = private_findings("- My code at github.com/a/b is private.", ["https://github.com/x/y https://github.com/a/b"])
+    assert len(found) == 1 and "https://github.com/a/b" in found[0].why and "x/y https" not in found[0].why
+
+
+def test_a_public_account_page_says_nothing_about_its_repositories():
+    # Every account page is public. Only a repository found public contradicts "the code is private".
+    assert private_findings("- The survey code at github.com/Philips-DR/survey is private.",
+                            ["https://github.com/Philips-DR"]) == []
+    assert private_findings(PRIVATE, ["https://github.com/Philips-DR"]) == []
+    # Naming the account itself as private is contradicted by it, and naming the account covers its repositories.
+    assert len(private_findings("- My GitHub, github.com/Philips-DR, is private.", ["https://github.com/Philips-DR"])) == 1
+    assert len(private_findings("- My code at github.com/Philips-DR is private.",
+                                ["https://github.com/Philips-DR/suite"])) == 1
+
+
 def test_a_figure_in_a_short_lead_line_leans_on_the_heading_above_it_and_a_bullet_does_not():
     ok = run("- BSc in Information Technology from BlueCrest University College, CGPA 3.63.")
     assert not any(f.kind == "figure" for f in ok.findings)

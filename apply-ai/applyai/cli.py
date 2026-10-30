@@ -1,7 +1,7 @@
 """./apply -- the human front door.
 
     ./apply requirements POSTING.txt CV.md [--fact "..."]...
-    ./apply claims DRAFT.md CV.md [--fact "..."]... [--posting POSTING.txt]
+    ./apply claims DRAFT.md CV.md [--fact "..."]... [--posting POSTING.txt] [--public [URL ...]]
 
 Reads only. Prints what a model would be given, in a form a person can read.
 """
@@ -68,13 +68,15 @@ def main(argv: list[str] | None = None) -> int:
     cl.add_argument("sources", nargs="+")
     cl.add_argument("--fact", action="append", default=[])
     cl.add_argument("--posting", help="The posting, so a finding that echoes it is marked")
+    cl.add_argument("--public", nargs="*", action="extend", metavar="URL",
+                    help="Addresses a stranger can open (checked with web-ai); --public alone: checked, none is")
     args = parser.parse_args(argv)
     try:
         if args.command == "requirements":
             _print_requirements(requirements_report(_read(args.posting), args.sources, args.fact))
         else:
             _print_claims(claims_report(_read(args.draft), args.sources, args.fact,
-                                        _read(args.posting) if args.posting else ""))
+                                        _read(args.posting) if args.posting else "", public_links=args.public))
     except (SourceError, ValueError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

@@ -41,6 +41,17 @@ def test_the_descriptions_carry_the_procedure_the_assistant_must_follow(server):
     assert "FIRST" in by_name["requirements"] and "ONE message" in by_name["requirements"]
     assert "remember" in by_name["requirements"]
     assert "BEFORE write_draft" in by_name["claims"] and "clean: true" in by_name["claims"]
+    # An email body claims things too, and a private claim needs the addresses checked (2026-10-30).
+    assert "BEFORE draft_new" in by_name["claims"] and "github_visibility" in by_name["claims"]
+
+
+def test_public_links_reach_the_check_through_the_door(server, folder):
+    source = [str(folder / "uploads" / "cv.md")]
+    draft = "- My repositories are private."
+    assert call(server, "claims", draft=draft, sources=source)["findings"][0]["kind"] == "unchecked"
+    out = call(server, "claims", draft=draft, sources=source, public_links=["https://github.com/a/b"])
+    assert [f["kind"] for f in out["findings"]] == ["public link"]
+    assert call(server, "claims", draft=draft, sources=source, public_links=[])["clean"] is True
 
 
 def test_requirements_through_the_door(server, folder):

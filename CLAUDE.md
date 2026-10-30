@@ -71,7 +71,9 @@ in their tool descriptions, not in the assistant's prompt:
 - **apply-ai** (`requirements`, `claims`; reads only): every requirement of the posting against what the user's
   own material shows, the gaps asked about in one message before drafting; then every figure, overstating word,
   tool, language, degree and name in the draft traced to a source line, and any limit the source put on a claim
-  noticed when a draft drops it. Rules and the failures behind them: `apply-ai/CLAUDE.md`.
+  noticed when a draft drops it; since 2026-10-30 also the email body, and a claim that code is private set against
+  the addresses web-ai found public (the user's own CV said "private" when most were public). Rules and the
+  failures behind them: `apply-ai/CLAUDE.md`.
 - **docu-ai** (`build` returns `layout`; `layout`, `info`, `trash`): the page count and a warning for a heading
   stranded at a page foot, a page target missed or a stray last page, read from the PDF Docs exports; a gated
   `trash` for the Doc a rebuild replaces. `docu-ai/CLAUDE.md` → "Layout".

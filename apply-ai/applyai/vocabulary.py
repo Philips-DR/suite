@@ -67,6 +67,10 @@ WATCH: dict[str, tuple[str, ...]] = {
                           "large-scale", "millions", "billions", "thousands", "hundreds", "nationwide",
                           "published", "open-source", "award", "awarded", "award-winning", "patented"),
     "what it is": ("open",),
+    # A real letter (2026-10-30) said a lab's mission "is work I have spent my career doing", for a CV showing
+    # one three-year job; it held no figure and no word this list watched, so it passed.
+    "how long": ("spent my career", "throughout my career", "all my career", "career-long", "lifelong",
+                 "life-long", "life's work", "all my life"),
     "level": ("expert", "advanced", "proficient", "fluent", "native", "bilingual", "certified", "licensed",
               "accredited", "master", "msc", "phd", "doctorate", "senior"),
 }
@@ -108,6 +112,17 @@ HEDGES: tuple[str, ...] = (
     r"\bfamiliar(?:ity)? with\b[^.;]*",
     r"\bin progress\b|\bongoing\b",
 )
+
+# What a draft says to keep work out of sight, and the words that make it about code. A real CV and letter
+# (2026-10-24) said "Repositories are private" when most of the person's repositories were public: the CV
+# itself said so, so every check passed, and only someone opening the links could tell. apply-ai has no
+# network; what a stranger can open is found by web-ai and passed in.
+PRIVACY = re.compile(r"(?<![\w-])(?:private|confidential|proprietary|closed[- ]source|not public(?:ly available)?"
+                     r"|not open[- ]source)(?![\w-])", re.I)
+# "code-switched speech" is not code.
+ABOUT_CODE = re.compile(r"(?<![\w-])(?:repo|repos|repository|repositories|code|codebase|github|gitlab)(?![\w-])", re.I)
+# Where a public address counts as public code, when the sentence names no address of its own.
+CODE_HOSTS = ("github.com", "gitlab.com", "bitbucket.org", "codeberg.org", "huggingface.co")
 
 # Capitalised words that are not names of anything an applicant could have worked with.
 COMMON_CAPITALISED = frozenset("""

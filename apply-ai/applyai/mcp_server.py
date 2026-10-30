@@ -55,23 +55,29 @@ def create_apply_ai_server(roots: list | None = None) -> MCPServer:
         name="claims",
         title="Check a draft's claims against the user's own material",
         description=(
-            "USE THIS ON EVERY DRAFT CV OR LETTER BEFORE write_draft. Checks that every figure, every word "
-            "that overstates (daily, most, directly, led, deployed, production, open, fluent, expert...), "
-            "every tool, language, degree and name in the draft is traceable to the user's own material, "
-            "and shows the nearest line for anything that is not. `clean: true` means nothing it looks for "
-            "was unsupported, not that every sentence is true. Fix each finding (cut the claim, or ask the "
-            "user and record their answer) and run it again; say in your reply which you kept and why. "
-            "Run it AGAIN on the final text after ANY edit, including trimming a draft to fit a page: a trim "
-            "rewords, and a reworded sentence can claim what the original did not. "
+            "USE THIS ON EVERY DRAFT CV OR LETTER BEFORE write_draft, AND ON THE BODY OF ANY EMAIL THAT GOES "
+            "WITH THEM BEFORE draft_new: an email claims things too. Checks that every figure, every word "
+            "that overstates (daily, most, directly, led, deployed, production, open, fluent, expert, spent "
+            "my career...), every tool, language, degree and name in the draft is traceable to the user's "
+            "own material, and shows the nearest line for anything that is not. `clean: true` means nothing "
+            "it looks for was unsupported, not that every sentence is true. Fix each finding (cut the claim, "
+            "or ask the user and record their answer) and run it again; say in your reply which you kept "
+            "and why. Run it AGAIN on the final text after ANY edit, including trimming a draft to fit a "
+            "page: a trim rewords, and a reworded sentence can claim what the original did not. "
+            "If the draft says code is private or confidential, check its addresses with web-ai first "
+            "(github_visibility for a GitHub account or repository, check_link for another address) and pass "
+            "every address a stranger can open as `public_links` ([] if none is): the user's own CV once "
+            "said its repositories were private when most were public. "
             "Pass the draft as text, the user's documents as `sources` (paths), the facts the user has "
             "confirmed as `facts`, and the posting as `posting` so a finding that merely echoes the "
             "posting is marked. Reads only; changes nothing."
         ),
         annotations=READS_ONLY,
     )
-    def _claims(draft: str, sources: list[str], facts: list[str] | None = None, posting: str = "") -> dict[str, Any]:
+    def _claims(draft: str, sources: list[str], facts: list[str] | None = None, posting: str = "",
+                public_links: list[str] | None = None) -> dict[str, Any]:
         try:
-            return claims_report(draft, sources, facts or [], posting, folders)
+            return claims_report(draft, sources, facts or [], posting, folders, public_links=public_links)
         except (SourceError, ValueError) as error:
             return {"error": str(error)}
 

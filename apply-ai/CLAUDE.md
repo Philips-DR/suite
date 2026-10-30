@@ -25,9 +25,10 @@ not read for meaning at all.
   `not_found` (no line shares its words: look before asking), `partly`, `trait` (see below), `supported`.
   `ask_the_user` is the list of questions for what the material does not settle, merged so the same one is
   asked once.
-- **`claims(draft, sources, facts, posting)`** checks every figure, every word that overstates, every tool,
-  language, degree and name in a draft against the material, and shows the nearest source line for each
-  finding. **It cannot tell that a sentence is true.** `clean: true` means nothing it looks for was
+- **`claims(draft, sources, facts, posting, public_links)`** checks every figure, every word that overstates,
+  every tool, language, degree and name in a draft against the material, and a claim that code is private
+  against the addresses found public, and shows the nearest source line for each finding. It is for a CV, a
+  letter and the body of the email that goes with them. **It cannot tell that a sentence is true.** `clean: true` means nothing it looks for was
   unsupported, and the result says so. Two things it was shown to miss on a real draft, both left for the
   person approving: "dashboards" where the CV said one, and "specializations" for what is a single course.
 
@@ -55,7 +56,22 @@ not read for meaning at all.
 - **The watch-list compares exact forms, never stems.** "directly" must not be supported by "directed".
   Hyphenated entries ("open-source", "end-to-end") are found as phrases, since the tokenizer splits them.
   The list is in `vocabulary.py`, short and literal on purpose; it grows by a line when a real draft shows a
-  new one (it gained "open" from the real tailoring and "extensive" from the second run).
+  new one (it gained "open" from the real tailoring, "extensive" from the second run, and "spent my career"
+  and its kin, as phrases, from a letter on 2026-10-30 that said a lab's mission "is work I have spent my
+  career doing" for a CV showing one three-year job).
+- **A claim about the world is checked against the world, and the world is passed in.** A real CV and letter
+  said "Repositories are private" when most were public. The CV itself said it, so the material supported it,
+  and only opening the links could tell. apply-ai still has no network: web-ai finds what a stranger can open,
+  and the model passes those addresses as `public_links`. A sentence that calls code private (private,
+  confidential, proprietary, closed-source, not public; "not private" is the opposite) is then a `public
+  link` finding when the address it names, or any repository on a code host, was found public. With nothing
+  passed it is `unchecked`, which says how to check. `None` and `[]` differ: `[]` is "checked, none public".
+  Three things that went wrong while building it, each now a test: every GitHub account page is public, so
+  an account says nothing about its repositories (only a repository counts); "code-switched speech" is not
+  code; and a list of addresses can arrive as one string, so each entry is split. The addresses shown are
+  the ones the draft links to, else those under an account it links to, else any.
+- **An email body is checked like a letter.** The description says so: the email that went with a real
+  application on 2026-10-30 was the one text no check had read.
 - **A limit that is dropped overstates as much as a word that is added.** Asked to fit a CV on two pages,
   the model cut "our cloud engineer provisions and operates the underlying clusters" and
   "(application/producer-consumer layer)" — the qualifiers that made the CV honest about Kafka and Redis.
@@ -125,7 +141,7 @@ not read for meaning at all.
 ## Commands
 
     ./apply requirements POSTING.txt CV.md [--fact "..."]...
-    ./apply claims DRAFT.md CV.md [--fact "..."]... [--posting POSTING.txt]
+    ./apply claims DRAFT.md CV.md [--fact "..."]... [--posting POSTING.txt] [--public [URL ...]]
     cd apply-ai && ../.venv/bin/python -m pytest tests -q
 
 ## Verified for real (2026-10-15)
@@ -137,3 +153,16 @@ exactly one thing, "Linux", added from inference and not yet confirmed by the us
 Bedrock, in an isolated copy with its own memory and uploads: the model chose `requirements` first, asked in
 one message, recorded the answers, and fixed "daily", "most directly" and "fluent" in its own drafts when the
 check flagged them. It then made a second application with what it already knew.
+
+## Verified for real (2026-10-30): career claims, private code, the email body
+
+Tests: 103 (16 new); thirteen deliberate breaks of the new code, each caught (the first run missed one, two
+spellings of one address, which then got its test). On seven real documents, old code against new, with the
+nine repositories web-ai found public: new findings only where they belong (the three that say "private", in
+the 2026-10-24 CV and letter and the 2026-10-15 CV, and "spent my career" in the 2026-10-30 letter), and the
+other four (an email body, a final CV, a letter) exactly as before. Through the real chat, after the backend
+was rebuilt: asked for an application email, the model ran `claims` on the body before `draft_new` unasked,
+fixed "directly" and re-checked. **Not followed:** asked to add "my repositories are private ... as my CV
+says", it went straight to `draft_new` without re-checking: a line the user dictates reads to it as
+confirmed. Asked to check, it called `github_visibility` first, passed `public_links`, got the `public link`
+finding, and told the user the line would be false. Both drafts were declined at the gate.
