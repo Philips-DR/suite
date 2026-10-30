@@ -20,6 +20,10 @@ servers:
     command: npm
     args: ["run", "--silent", "mcp"]
     cwd: ${DOCU_AI_HOME:-../docu-ai}
+    env:
+      # Where save_export writes a Word or PDF file for mail-ai to attach. A file cannot travel through the model
+      # (a Word CV is ~650 KB), so it travels by path; mail-ai is given the same folder and attaches from it only.
+      DOCU_AI_EXPORTS: ${ASSISTANT_UPLOADS:-../assistant/uploads}/exports
 
   # Checks between a job posting, the user's own material and a draft: every requirement set against what
   # the material shows, and every figure and overstating word in a draft traced to a line. Reads only. The
@@ -44,6 +48,8 @@ servers:
       # Drafting and sending, switched on deliberately (2026-09-26). Sending still needs
       # two presses in the app, or an approval in chat, over the rendered message.
       MAIL_AI_COMPOSE: "1"
+      # The one folder a file may be attached from by path: where docu-ai's save_export writes.
+      MAIL_AI_ATTACH_ROOT: ${ASSISTANT_UPLOADS:-../assistant/uploads}/exports
 
   # PDF to audiobook, in a cloned voice. Reading a book and rendering it are background jobs of
   # minutes to hours; job_status is how anyone watches them.
