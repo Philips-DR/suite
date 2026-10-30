@@ -75,7 +75,8 @@ export function Sidebar({ section, go, theme, setTheme, openPalette }: {
   const groups = ['Workspace', 'Tools', 'System'] as const
   return (
     <aside className="sidenav" aria-label="Sections">
-      <a className="brand" href="#overview" onClick={(e) => { e.preventDefault(); go('overview') }}>
+      {/* Named for a screen reader: on the icon rail the word is hidden and the mark is decoration (axe). */}
+      <a className="brand" href="#overview" aria-label="Assistant: Overview" onClick={(e) => { e.preventDefault(); go('overview') }}>
         <BrandMark />
         <span className="brand-word">Assistant</span>
       </a>

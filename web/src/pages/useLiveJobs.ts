@@ -16,6 +16,8 @@ export interface BookJob {
   chapter: number | null
   chapter_title: string | null
   eta: string | null
+  /** The book as a person names it; `target` is its file. */
+  title?: string | null
 }
 
 export interface TranscriptionJob {

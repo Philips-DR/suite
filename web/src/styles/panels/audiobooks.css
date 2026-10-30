@@ -10,36 +10,38 @@
 .ab-skel { height: 72px; margin: 8px 0; }
 .ab-skel-stat { height: 56px; }
 
-/* ---- the library: a path box, uploaded books, and a drop target ------------------------------ */
+/* ---- the library: a row per book, then its voices ------------------------------------------ */
 
-.ab-open { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; align-items: start; }
-.ab-open .row input { flex: 1 1 200px; }
-.ab-open-go { min-width: 76px; min-height: 40px; }
-.ab-books { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
 .ab-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
-.ab-chip { max-width: 100%; min-height: 34px; padding: 0 12px; border-color: transparent; border-radius: var(--r-pill); background: var(--bg-2); font-weight: 600; }
-.ab-chip[aria-pressed='true'] { color: var(--brand); background: var(--brand-soft); border-color: var(--brand-line); }
-.ab-drop {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 14px;
-  background: var(--bg-2);
-  border: 1.5px dashed var(--line-strong);
-  border-radius: 14px;
-  transition: border-color var(--dur-2) var(--ease), background-color var(--dur-2) var(--ease);
-}
-.dropzone.over .ab-drop { border-color: var(--brand); background: var(--brand-soft); }
-.ab-drop-icon, .ab-unread-icon { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; color: var(--ink); background: var(--ab-tint); }
-.ab-drop-text { display: flex; flex-direction: column; flex: 1 1 130px; min-width: 0; }
-.ab-drop button { flex: none; }
-@media (max-width: 859px) {
-  .ab-open { grid-template-columns: minmax(0, 1fr); }
-}
+.ab-unread-icon { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; color: var(--ink); background: var(--ab-tint); }
+.ab-library { transition: border-color var(--dur-2) var(--ease), background-color var(--dur-2) var(--ease); }
+.dropzone.over .ab-library { border-color: var(--brand); background: var(--brand-soft); }
+.ab-library .card-head button { flex: none; }
+.ab-shelf { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.ab-shelf-item { background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px; }
+.ab-shelf-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px 14px; padding: 12px 14px; }
+.ab-cover { width: 44px; height: 44px; border-radius: 12px; color: var(--ink); }
+.ab-shelf-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ab-shelf-title { font-size: var(--fs-md); overflow-wrap: anywhere; }
+.ab-shelf-act { display: flex; align-items: center; gap: 6px; }
+.ab-shelf-act button { min-height: 40px; }
+.ab-shelf-files { padding: 0 10px 6px; }
+.ab-listen-more { padding: 0 10px 6px; }
+.ab-listen-more > summary { min-height: 40px; padding-inline: 4px; }
+.ab-listen-more .hint { margin: 0 4px 6px; }
+.ab-bypath { margin-top: 14px; padding-top: 6px; border-top: 1px solid var(--line); }
+.ab-bypath > summary { min-height: 44px; }
+.ab-bypath .row input { flex: 1 1 220px; }
+.ab-keep { min-height: 44px; margin-bottom: 8px; }
 @media (max-width: 639px) {
-  .ab-drop button { flex: 1 1 100%; min-height: 44px; }
-  .ab-open-go { min-height: 44px; }
+  .ab-library .card-head { flex-wrap: wrap; }
+  .ab-library .card-head > .row { width: 100%; }
+  .ab-library .card-head > .row button { flex: 1; min-height: 44px; }
+  .ab-shelf-row { grid-template-columns: auto minmax(0, 1fr); }
+  .ab-shelf-act { grid-column: 1 / -1; }
+  .ab-shelf-act button:first-child:not(.icon) { flex: 1; min-height: 44px; }
+  .ab-shelf-act .icon { width: 44px; min-height: 44px; }
+  .ab-bypath .row button { min-height: 44px; }
 }
 
 /* ---- the job: a ring while it runs, an icon after ------------------------------------------- */
@@ -50,7 +52,7 @@
 .ab-job-title { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .ab-job-title strong { overflow-wrap: anywhere; }
 .ab-facts { display: flex; flex-wrap: wrap; }
-.ab-facts > span + span::before { content: '·'; margin: 0 8px; }
+.ab-facts > span:not(:last-child)::after { content: '·'; margin: 0 8px; }
 .ab-job-act { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-left: auto; }
 .ab-state { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 14px; background: var(--bg-2); color: var(--ink-2); animation: pop var(--dur-3) var(--ease); }
 .ab-state.ab-tone-ok { background: var(--ok-soft); color: var(--ok); }
@@ -76,7 +78,11 @@
 /* ---- a book -------------------------------------------------------------------------------- */
 
 .ab-book { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.ab-bookhead { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; margin-top: 8px; }
+.ab-bookbar { display: flex; margin-bottom: -8px; }
+.ab-back { min-height: 40px; padding: 0 10px 0 6px; margin-left: -6px; }
+.ab-bookhead { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px; }
+.ab-bookhead .ab-delete { margin: 0; align-self: center; }
+.ab-booktitle .ab-facts { margin-top: 2px; }
 .ab-bookhead .navtile { width: 44px; height: 44px; border-radius: 14px; color: var(--ink); }
 .ab-booktitle { flex: 1 1 220px; min-width: 0; }
 .ab-booktitle h2 { font-family: var(--font-display); font-size: var(--fs-xl); letter-spacing: -0.02em; overflow-wrap: anywhere; }
@@ -87,9 +93,7 @@
 .ab-stat .stat-value { font-size: 1.75rem; white-space: nowrap; }
 .ab-stat-foot { display: block; font-weight: 500; line-height: 1.35; }
 @media (max-width: 639px) {
-  .ab-figs { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .ab-stat { padding: 12px 14px; }
-  .ab-stat .stat-value { font-size: 1.5rem; }
+  .ab-figs { display: none; }
 }
 
 .ab-unread { display: flex; align-items: flex-start; gap: 16px; }
@@ -98,55 +102,51 @@
 .ab-main { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .ab-side { min-width: 0; }
 
-/* the chapter chart that is also the chooser */
-/* the padding on the right is room for the longest bar's label, which sits past the bar's end */
-.ab-chart-scroll { max-height: 440px; overflow-y: auto; margin-left: -6px; padding: 0 28px 0 6px; }
-.ab-chart-scroll.more { -webkit-mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 40px), transparent); mask-image: linear-gradient(to bottom, var(--ink) calc(100% - 40px), transparent); }
-.ab-chapters .hbar-row .hbar-label { color: var(--ink); }
-.ab-chapters .hbar-row[aria-checked='false'] .hbar-label { color: var(--ink-3); }
-/* a drawn tick box, so "included" is a shape as well as a colour */
-.ab-chapters .hbar-row .hbar-label::before {
-  content: '';
-  display: inline-grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  margin-right: 9px;
-  vertical-align: -3px;
-  line-height: 1;
-  border: 1.5px solid var(--line-strong);
-  border-radius: 5px;
-  background: transparent;
-  transition: background-color var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease);
+/* the chapters: a row each, ticked to render, with a bar for its length and a play button once rendered.
+   A row is laid out by the width of its own list, not the window's: beside the sidebar and the Render column,
+   a laptop's list is as narrow as a phone's, and a fixed bar and buttons squeezed the title to a letter a line
+   (found on a 1066-wide window). */
+.ab-chlist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; container-type: inline-size; }
+.ab-ch { border-top: 1px solid var(--line); }
+.ab-ch:first-child { border-top: 0; }
+.ab-ch-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(96px, 168px) auto; align-items: center; gap: 4px 14px; min-height: 52px; padding: 4px 0; }
+.ab-ch-pick { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 44px; cursor: pointer; font-weight: 600; }
+.ab-ch-pick input { flex: none; width: 20px; height: 20px; margin: 0; accent-color: var(--brand); }
+.ab-ch-title { min-width: 0; overflow-wrap: anywhere; }
+.ab-ch.off .ab-ch-title { color: var(--ink-3); font-weight: 500; }
+.ab-ch-len { display: grid; grid-template-columns: minmax(0, 1fr) 5.5em; align-items: center; gap: 8px; }
+.ab-ch-len .small { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ab-ch-bar { height: 6px; border-radius: 3px; background: var(--bg-2); overflow: hidden; }
+.ab-ch-bar i { display: block; height: 100%; border-radius: 3px; background: var(--ab); }
+.ab-ch.off .ab-ch-bar i { background: var(--line-strong); }
+.ab-ch-act { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.ab-ch-play { display: flex; justify-content: flex-end; min-width: 92px; }
+.ab-ch-act button { min-height: 40px; }
+.ab-ch .player { margin: 4px 0 10px; }
+@container (max-width: 599px) {
+  /* the title gets the row's whole width; its length and its buttons share the line under it */
+  .ab-ch-row { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'pick pick' 'len act'; row-gap: 0; padding: 8px 0 4px; }
+  .ab-ch-pick { grid-area: pick; min-height: 36px; align-items: flex-start; }
+  .ab-ch-pick input { margin-top: 2px; }
+  .ab-ch-len { grid-area: len; padding-left: 30px; }
+  .ab-ch-act { grid-area: act; }
 }
-.ab-chapters .hbar-row[aria-checked='true'] .hbar-label::before {
-  content: '✓';
-  font-size: var(--fs-xs);
-  font-weight: 800;
-  color: var(--brand-ink);
-  background: var(--brand);
-  border-color: var(--brand);
+@media (max-width: 639px) {
+  .ab-ch-play { min-width: 44px; }
+  .ab-ch-act button { width: 44px; min-height: 44px; padding: 0; }
 }
 .ab-chart-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-top: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
 .ab-chart-foot p { margin: 0; }
-.ab-readpick select { min-width: 0; max-width: 240px; text-overflow: ellipsis; }
-@media (max-width: 639px) {
-  /* a phone gets the label above a full-width bar, and a row tall enough to hit with a thumb */
-  .ab-chapters .hbar-row { grid-template-columns: minmax(0, 1fr); gap: 0; min-height: 52px; padding: 6px 8px; }
-  .ab-chapters .hbar-label { font-size: var(--fs-md); }
-  .ab-chapters .hbar-plot { height: 22px; }
-  .ab-chart-scroll { max-height: 60vh; }
-  .ab-readpick { display: flex; width: 100%; }
-  .ab-readpick select { flex: 1; max-width: none; }
-}
 
 .ab-reader .card-head { margin-bottom: 10px; }
+.ab-ch .ab-reader { margin: 4px 0 12px; background: var(--surface-2); box-shadow: none; }
 .ab-reader .reader { margin: 0; }
 
 /* ---- render: its own column on a desktop, kept in view while the chapters scroll ------------- */
 
+.ab-side { display: flex; flex-direction: column; gap: 16px; }
+@media (min-width: 1024px) { .ab-side { position: sticky; top: 20px; align-self: start; } }
 .ab-render { display: flex; flex-direction: column; }
-@media (min-width: 1024px) { .ab-render { position: sticky; top: 20px; } }
 .ab-field { display: flex; flex-direction: column; gap: 6px; color: var(--ink-2); font-size: var(--fs-sm); font-weight: 600; }
 .ab-field select { width: 100%; }
 .ab-speed { display: grid; grid-template-columns: minmax(0, 1fr) 88px; align-items: center; gap: 12px; }
@@ -191,7 +191,7 @@
 .ab-note svg { flex: none; margin-top: 3px; color: var(--ok); }
 @media (min-width: 640px) { .ab-corrections textarea { font-size: var(--fs-sm); } }
 
-/* ---- the rest of the page: finished audio and voices ----------------------------------------- */
+/* ---- voices, and the rows of audio files ----------------------------------------- */
 
 .ab-lower > :only-child { grid-column: 1 / -1; }
 
@@ -229,12 +229,6 @@
 .ab-clone { margin-top: 18px; }
 .ab-clone button { min-height: 44px; }
 
-/* finished audio: a group per book, a row per file */
-.ab-groups { display: flex; flex-direction: column; gap: 10px; }
-.ab-group { background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px; }
-.ab-group > summary { flex-wrap: wrap; gap: 4px 10px; min-height: 48px; padding: 8px 14px; color: var(--ink); }
-.ab-group-name { font-weight: 650; overflow-wrap: anywhere; }
-.ab-group-meta { margin-left: auto; font-variant-numeric: tabular-nums; }
 .ab-files { display: flex; flex-direction: column; padding: 0 10px 6px; }
 .ab-file { padding: 10px 4px; border-top: 1px solid var(--line); }
 .ab-file-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; }
@@ -259,7 +253,6 @@
   .ab-file-act button { flex: none; width: 44px; min-height: 44px; padding: 0; }
   .ab-file-tile { width: 32px; height: 32px; border-radius: 10px; }
   .ab-file-row { gap: 10px; }
-  .ab-group > summary { padding-inline: 12px; }
   .ab-files { padding-inline: 6px; }
 }
 

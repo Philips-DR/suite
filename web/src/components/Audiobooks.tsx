@@ -24,9 +24,10 @@ import { AudioPlayer } from '../ui/AudioPlayer'
 import { ConfirmDelete, sizeOf } from '../ui/ConfirmDelete'
 import { DropZone } from '../ui/DropZone'
 import {
-  IconAlert, IconAudiobooks, IconCheck, IconClose, IconDocuments, IconDownload, IconFail, IconMeetings,
+  IconAlert, IconAudiobooks, IconBack, IconCheck, IconClose, IconDocuments, IconDownload, IconFail, IconMeetings,
   IconOk, IconPlay, IconRefresh, IconSpark, IconStop, IconTrash, IconUpload, IconZap,
 } from '../ui/icons'
+import { Empty } from '../ui/Empty'
 import { fileName, usePoll } from '../usePoll'
 import { PickFiles, UploadProgress } from './Upload'
 import '../styles/panels/audiobooks.css'
@@ -55,7 +56,11 @@ interface BookJob {
   eta: string | null
   outputs: string[]
   detail: string
+  /** The book as a person names it; `target` is its file. Absent on jobs from before 2026-10-30. */
+  title?: string | null
 }
+
+interface AudioEntry { name: string; path: string; megabytes: number; modified: number; speed?: number }
 
 interface Chapter {
   number: number
@@ -63,6 +68,8 @@ interface Chapter {
   appendix: boolean
   words: number
   speech: string
+  /** This chapter's rendered files, newest first (one per speed). */
+  audio?: AudioEntry[]
 }
 
 interface Overview {
@@ -76,6 +83,8 @@ interface Overview {
   render_time?: string
   citations_removed?: number
   skipped?: Record<string, number>
+  /** The whole-book .m4b, and files from an earlier reading whose chapters were found differently. */
+  other_audio?: AudioEntry[]
 }
 
 interface ChapterText {
@@ -86,8 +95,11 @@ interface ChapterText {
 }
 
 interface AudioBook {
+  /** The output folder's name: the PDF's file name without .pdf. What describe and delete take. */
   book: string
-  files: { name: string; path: string; megabytes: number; modified: number }[]
+  title?: string
+  author?: string | null
+  files: AudioEntry[]
 }
 
 const KIND_LABEL: Record<BookJob['kind'], string> = {
@@ -166,24 +178,6 @@ function Duration({ text }: { text: string | null | undefined }) {
   return <>{m[1] !== undefined && <>{m[1]}<small>h</small> </>}{m[2]}<small>min</small></>
 }
 
-/** A scrolling list that fades at its foot while there is more below, so a long book is seen to be long. */
-function Scroller({ children }: { children: ReactNode }) {
-  const box = useRef<HTMLDivElement>(null)
-  const [more, setMore] = useState(false)
-  useEffect(() => {
-    const node = box.current
-    if (!node) return
-    const check = () => setMore(node.scrollHeight - node.scrollTop - node.clientHeight > 4)
-    check()
-    node.addEventListener('scroll', check, { passive: true })
-    const watch = new ResizeObserver(check)
-    watch.observe(node)
-    if (node.firstElementChild) watch.observe(node.firstElementChild)
-    return () => { node.removeEventListener('scroll', check); watch.disconnect() }
-  }, [])
-  return <div ref={box} className={`ab-chart-scroll ${more ? 'more' : ''}`}>{children}</div>
-}
-
 // ---- a figure: one number about the book -------------------------------------------------------------
 
 function Fig({ label, count, suffix, children, foot, index }: {
@@ -209,9 +203,9 @@ function Fig({ label, count, suffix, children, foot, index }: {
 
 // ---------------------------------------------------------------------------
 
-/** Play or download a file a tool made. Fetched with the token and handed to the one player that lives
- *  above the pages (player/engine.tsx), so what you start here keeps playing when you leave this page. */
-function AudioFile({ path, size }: { path: string; size?: number }) {
+/** Play a file a tool made. Fetched with the token and handed to the one player that lives above the pages
+ *  (player/engine.tsx), so what you start here keeps playing when you leave this page. */
+function usePlay(path: string, title: string) {
   const { track, playing: audible } = usePlayer()
   const { open, close } = usePlayerActions()
   const [busy, setBusy] = useState(false)
@@ -220,21 +214,26 @@ function AudioFile({ path, size }: { path: string; size?: number }) {
   useEffect(() => { here.current = true; return () => { here.current = false } }, [])
 
   const current = track?.key === path
-  const playing = current && audible
-
   const play = async () => {
     setBusy(true)
     setError('')
     try {
       const blob = await fetchMedia(path)
       // Left the page while it downloaded: nothing should start talking from somewhere you are not looking.
-      if (here.current) open({ key: path, title: fileName(path), blob })
+      if (here.current) open({ key: path, title, blob })
     } catch (e) {
       if (here.current) setError(message(e))
     } finally {
       if (here.current) setBusy(false)
     }
   }
+  return { current, playing: current && audible, busy, error, play, close }
+}
+
+/** Play or download a file a tool made. */
+function AudioFile({ path, size, label }: { path: string; size?: number; label?: string }) {
+  const { current, playing, busy, error: playError, play, close } = usePlay(path, label ?? fileName(path))
+  const [error, setError] = useState('')
 
   const download = async () => {
     setError('')
@@ -258,7 +257,7 @@ function AudioFile({ path, size }: { path: string; size?: number }) {
           {playing ? <span className="ab-eq"><i /><i /><i /></span> : <IconAudiobooks size={17} strokeWidth={2} />}
         </span>
         <span className="ab-file-name">
-          <span className="ab-file-title">{fileName(path)}</span>
+          <span className="ab-file-title">{label ?? fileName(path)}</span>
           <span className="muted small">
             {playing && <b className="ab-now">Playing · </b>}
             {size != null && `${size} MB`}{size != null && kind && ' · '}{kind}
@@ -275,14 +274,24 @@ function AudioFile({ path, size }: { path: string; size?: number }) {
         </span>
       </div>
       {current && <AudioPlayer onClose={close} />}
-      {error && <p className="error">{error}</p>}
+      {(error || playError) && <p className="error">{error || playError}</p>}
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
 
-function JobCard({ job, reload }: { job: BookJob | null; reload: () => Promise<void> }) {
+/** The book a job works on, as a person names it. */
+const jobName = (job: BookJob) => job.title || fileName(job.target)
+
+function JobCard({ job, name, reload, openBook }: {
+  job: BookJob | null
+  /** The book's title as the library knows it, for a job from before jobs carried one. */
+  name?: string
+  reload: () => Promise<void>
+  /** Open the job's book; absent while that book is the one open. */
+  openBook?: () => void
+}) {
   // Stopping a render is a click, then a second one: it is hours of work being set down, even though
   // every sentence already spoken is kept.
   const [asking, setAsking] = useState(false)
@@ -306,8 +315,10 @@ function JobCard({ job, reload }: { job: BookJob | null; reload: () => Promise<v
     }
   }
 
+  // The chapter's own name only: its number in the job is the plan's count, which is not the book's
+  // ("4: Chapter 1 God's Purpose…" when a foreword and an introduction come first).
   const facts = [
-    job.chapter != null ? `Chapter ${job.chapter}: ${job.chapter_title}` : null,
+    job.chapter != null ? job.chapter_title : null,
     job.chapter != null && job.chunks_done != null && job.chunks_total != null ? `${job.chunks_done}/${job.chunks_total}` : null,
     job.percent != null ? `${job.percent.toFixed(0)}%` : job.phase,
     job.eta ? `about ${job.eta} left` : null,
@@ -322,7 +333,7 @@ function JobCard({ job, reload }: { job: BookJob | null; reload: () => Promise<v
           <span className={`ab-state ab-tone-${tone}`}><StateIcon size={22} strokeWidth={2} aria-hidden /></span>
         )}
         <div className="ab-job-title">
-          <strong>{KIND_LABEL[job.kind]}: {fileName(job.target)}</strong>
+          <strong>{KIND_LABEL[job.kind]}: {job.title || name || jobName(job)}</strong>
           {running && <span className="ab-facts muted small">{facts.map((f) => <span key={f}>{f}</span>)}</span>}
         </div>
         <span className={`ab-job-act ${running ? 'with-cancel' : ''}`}>
@@ -355,15 +366,17 @@ function JobCard({ job, reload }: { job: BookJob | null; reload: () => Promise<v
             <p className="hint">About 2–4 seconds a page, so minutes for a book; a scan is read with OCR and is much slower.</p>
           )}
           {job.kind === 'render' && (
-            <p className="hint">One chapter at a time; each is playable under Finished audio as it completes. You can close this page.</p>
+            <p className="hint">One chapter at a time; each can be played from the book's chapter list as it completes. You can close this page.</p>
           )}
         </>
       )}
       {job.state === 'done' && job.kind === 'sample' && job.outputs.map((o) => <AudioFile key={o} path={o} />)}
-      {job.state === 'done' && job.kind === 'render' && (
+      {job.state === 'done' && (job.kind === 'render' || job.kind === 'analyse') && (
         <p className="ab-done muted">
-          {job.outputs.length} file{job.outputs.length === 1 ? '' : 's'} made — see Finished audio below.{' '}
-          <button className="ghost ab-jump" onClick={() => document.getElementById('ab-finished')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>Go there</button>
+          {job.kind === 'render'
+            ? `${job.outputs.length} file${job.outputs.length === 1 ? '' : 's'} made.`
+            : 'Read: its chapters are ready to choose.'}{' '}
+          {openBook && <button className="ghost ab-jump" onClick={openBook}>Open the book</button>}
         </p>
       )}
       {job.state === 'done' && job.kind === 'voice' && <p className="ab-done muted">The voice is ready. Hear a sample before using it.</p>}
@@ -378,46 +391,61 @@ function JobCard({ job, reload }: { job: BookJob | null; reload: () => Promise<v
 
 interface UploadsPoll { data: Uploads | null; error: string; reload: () => Promise<void> }
 
-/** Delete one audiobook: its finished audio and, when it came from an upload, the uploaded PDF. What goes is
- * read first with the tool that only reads, so the question names it; the delete tool is called only on a
- * confirmed press, never to find out what it would do. */
-function DeleteBook({ book, upload, onCancel, onChanged, onDone }: {
-  book: string
-  upload: { name: string; bytes: number } | null
+/** What the library knows of one book: its uploaded PDF, its finished audio, or both, matched by name as the
+ *  output folder is (the folder is named for the PDF). */
+interface Shelf {
+  stem: string
+  upload: { name: string; path: string; bytes: number } | null
+  audio: AudioBook | null
+}
+
+/** A book to delete, as the library names it. */
+interface Doomed { stem: string; title: string; upload: { name: string; bytes: number } | null; audio: number }
+
+/** Delete one book: its uploaded PDF, its finished audio, or both. What goes is read first with the tool that
+ * only reads, so the question names it; the delete tool is called only on a confirmed press, never to find out
+ * what it would do. With both there, keeping the audio is a choice: it stays in the library, to listen to. */
+function DeleteBook({ book, onCancel, onChanged, onDone }: {
+  book: Doomed
   onCancel: () => void
   onChanged: () => void
   onDone: () => void
 }) {
   const [summary, setSummary] = useState<string | null>(null)
+  const [keepAudio, setKeepAudio] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const audioGoes = book.audio > 0 && !(book.upload && keepAudio)
 
   useEffect(() => {
     let live = true
-    call<{ summary: string }>('audiobook__describe_audiobook', { book }).then(
+    call<{ summary: string }>('audiobook__describe_audiobook', { book: book.stem }).then(
       (r) => { if (live) setSummary(r.summary) },
       (e) => { if (live) setError(message(e)) },
     )
     return () => { live = false }
-  }, [book])
+  }, [book.stem])
 
   const confirm = async () => {
     setBusy(true)
     setError('')
-    try {
-      await ask('audiobook__delete_audiobook', { book }, true)
-    } catch (e) {
-      setError(message(e))
-      setBusy(false)
-      return
-    }
-    // The audio is gone from here on, whatever happens to the PDF.
-    onChanged()
-    if (upload) {
+    // Kept audio keeps its folder; otherwise the folder goes, with the working files a reading leaves in it.
+    if (!(book.upload && keepAudio && book.audio > 0)) {
       try {
-        await deleteUpload('book', upload.name)
+        await ask('audiobook__delete_audiobook', { book: book.stem }, true)
       } catch (e) {
-        setError(`The audio is deleted, but the PDF could not be: ${message(e)}`)
+        setError(message(e))
+        setBusy(false)
+        return
+      }
+      // The audio is gone from here on, whatever happens to the PDF.
+      onChanged()
+    }
+    if (book.upload) {
+      try {
+        await deleteUpload('book', book.upload.name)
+      } catch (e) {
+        setError(audioGoes ? `The audio is deleted, but the PDF could not be: ${message(e)}` : `The PDF could not be deleted: ${message(e)}`)
         setBusy(false)
         onChanged()
         return
@@ -428,11 +456,15 @@ function DeleteBook({ book, upload, onCancel, onChanged, onDone }: {
     onDone()
   }
 
+  const facts: [string, string][] = []
+  if (book.upload) facts.push(['Uploaded PDF', `${book.upload.name} (${sizeOf(book.upload.bytes)})`])
+  if (book.audio > 0) facts.push(['Audio', `${book.audio} file${book.audio === 1 ? '' : 's'}${audioGoes ? '' : ' — kept'}`])
+
   return (
     <ConfirmDelete
-      title={`Delete “${book}”?`}
-      facts={upload ? [['Uploaded PDF', `${upload.name} (${sizeOf(upload.bytes)})`]] : undefined}
-      keeps={upload ? 'The uploaded PDF goes too.' : 'The PDF is not an upload, so it stays where it is.'}
+      title={`Delete “${book.title}”?`}
+      facts={facts}
+      keeps={book.upload ? (audioGoes || book.audio === 0 ? undefined : 'Its audio stays in your library, to listen to.') : 'The PDF is not an upload, so it stays where it is.'}
       verb={summary === null && !error ? 'Checking…' : 'Delete'}
       ready={summary !== null}
       busy={busy}
@@ -440,13 +472,85 @@ function DeleteBook({ book, upload, onCancel, onChanged, onDone }: {
       onConfirm={() => void confirm()}
       onCancel={onCancel}
     >
-      {summary !== null && <pre className="confirm-preview">{summary}</pre>}
+      {book.upload && book.audio > 0 && (
+        <label className="check ab-keep">
+          <input type="checkbox" checked={keepAudio} onChange={(e) => setKeepAudio(e.target.checked)} />
+          Keep its audio, and delete only the PDF
+        </label>
+      )}
+      {summary !== null && audioGoes && <pre className="confirm-preview">{summary}</pre>}
     </ConfirmDelete>
   )
 }
 
-function Library({ book, setBook, uploads, onDelete }: { book: string; setBook: (path: string) => void; uploads: UploadsPoll; onDelete: (book: string) => void }) {
-  const [typed, setTyped] = useState(book)
+/** One book in the library: what it is, how far it has got, and its buttons. A book whose PDF is not an upload
+ *  cannot be opened, so its files open here instead. */
+function ShelfRow({ shelf, index, overview, running, onOpen, onDelete }: {
+  shelf: Shelf
+  index: number
+  overview: Overview | undefined
+  running: BookJob | null
+  onOpen: (path: string) => void
+  onDelete: (book: Doomed) => void
+}) {
+  const [listening, setListening] = useState(false)
+  const title = overview?.title ?? shelf.audio?.title ?? shelf.stem
+  const author = overview?.author ?? shelf.audio?.author ?? null
+  const files = shelf.audio?.files ?? []
+  const megabytes = files.reduce((n, f) => n + f.megabytes, 0)
+  const busy = running && shelf.upload && running.target === (overview?.pdf ?? shelf.upload.path) ? running : null
+  const state = busy
+    ? `${KIND_LABEL[busy.kind]}${busy.percent != null ? ` · ${Math.round(busy.percent)}%` : '…'}`
+    : !shelf.upload ? 'The PDF is not uploaded'
+      : overview === undefined ? null
+        : overview.analysed ? `${overview.chapters?.length ?? 0} chapters · ${overview.speech} of speech`
+          : 'Not read yet'
+  return (
+    <li className="ab-shelf-item" style={style({ '--i': index })}>
+      <div className="ab-shelf-row">
+        <span className="navtile ab-cover" style={style({ '--tile': toolColor('audiobook') })} aria-hidden>
+          <IconAudiobooks size={18} strokeWidth={2} />
+        </span>
+        <span className="ab-shelf-main">
+          <strong className="ab-shelf-title">{title}</strong>
+          {author && <span className="small muted">{author}</span>}
+          <span className="ab-facts small muted">
+            {state && <span>{state}</span>}
+            <span>{files.length ? `${files.length} audio file${files.length === 1 ? '' : 's'} · ${megabytes.toFixed(1)} MB` : 'No audio yet'}</span>
+          </span>
+        </span>
+        <span className="ab-shelf-act">
+          {shelf.upload
+            ? <button onClick={() => onOpen(shelf.upload!.path)}>Open</button>
+            : files.length > 0 && (
+              <button aria-expanded={listening} onClick={() => setListening(!listening)}>
+                <IconPlay size={16} aria-hidden />{listening ? 'Hide' : 'Listen'}
+              </button>
+            )}
+          <button className="ghost icon" aria-label={`Delete ${title}`} title="Delete…" onClick={() => onDelete({ stem: shelf.stem, title, upload: shelf.upload, audio: files.length })}>
+            <IconTrash size={16} aria-hidden />
+          </button>
+        </span>
+      </div>
+      {listening && (
+        <div className="ab-files ab-shelf-files">
+          {files.map((f) => <AudioFile key={`${f.path}:${f.modified}`} path={f.path} size={f.megabytes} />)}
+        </div>
+      )}
+    </li>
+  )
+}
+
+/** Every book: the uploaded PDFs, and finished audio whose PDF is not an upload. Opening one shows only it. */
+function Library({ shelves, overviews, job, uploads, onOpen, onDelete }: {
+  shelves: Shelf[]
+  overviews: Record<string, Overview | undefined>
+  job: BookJob | null
+  uploads: UploadsPoll
+  onOpen: (path: string, readNow?: boolean) => void
+  onDelete: (book: Doomed) => void
+}) {
+  const [typed, setTyped] = useState('')
   const [uploading, setUploading] = useState<{ name: string; fraction: number } | null>(null)
   const [error, setError] = useState('')
 
@@ -456,9 +560,9 @@ function Library({ book, setBook, uploads, onDelete }: { book: string; setBook: 
     setUploading({ name: file.name, fraction: 0 })
     try {
       const saved = await uploadBook(file, (fraction) => setUploading({ name: file.name, fraction }))
-      setTyped(saved.path)
-      setBook(saved.path)
       await uploads.reload()
+      // Straight to the book, which starts reading it: there is nothing to choose until its chapters are found.
+      onOpen(saved.path, true)
     } catch (e) {
       setError(message(e))
     } finally {
@@ -466,11 +570,7 @@ function Library({ book, setBook, uploads, onDelete }: { book: string; setBook: 
     }
   }
 
-  const open = (path: string) => { setTyped(path); setBook(path) }
-  useEffect(() => { if (!book) setTyped('') }, [book])
-  const mine = uploads.data?.books ?? []
-  const picked = mine.find((b) => b.path === book)
-
+  const running = job?.state === 'running' ? job : null
   return (
     <DropZone
       accepts={isPdf}
@@ -480,55 +580,34 @@ function Library({ book, setBook, uploads, onDelete }: { book: string; setBook: 
       disabled={uploading !== null}
     >
       <div className="card ab-library">
-        <CardHead
-          icon={IconAudiobooks}
-          tool="audiobook"
-          title="Open a book"
-          sub="Turn a PDF into an audiobook, read in a voice cloned from a short recording. Everything runs on this computer."
-        />
-        <div className="ab-open">
-          <div className="stack">
-            <div className="row">
-              <input
-                list="book-files"
-                value={typed}
-                onChange={(e) => setTyped(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && typed.trim()) setBook(typed.trim()) }}
-                placeholder="A PDF — pick an uploaded one, or paste a path"
-                aria-label="PDF"
-              />
-              <datalist id="book-files">
-                {uploads.data?.books.map((b) => <option key={b.path} value={b.path}>{b.name}</option>)}
-              </datalist>
-              <button className="ab-open-go" disabled={!typed.trim() || typed.trim() === book} onClick={() => setBook(typed.trim())}>Open</button>
-            </div>
-            {mine.length > 0 && (
-              <div className="ab-books">
-                <span className="muted small">Uploaded</span>
-                <ul className="ab-chips">
-                  {mine.map((b) => (
-                    <li key={b.path}>
-                      <button className="ab-chip" aria-pressed={b.path === book} title={b.path} onClick={() => open(b.path)}>
-                        <IconDocuments size={14} aria-hidden />{b.name}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                {picked && (
-                  <button className="ghost ab-delete" onClick={() => onDelete(stem(picked.name))}>
-                    <IconTrash size={14} aria-hidden />Delete “{picked.name}” and its audio…
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-          <div className="ab-drop">
-            <span className="ab-drop-icon"><IconUpload size={20} strokeWidth={1.8} aria-hidden /></span>
-            <span className="ab-drop-text"><strong>Drop a PDF here</strong><span className="muted small">or choose one from this device</span></span>
-            <PickFiles label="Upload a PDF…" icon={<IconUpload size={16} aria-hidden />} accept=".pdf,application/pdf" className="primary" disabled={uploading !== null} onPick={(f) => void upload(f)} />
-          </div>
-        </div>
+        <CardHead icon={IconAudiobooks} tool="audiobook" title="Your books" sub="Open a book to choose its chapters, render it and listen.">
+          <PickFiles label="Upload a PDF…" icon={<IconUpload size={16} aria-hidden />} accept=".pdf,application/pdf" className="primary" disabled={uploading !== null} onPick={(f) => void upload(f)} />
+        </CardHead>
         {uploading && <UploadProgress name={uploading.name} fraction={uploading.fraction} />}
+        {uploads.data === null && !uploads.error && <div className="skeleton ab-skel" aria-hidden />}
+        {uploads.data !== null && shelves.length === 0 && (
+          <Empty icon={IconUpload} title="No books yet">Upload a PDF, or drop one on this card. It is read, and then you choose the chapters to render.</Empty>
+        )}
+        {shelves.length > 0 && (
+          <ul className="ab-shelf stagger">
+            {shelves.map((s, i) => (
+              <ShelfRow key={s.stem} shelf={s} index={i} overview={s.upload ? overviews[s.upload.path] : undefined} running={running} onOpen={onOpen} onDelete={onDelete} />
+            ))}
+          </ul>
+        )}
+        <details className="ab-bypath">
+          <summary>Open a PDF by its path</summary>
+          <div className="row">
+            <input
+              value={typed}
+              onChange={(e) => setTyped(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && typed.trim()) onOpen(typed.trim()) }}
+              placeholder="A PDF on the computer the assistant runs on"
+              aria-label="Path of a PDF"
+            />
+            <button disabled={!typed.trim()} onClick={() => onOpen(typed.trim())}>Open</button>
+          </div>
+        </details>
         {(error || uploads.error) && <p className="error">{error || uploads.error}</p>}
       </div>
     </DropZone>
@@ -637,14 +716,70 @@ function Reader({ pdf, chapter, onClose }: { pdf: string; chapter: Chapter; onCl
   )
 }
 
-function Book({ pdf, voices, job, reloadJob }: {
+/** One chapter: tick it to render it, play it once it is rendered, read what will be spoken. Its text and its
+ *  player open under it: below the whole list, a phone showed nothing where the button was pressed. */
+function ChapterRow({ pdf, version, chapter, chosen, longest, book, reading, onToggle, onRead }: {
   pdf: string
+  /** Bumped when corrections are saved, so open text is read again with them applied. */
+  version: number
+  chapter: Chapter
+  chosen: boolean
+  longest: number
+  book: string
+  reading: boolean
+  onToggle: () => void
+  onRead: () => void
+}) {
+  // The newest file of this chapter, whatever its speed.
+  const audio = chapter.audio?.[0]
+  const { current, playing, busy, error, play, close } = usePlay(audio?.path ?? '', `${chapter.label} · ${book}`)
+  const width = longest > 0 ? Math.max(2, (chapter.words / longest) * 100) : 0
+  return (
+    <li className={`ab-ch ${chosen ? '' : 'off'} ${current ? 'loaded' : ''}`}>
+      <div className="ab-ch-row">
+        <label className="ab-ch-pick">
+          <input type="checkbox" checked={chosen} onChange={onToggle} />
+          <span className="ab-ch-title">{chapter.label}{chapter.appendix && <span className="muted"> · appendix</span>}</span>
+        </label>
+        <span className="ab-ch-len" title={`${chapter.words.toLocaleString()} words`}>
+          <span className="ab-ch-bar" aria-hidden><i style={{ width: `${width}%` }} /></span>
+          <span className="small muted">{chapter.speech}</span>
+        </span>
+        <span className="ab-ch-act">
+          <span className="ab-ch-play">
+            {audio && !current && (
+              <button className="ab-play" disabled={busy} aria-busy={busy} aria-label={`Play ${chapter.label}`} onClick={() => void play()}>
+                {busy ? <IconRefresh size={16} aria-hidden className="ab-spin" /> : <IconPlay size={16} aria-hidden />}
+                <span className="ab-btn-label">{busy ? 'Loading…' : 'Play'}</span>
+              </button>
+            )}
+            {audio && current && playing && <span className="ab-eq" role="img" aria-label="Playing"><i /><i /><i /></span>}
+          </span>
+          <button className="ghost" aria-pressed={reading} aria-label={`${reading ? 'Hide' : 'Read'} the text of ${chapter.label}`} onClick={onRead}>
+            <IconDocuments size={16} aria-hidden /><span className="ab-btn-label">{reading ? 'Hide' : 'Text'}</span>
+          </button>
+        </span>
+      </div>
+      {current && <AudioPlayer onClose={close} />}
+      {error && <p className="error">{error}</p>}
+      {reading && <Reader key={`${pdf}:${chapter.number}:${version}`} pdf={pdf} chapter={chapter} onClose={onRead} />}
+    </li>
+  )
+}
+
+function Book({ pdf, readNow, voices, job, reloadJob, onBack, onDelete }: {
+  pdf: string
+  /** Just uploaded: start reading it as soon as it is open, if nothing else is running. */
+  readNow: boolean
   voices: Voice[]
   job: BookJob | null
   reloadJob: () => Promise<void>
+  onBack: () => void
+  /** Ask to delete this book; the page knows its upload and its audio. */
+  onDelete: (title: string) => void
 }) {
   // Planning a long book from its cache takes a moment, so this is not polled: it is read when the
-  // book is opened and again when a job on it finishes.
+  // book is opened, when a reading of it finishes, and as each chapter of a render of it is made.
   const overview = usePoll(() => call<Overview>('audiobook__preview_book', { pdf }), 3_600_000)
   const [picked, setPicked] = useState<Set<number> | null>(null)
   const [reading, setReading] = useState<number | null>(null)
@@ -672,10 +807,9 @@ function Book({ pdf, voices, job, reloadJob }: {
       void overview.reload()
     }
   }, [job?.id, job?.state, mine])
-  const chapters = data?.chapters ?? []
-  const chosen = picked ?? new Set(chapters.map((c) => c.number))
-  const cloned = voices.filter((v) => v.kind === 'cloned')
-  const voiceName = voice || cloned[0]?.name || voices[0]?.name || ''
+  // A render of this book: each chapter it finishes gets its play button.
+  const made = job && job.kind === 'render' && job.target === mine ? `${job.id}:${job.outputs.length}:${job.state}` : ''
+  useEffect(() => { if (made) void overview.reload() }, [made])
 
   const start = async (tool: string, args: Record<string, unknown>) => {
     setBusy(true)
@@ -692,6 +826,19 @@ function Book({ pdf, voices, job, reloadJob }: {
     }
   }
 
+  // Uploaded a moment ago: read it now. Once only, and not over another job (one at a time).
+  const autoRead = useRef(readNow)
+  useEffect(() => {
+    if (!autoRead.current || !data || data.analysed || running) return
+    autoRead.current = false
+    void start('audiobook__start_analysis', { pdf })
+  }, [data?.analysed, running])
+
+  const chapters = data?.chapters ?? []
+  const chosen = picked ?? new Set(chapters.map((c) => c.number))
+  const cloned = voices.filter((v) => v.kind === 'cloned')
+  const voiceName = voice || cloned[0]?.name || voices[0]?.name || ''
+
   const toggle = (n: number) => {
     const next = new Set(chosen)
     if (next.has(n)) next.delete(n)
@@ -707,27 +854,43 @@ function Book({ pdf, voices, job, reloadJob }: {
   const canRender = !(busy || running || chosen.size === 0 || !voiceName)
   const renderLabel = `Render ${everything ? 'all chapters' : `${chosen.size} chapter${chosen.size === 1 ? '' : 's'}`}`
 
-  const reader = reading != null ? chapters.find((c) => c.number === reading) : undefined
   const picks = data?.analysed ? chapters.filter((c) => chosen.has(c.number)) : []
   const words = picks.reduce((n, c) => n + c.words, 0)
   const allWords = chapters.reduce((n, c) => n + c.words, 0)
+  const longest = chapters.reduce((n, c) => Math.max(n, c.words), 0)
   const times = data?.analysed ? selectionTimes(data, chosen) : null
   const skipped = Object.entries(data?.skipped ?? {})
   const left = skipped.reduce((n, [, count]) => n + count, 0)
+  const rendered = chapters.filter((c) => c.audio?.length).length
+  const others = data?.other_audio ?? []
+  const whole = others.filter((f) => f.name.endsWith('.m4b'))
+  const older = others.filter((f) => !f.name.endsWith('.m4b'))
+  const title = data?.title ?? fileName(pdf)
+  const readingThis = running && job?.kind === 'analyse' && job.target === mine
 
   const heading = (
     <header className="ab-bookhead">
       <span className="navtile" style={style({ '--tile': toolColor('audiobook') })}><IconAudiobooks size={20} strokeWidth={2} aria-hidden /></span>
       <div className="ab-booktitle">
-        <h2>{data?.title ?? fileName(pdf)}</h2>
-        {data?.author && <p className="muted">{data.author}</p>}
+        <h2>{title}</h2>
+        <p className="ab-facts muted">
+          {data?.author && <span>{data.author}</span>}
+          {data?.analysed && <span>{chapters.length} chapters</span>}
+          {data?.analysed && data.speech && <span>{data.speech} of speech</span>}
+          {data?.analysed && !!data.citations_removed && <span>{data.citations_removed} citations removed</span>}
+        </p>
       </div>
-      {data?.analysed && !!data.citations_removed && <span className="chip">{data.citations_removed} citations removed</span>}
+      <button className="ghost ab-delete" onClick={() => onDelete(title)}>
+        <IconTrash size={16} aria-hidden />Delete…
+      </button>
     </header>
   )
 
   return (
-    <section className="ab-book" aria-label={data?.title ?? fileName(pdf)}>
+    <section className="ab-book" aria-label={title}>
+      <div className="ab-bookbar">
+        <button className="ghost ab-back" onClick={onBack}><IconBack size={16} aria-hidden />All books</button>
+      </div>
       {heading}
       {overview.error && <p className="ab-detail ab-tone-bad" role="alert"><IconFail size={16} aria-hidden /><span>{overview.error}</span></p>}
       {!data && !overview.error && (
@@ -740,13 +903,22 @@ function Book({ pdf, voices, job, reloadJob }: {
         <div className="card ab-unread">
           <span className="ab-unread-icon"><IconDocuments size={22} strokeWidth={1.8} aria-hidden /></span>
           <div className="stack">
-            <p>This PDF has not been read yet. {data.hint}</p>
-            <div className="row">
-              <button className="primary" disabled={busy || running} onClick={() => void start('audiobook__start_analysis', { pdf })}>
-                <IconZap size={16} aria-hidden />Read this book
-              </button>
-              {running && <span className="muted">Another job is running — one at a time.</span>}
-            </div>
+            {readingThis ? (
+              <p>Reading the book to find its chapters. They show here when it is done, to choose which to render.</p>
+            ) : (
+              <>
+                <p>
+                  This PDF has not been read yet. Reading finds its chapters, so you can choose which to render: about 2–4 seconds a
+                  page, so a few minutes for a book, and much longer for a scan.
+                </p>
+                <div className="row">
+                  <button className="primary" disabled={busy || running} onClick={() => void start('audiobook__start_analysis', { pdf })}>
+                    <IconZap size={16} aria-hidden />Read this book
+                  </button>
+                  {running && <span className="muted">Another job is running — one at a time.</span>}
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -762,74 +934,45 @@ function Book({ pdf, voices, job, reloadJob }: {
 
           <div className="grid-split ab-bookgrid">
             <div className="ab-main">
-              <ChartCard
-                className="ab-chapters"
-                title="Chapters"
-                sub="Click a bar to leave a chapter out. Bars are words; labels are speech time."
-                actions={<button className="ghost" onClick={() => setPicked(everything ? new Set() : new Set(chapters.map((c) => c.number)))}>{everything ? 'Clear all' : 'Select all'}</button>}
-                table={(
-                  <div className="stack-rows">
-                    <table className="history">
-                      <thead>
-                        <tr>
-                          <th><input type="checkbox" checked={everything} aria-label="All chapters"
-                            onChange={() => setPicked(everything ? new Set() : new Set(chapters.map((c) => c.number)))} /></th>
-                          <th>#</th><th>Chapter</th><th className="num">Words</th><th className="num">Speech</th><th />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {chapters.map((c) => (
-                          <tr key={c.number}>
-                            <td data-label="Include"><input type="checkbox" checked={chosen.has(c.number)} onChange={() => toggle(c.number)} aria-label={`Chapter ${c.number}`} /></td>
-                            <td data-label="#">{c.number}</td>
-                            <td data-label="Chapter">{c.label}{c.appendix && <span className="muted"> · appendix</span>}</td>
-                            <td className="num" data-label="Words">{c.words.toLocaleString()}</td>
-                            <td className="num" data-label="Speech">{c.speech}</td>
-                            <td data-label="Text"><button onClick={() => setReading(reading === c.number ? null : c.number)}>{reading === c.number ? 'Hide' : 'Read'}</button></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              >
-                <Scroller>
-                  <HBars
-                    label="Words per chapter. Pick the chapters to render."
-                    color={toolColor('audiobook')}
-                    onToggle={(key) => toggle(Number(key))}
-                    items={chapters.map((c) => ({
-                      key: String(c.number),
-                      label: c.appendix ? `${c.label} · appendix` : c.label,
-                      value: c.words,
-                      display: c.speech,
-                      sub: `Chapter ${c.number}: ${c.words.toLocaleString()} words, ${c.speech} of speech`,
-                      selected: chosen.has(c.number),
-                    }))}
-                  />
-                </Scroller>
+              <div className="card ab-chapters">
+                <CardHead
+                  icon={IconAudiobooks}
+                  tool="audiobook"
+                  title="Chapters"
+                  sub={rendered ? `Tick the chapters to render. ${rendered} of ${chapters.length} rendered: play one here.` : 'Tick the chapters to render. Bars are words; times are speech.'}
+                >
+                  <button className="ghost" onClick={() => setPicked(everything ? new Set() : new Set(chapters.map((c) => c.number)))}>{everything ? 'Clear all' : 'Select all'}</button>
+                </CardHead>
+                <ul className="ab-chlist">
+                  {chapters.map((c) => (
+                    <ChapterRow
+                      key={c.number}
+                      pdf={pdf}
+                      version={version}
+                      chapter={c}
+                      chosen={chosen.has(c.number)}
+                      longest={longest}
+                      book={title}
+                      reading={reading === c.number}
+                      onToggle={() => toggle(c.number)}
+                      onRead={() => setReading(reading === c.number ? null : c.number)}
+                    />
+                  ))}
+                </ul>
                 <div className="ab-chart-foot">
                   <p className="small muted" role="status">
                     {chosen.size === 0
                       ? 'No chapter chosen, so there is nothing to render.'
                       : `${chosen.size} of ${chapters.length} chosen · ${words.toLocaleString()} words${times.speech ? ` · ${times.approx ? 'about ' : ''}${times.speech} of speech` : ''}`}
                   </p>
-                  <label className="check ab-readpick">
-                    Check the spoken text of
-                    <select value={reading ?? ''} onChange={(e) => setReading(e.target.value === '' ? null : Number(e.target.value))} aria-label="Read a chapter">
-                      <option value="">a chapter…</option>
-                      {chapters.map((c) => <option key={c.number} value={c.number}>{c.label}</option>)}
-                    </select>
-                  </label>
                 </div>
-              </ChartCard>
+              </div>
 
-              {reader && <Reader key={`${pdf}:${reading}:${version}`} pdf={pdf} chapter={reader} onClose={() => setReading(null)} />}
             </div>
 
             <div className="ab-side">
               <div className="card ab-render">
-                <CardHead icon={IconZap} tool="audiobook" title="Render" sub={`${everything ? 'The whole book' : `${chosen.size} of ${chapters.length} chapters`}${times.speech ? `, ${times.approx ? 'about ' : ''}${times.speech} of speech` : ''}`} />
+                <CardHead icon={IconZap} tool="audiobook" title="Render" sub={`${everything ? 'The whole book' : `${chosen.size} of ${chapters.length} chapters`}${times.speech ? `, ${times.approx ? 'about ' : ''}${times.speech} of speech` : ''}${times.render ? `; about ${times.render} to render on this computer` : ''}`} />
                 <div className="stack">
                   <label className="ab-field">
                     <span>Voice</span>
@@ -859,6 +1002,26 @@ function Book({ pdf, voices, job, reloadJob }: {
                 </p>
                 {error && <p className="error">{error}</p>}
               </div>
+
+              {others.length > 0 && (
+                <div className="card ab-listen">
+                  <CardHead icon={IconAudiobooks} tool="audiobook" title="Listen" sub="The book's other audio." />
+                  {whole.length > 0 && (
+                    <div className="ab-files">
+                      {whole.map((f) => <AudioFile key={`${f.path}:${f.modified}`} path={f.path} size={f.megabytes} label={`The whole book · ${f.name}`} />)}
+                    </div>
+                  )}
+                  {older.length > 0 && (
+                    <details className="ab-listen-more">
+                      <summary>From an earlier reading ({older.length} file{older.length === 1 ? '' : 's'})</summary>
+                      <p className="hint">Made when this book's chapters were found differently. Rendering it again makes files for the chapters above.</p>
+                      <div className="ab-files">
+                        {older.map((f) => <AudioFile key={`${f.path}:${f.modified}`} path={f.path} size={f.megabytes} />)}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -902,7 +1065,14 @@ function Book({ pdf, voices, job, reloadJob }: {
 
 // ---------------------------------------------------------------------------
 
-function Voices({ voices, loaded, running, reloadJob }: { voices: Voice[]; loaded: boolean; running: boolean; reloadJob: () => Promise<void> }) {
+function Voices({ voices, samples, loaded, running, reloadJob }: {
+  voices: Voice[]
+  /** What "Hear a sample" made, newest first. */
+  samples: AudioEntry[]
+  loaded: boolean
+  running: boolean
+  reloadJob: () => Promise<void>
+}) {
   const [name, setName] = useState('')
   const [clip, setClip] = useState<{ name: string; path: string } | null>(null)
   const [consent, setConsent] = useState('')
@@ -987,6 +1157,15 @@ function Voices({ voices, loaded, running, reloadJob }: { voices: Voice[]; loade
           </details>
         )}
 
+        {samples.length > 0 && (
+          <details className="ab-presets">
+            <summary>Samples ({samples.length})</summary>
+            <div className="ab-files">
+              {samples.map((f) => <AudioFile key={`${f.path}:${f.modified}`} path={f.path} size={f.megabytes} />)}
+            </div>
+          </details>
+        )}
+
         <details className="ab-add" open={adding} onToggle={(e) => setAdding(e.currentTarget.open)}>
           <summary>Add a voice</summary>
           <ol className="ab-steps">
@@ -1046,85 +1225,108 @@ function Voices({ voices, loaded, running, reloadJob }: { voices: Voice[]; loade
 
 // ---------------------------------------------------------------------------
 
-function Finished({ refreshKey, book, onDelete }: { refreshKey: string; book: string; onDelete: (book: string) => void }) {
-  const books = usePoll(() => call<{ audiobooks: AudioBook[] }>('audiobook__list_audiobooks'), 30000)
-  useEffect(() => { void books.reload() }, [refreshKey])
-  const list = books.data?.audiobooks ?? []
-  if (books.data === null && !books.error) return <div className="card ab-finished" id="ab-finished" aria-busy="true"><div className="skeleton ab-skel" /></div>
-  if (list.length === 0 && !books.error) return null
-  const files = list.reduce((n, b) => n + b.files.length, 0)
-  const open = book ? stem(book) : ''
-  return (
-    <div className="card ab-finished" id="ab-finished">
-      <CardHead icon={IconAudiobooks} tool="audiobook" title="Finished audio" sub={`${files} file${files === 1 ? '' : 's'} in ${list.length} place${list.length === 1 ? '' : 's'}. Play one here, or download it.`} />
-      <div className="ab-groups">
-        {list.map((b) => {
-          const megabytes = b.files.reduce((n, f) => n + f.megabytes, 0)
-          return (
-            <details key={b.book} className="ab-group">
-              <summary>
-                <span className="ab-group-name">{b.book === 'voices' ? 'Voice samples' : b.book}</span>
-                {b.book === open && <span className="chip">open book</span>}
-                <span className="muted small ab-group-meta">{b.files.length} file{b.files.length === 1 ? '' : 's'} · {megabytes.toFixed(1)} MB</span>
-              </summary>
-              <div className="ab-files">
-                {b.files.map((f) => <AudioFile key={`${f.path}:${f.modified}`} path={f.path} size={f.megabytes} />)}
-              </div>
-              {b.book !== 'voices' && (
-                <button className="ghost ab-delete" onClick={() => onDelete(b.book)}>
-                  <IconTrash size={14} aria-hidden />Delete this audiobook…
-                </button>
-              )}
-            </details>
-          )
-        })}
-      </div>
-      {books.error && <p className="error">{books.error}</p>}
-    </div>
-  )
+/** Each uploaded book's plan (title, author, chapters), read once per change rather than polled: planning a
+ *  long book takes a moment, and the library only needs it when a book arrives, goes, or is read. */
+function useOverviews(paths: string[], refresh: string): Record<string, Overview | undefined> {
+  const [found, setFound] = useState<Record<string, Overview>>({})
+  const key = paths.join('\n')
+  useEffect(() => {
+    let live = true
+    void (async () => {
+      for (const pdf of paths) {
+        try {
+          const overview = await call<Overview>('audiobook__preview_book', { pdf })
+          if (live) setFound((old) => ({ ...old, [pdf]: overview }))
+        } catch {
+          // The card shows the file's name instead, and opening the book shows what went wrong.
+        }
+      }
+    })()
+    return () => { live = false }
+  }, [key, refresh])
+  return found
 }
 
-// ---------------------------------------------------------------------------
-
 export function Audiobooks() {
+  // The book open, by its PDF's path; none is the library.
   const [book, setBook] = useState('')
-  const [deleting, setDeleting] = useState<string | null>(null)
+  const [readNow, setReadNow] = useState(false)
+  const [deleting, setDeleting] = useState<Doomed | null>(null)
   const [changed, setChanged] = useState(0)
   const uploads = usePoll(getUploads, 30000)
   const status = usePoll(() => call<{ job: BookJob | null }>('audiobook__job_status'), 3000)
   const voiceList = usePoll(() => call<{ voices: Voice[] }>('audiobook__list_voices'), 30000)
+  const finished = usePoll(() => call<{ audiobooks: AudioBook[] }>('audiobook__list_audiobooks'), 30000)
   const job = status.data?.job ?? null
 
-  // Chapters finish one by one during a render, so the list of finished audio follows the job.
+  // Chapters finish one by one during a render, so the audio follows the job.
   const progressKey = job ? `${job.id}:${job.state}:${job.outputs.length}` : ''
+  useEffect(() => { void finished.reload() }, [progressKey, changed])
   const justFinished = job?.state === 'done' ? job.id : ''
   useEffect(() => { if (justFinished) void voiceList.reload() }, [justFinished])
+  const overviews = useOverviews((uploads.data?.books ?? []).map((b) => b.path), `${justFinished}:${changed}`)
 
-  // The uploaded PDF behind a finished book, if there is one: matched by name, as the output folder is.
-  const uploadFor = (name: string) => uploads.data?.books.find((b) => stem(b.name) === name) ?? null
-  const gone = deleting !== null ? uploadFor(deleting) : null
+  // A book is its upload and its audio, matched by name, as the output folder is named for the PDF.
+  const audiobooks = (finished.data?.audiobooks ?? []).filter((b) => b.book !== 'voices')
+  const shelves: Shelf[] = [
+    ...(uploads.data?.books ?? []).map((u) => ({ stem: stem(u.name), upload: u, audio: audiobooks.find((b) => b.book === stem(u.name)) ?? null })),
+    ...audiobooks.filter((b) => !uploads.data?.books.some((u) => stem(u.name) === b.book)).map((b) => ({ stem: b.book, upload: null, audio: b })),
+  ]
+  const samples = finished.data?.audiobooks.find((b) => b.book === 'voices')?.files ?? []
+
+  const open = (path: string, read = false) => {
+    setBook(path)
+    setReadNow(read)
+    window.scrollTo({ top: 0 })
+  }
+  const close = () => { setBook(''); window.scrollTo({ top: 0 }) }
+  const doomedFor = (name: string, title: string): Doomed => {
+    const shelf = shelves.find((s) => s.stem === name)
+    return { stem: name, title, upload: shelf?.upload ?? null, audio: shelf?.audio?.files.length ?? 0 }
+  }
+  const titleFor = (path: string) => {
+    const shelf = shelves.find((s) => s.stem === stem(path))
+    return (shelf?.upload && overviews[shelf.upload.path]?.title) || shelf?.audio?.title || undefined
+  }
+  // The job's book, unless it is the one open: what "Open the book" on the job card opens.
+  const jobBook = job && (job.kind === 'analyse' || job.kind === 'render') && stem(job.target) !== stem(book)
+    && uploads.data?.books.some((u) => u.path === job.target) ? job.target : ''
 
   return (
     <div className="panel ab-page" style={style({ '--ab': toolColor('audiobook') })}>
-      <Library book={book} setBook={setBook} uploads={uploads} onDelete={setDeleting} />
-      <JobCard job={job} reload={status.reload} />
-      {book && (
-        <Book key={book} pdf={book} voices={voiceList.data?.voices ?? []} job={job} reloadJob={status.reload} />
+      <JobCard job={job} name={job ? titleFor(job.target) : undefined} reload={status.reload} openBook={jobBook ? () => open(jobBook) : undefined} />
+      {book ? (
+        <Book
+          key={book}
+          pdf={book}
+          readNow={readNow}
+          voices={voiceList.data?.voices ?? []}
+          job={job}
+          reloadJob={status.reload}
+          onBack={close}
+          onDelete={(title) => setDeleting(doomedFor(stem(book), title))}
+        />
+      ) : (
+        <div className="grid-split ab-lower">
+          <Library shelves={shelves} overviews={overviews} job={job} uploads={uploads} onOpen={open} onDelete={setDeleting} />
+          <Voices
+            voices={voiceList.data?.voices ?? []}
+            samples={samples}
+            loaded={voiceList.data !== null}
+            running={job?.state === 'running'}
+            reloadJob={status.reload}
+          />
+        </div>
       )}
-      <div className="grid-split ab-lower">
-        <Finished refreshKey={`${progressKey}:${changed}`} book={book} onDelete={setDeleting} />
-        <Voices voices={voiceList.data?.voices ?? []} loaded={voiceList.data !== null} running={job?.state === 'running'} reloadJob={status.reload} />
-      </div>
-      {(status.error || voiceList.error) && <p className="error">{status.error || voiceList.error}</p>}
+      {(status.error || voiceList.error || finished.error) && <p className="error">{status.error || voiceList.error || finished.error}</p>}
       {deleting !== null && (
         <DeleteBook
-          key={deleting}
+          key={deleting.stem}
           book={deleting}
-          upload={gone ? { name: gone.name, bytes: gone.bytes } : null}
           onCancel={() => setDeleting(null)}
           onChanged={() => { setChanged((n) => n + 1); void uploads.reload() }}
           onDone={() => {
-            if (book && stem(book) === deleting) setBook('')
+            if (book && stem(book) === deleting.stem) setBook('')
             setDeleting(null)
           }}
         />

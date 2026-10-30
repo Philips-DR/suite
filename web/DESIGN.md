@@ -109,5 +109,10 @@ on a `.navtile`.
 ## Verifying a change
 
 `npx tsc --noEmit`, `npm test`, and look at it: with the dev server running
-(`npm run dev`, see `web/README.md`), screenshot at 390×844 (phone), 820×1180 (tablet) and 1440×900
-in both themes, and confirm `document.documentElement.scrollWidth <= window.innerWidth` at 390.
+(`npm run dev`, see `web/README.md`), screenshot at 390×844 (phone), 820×1180 (tablet), **about 1066
+(a laptop)** and 1440×900 in both themes, and confirm `document.documentElement.scrollWidth <=
+window.innerWidth` at 390. The laptop width is the narrowest card of all: the sidebar is shown and a
+`.grid-split` still has two columns, so its wide card is narrower than on a tablet. A row laid out by the
+window's width (`@media`) squeezed the Audiobooks chapter titles to a letter a line there while 390, 820 and
+1440 all looked right (2026-10-30): **lay out a row inside a card by the card's width** (`container-type:
+inline-size` on the list, `@container` for the row), and keep `@media` for the page.

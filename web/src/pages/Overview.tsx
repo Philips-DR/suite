@@ -99,9 +99,9 @@ function RunningNow({ go }: { go: (to: Section) => void }) {
       <li key="bk" className="run-item">
         <Ring value={book.percent} label="Progress">{book.percent !== null ? `${Math.round(book.percent)}%` : ''}</Ring>
         <div className="run-main">
-          <strong>{what} {fileName(book.target)}</strong>
+          <strong>{what} {book.title || fileName(book.target)}</strong>
           <span className="muted small">
-            {book.chapter !== null ? `Chapter ${book.chapter}: ${book.chapter_title} · ` : ''}{book.phase}{book.eta ? ` · about ${book.eta} left` : ''}
+            {book.chapter !== null && book.chapter_title ? `${book.chapter_title} · ` : ''}{book.phase}{book.eta ? ` · about ${book.eta} left` : ''}
           </span>
         </div>
         <button onClick={() => go('audiobooks')}>Open</button>
