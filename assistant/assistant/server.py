@@ -47,6 +47,7 @@ from assistant.documents import document_tools
 from assistant.setup import context_for, current_lexicon, lexicon_path_for, prepare, stores_for
 from assistant.status import model_status, network_status, tools_status
 from assistant.tools import RemoteTool, ToolRegistry
+from assistant.schedule import run_every
 from assistant.watchers import watch, watch_login
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -280,6 +281,9 @@ def create_app(
             asyncio.create_task(watch(registry, holder["hub"].emit)),
             asyncio.create_task(watch_login(config, holder["hub"].emit)),
         ] if watch_jobs else []
+        # What tools.yaml says to run on a timer (mail's sync), whether or not a page is open.
+        watchers += [asyncio.create_task(run_every(registry, audit, holder["hub"].emit, server, name, seconds))
+                     for server, name, seconds in registry.schedules]
         # Only now -- tools started, hub up -- is the server really accepting calls. Announcing
         # earlier sent people (and a browser tab) to a port that refused the connection.
         if on_ready is not None:

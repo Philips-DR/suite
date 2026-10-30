@@ -7,7 +7,6 @@ import { ApprovalCard } from './components/ApprovalCard'
 import { Connect } from './components/Connect'
 import { Notices } from './components/Notices'
 import { getMe, hasToken } from './api'
-import { call } from './call'
 import { Overview } from './pages/Overview'
 import { useAppState } from './state'
 import { CommandPalette } from './ui/CommandPalette'
@@ -19,8 +18,6 @@ import { MiniPlayer } from './ui/MiniPlayer'
 import { MoreSheet, Sidebar, TabBar, TopBar } from './ui/Shell'
 import { useRoute } from './ui/useRoute'
 import { useTheme } from './ui/useTheme'
-
-const SYNC_INTERVAL = 30 * 60_000
 
 // Every page but the first is fetched when it is opened, so the app starts on a phone with only what the
 // Overview needs (the markdown renderer behind Chat alone is a large part of the code).
@@ -54,7 +51,7 @@ function Page({ section, go }: { section: Section; go: (to: Section) => void }) 
 }
 
 export function App() {
-  const { pending, tools } = useAppState()
+  const { pending } = useAppState()
   const [section, go] = useRoute()
   const [theme, cycleTheme, setTheme] = useTheme()
   const [palette, setPalette] = useState(false)
@@ -106,13 +103,8 @@ export function App() {
   // not it is showing: room that came and went as the dock did would shift the page under your finger.
   const loaded = usePlayer().track !== null
 
-  // Sync mail every 30 minutes while the app is open.
-  const hasMailSync = tools.has('mail_ai__sync')
-  useEffect(() => {
-    if (!hasMailSync) return
-    const timer = window.setInterval(() => { void call('mail_ai__sync').catch(() => {}) }, SYNC_INTERVAL)
-    return () => window.clearInterval(timer)
-  }, [hasMailSync])
+  // Mail is synced by the backend on the schedule in tools.yaml, open page or not: a timer here only ran while a
+  // tab was open, and two tabs synced twice.
 
   return (
     <div className="shell" data-section={section} data-mini={loaded ? '' : undefined}>

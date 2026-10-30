@@ -293,6 +293,45 @@ def test_a_button_gets_the_same_spelling_corrections_chat_does(tmp_path):
 
 
 
+def test_the_server_runs_what_tools_yaml_schedules_with_no_page_open(tmp_path):
+    """Mail was synced by a timer in the page, so a closed tab left the mailbox five days stale. The server runs
+    it now: once at start, audited as the schedule's, and never shown in the chat or noted for the model."""
+    from assistant.tools import LocalTool
+
+    calls: list[dict] = []
+
+    async def tick(arguments):
+        calls.append(arguments)
+        return '{"added": 0}'
+
+    sync = LocalTool(name="tick", description="Stands in for a sync.", input_schema={"type": "object"},
+                     read_only=False, handler=tick)
+
+    class Scheduled(ToolRegistry):
+        @property
+        def schedules(self):
+            return [("mail-ai", "assistant__tick", 3600)]
+
+    app = create_app(
+        tmp_path / "tools.yaml", tmp_path / "memory.json", tmp_path / "audit.jsonl", token=TOKEN,
+        registry_factory=lambda local: Scheduled([], local=[*local, sync]), watch_jobs=False,
+    )
+
+    async def body(client):
+        for _ in range(100):
+            if calls:
+                break
+            await asyncio.sleep(0.01)
+        return (await client.get("/api/state", headers=AUTH)).json()
+
+    state = run(with_client(app, body))
+    assert calls == [{}]
+    rows = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text().splitlines()]
+    assert [(r["tool"], r["origin"], r["outcome"]) for r in rows] == [("assistant__tick", "schedule", "ok")]
+    assert not [e for e in state["history"] if e["type"].startswith("tool_")]
+    assert state["notes"] == []
+
+
 def test_status_reports_tools_from_the_audit_without_touching_the_network(tmp_path):
     """Settings opens instantly: no live check unless asked for."""
     import json

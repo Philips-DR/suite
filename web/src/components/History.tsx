@@ -26,7 +26,7 @@ const PAGE = 25
 const SLOWEST = 8
 
 type Outcome = 'all' | 'ok' | 'failed' | 'declined'
-type By = 'all' | 'you' | 'assistant'
+type By = 'all' | 'you' | 'assistant' | 'schedule'
 
 const OUTCOMES: { id: Outcome; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -38,13 +38,19 @@ const BYS: { id: By; label: string }[] = [
   { id: 'all', label: 'Anyone' },
   { id: 'you', label: 'You' },
   { id: 'assistant', label: 'Assistant' },
+  { id: 'schedule', label: 'Schedule' },
 ]
+const WHO_LABEL: Record<Exclude<By, 'all'>, string> = { you: 'You', assistant: 'Assistant', schedule: 'Schedule' }
+
+/** Who ran it: a button is you, a timer in tools.yaml is the schedule, and anything else is the assistant. */
+const whoRan = (origin?: string): Exclude<By, 'all'> =>
+  origin === 'button' ? 'you' : origin === 'schedule' ? 'schedule' : 'assistant'
 
 /** A log row with the two things every filter and chart needs worked out once. */
 interface Entry extends AuditRow {
   t: number
   day: string
-  who: 'you' | 'assistant'
+  who: Exclude<By, 'all'>
 }
 
 const thisYear = new Date().getFullYear()
@@ -126,7 +132,7 @@ export function History() {
   const entries = useMemo<Entry[]>(
     () => (rows.data ?? []).map((r) => {
       const t = new Date(r.at).getTime()
-      return { ...r, t, day: dayKey(new Date(t)), who: r.origin === 'button' ? 'you' : 'assistant' }
+      return { ...r, t, day: dayKey(new Date(t)), who: whoRan(r.origin) }
     }),
     [rows.data],
   )
@@ -392,7 +398,7 @@ export function History() {
                       </span>
                       {e.error && <span className="hist-err" title={e.error}>{e.error}</span>}
                     </td>
-                    <td data-label="By" className="hist-by">{e.who === 'you' ? 'You' : 'Assistant'}</td>
+                    <td data-label="By" className="hist-by">{WHO_LABEL[e.who]}</td>
                     <td data-label="Result"><OutcomeBadge outcome={e.outcome} error={e.error} /></td>
                     <td data-label="Took" className="num hist-took">{typeof e.duration_ms === 'number' ? duration(e.duration_ms) : '—'}</td>
                   </tr>

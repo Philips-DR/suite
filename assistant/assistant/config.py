@@ -12,6 +12,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -69,6 +70,18 @@ def model_config_from_environment(provider: str | None = None, model: str | None
 
 
 @dataclass(frozen=True)
+class Schedule:
+    """One of a server's tools, run by the backend on a timer with no arguments."""
+
+    tool: str
+    every_seconds: int
+
+
+# Shorter than this would be polling, which is what the interface's own reads are for.
+MIN_SCHEDULE_MINUTES = 5
+
+
+@dataclass(frozen=True)
 class ToolServer:
     """One MCP server the assistant can launch. A child process, not a service."""
 
@@ -80,6 +93,9 @@ class ToolServer:
     # Folders of audio this tool makes for a person to listen to, which the web app may play and
     # download. Declared here, never discovered: the API serves nothing a tool did not name.
     files: list[str] = field(default_factory=list)
+    # Tools the backend runs on a timer, whether or not anyone has a page open. Declared here, like
+    # everything else about a tool, so the server never has to know which tool keeps a mailbox.
+    schedule: list[Schedule] = field(default_factory=list)
 
     @property
     def safe_name(self) -> str:
@@ -169,6 +185,19 @@ def load_tool_servers(path: Path) -> list[ToolServer]:
                 # Relative to the tool's own folder, since that is where the tool runs.
                 files=[_resolve_path(str(f), Path(cwd) if cwd else base, where)
                        for f in entry.get("files", [])],
+                schedule=[_schedule(item, where) for item in entry.get("schedule") or []],
             )
         )
     return out
+
+
+def _schedule(item: Any, where: str) -> Schedule:
+    """`{tool: sync, every_minutes: 30}`. A mistake here stops the server starting: a schedule that
+    silently never ran is how a mailbox went five days stale."""
+    if not isinstance(item, dict) or not item.get("tool"):
+        raise ValueError(f"{where}: each schedule entry needs a tool, as {{tool: name, every_minutes: N}}")
+    minutes = item.get("every_minutes")
+    if not isinstance(minutes, int) or minutes < MIN_SCHEDULE_MINUTES:  # YAML's `true` is 1, so it is refused too
+        raise ValueError(f"{where}: schedule for {item['tool']!r} needs every_minutes, a whole number of at "
+                         f"least {MIN_SCHEDULE_MINUTES}")
+    return Schedule(tool=str(item["tool"]), every_seconds=minutes * 60)

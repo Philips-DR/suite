@@ -139,6 +139,12 @@ class ToolRegistry:
         """Folders the web app may fetch audio from: exactly what tools.yaml declared."""
         return [Path(f) for server in self._servers for f in server.files]
 
+    @property
+    def schedules(self) -> list[tuple[str, str, int]]:
+        """(server, qualified tool name, seconds) for every tool tools.yaml says to run on a timer."""
+        return [(server.name, f"{server.safe_name}{QUALIFIER}{s.tool}", s.every_seconds)
+                for server in self._servers for s in server.schedule]
+
     async def __aenter__(self) -> "ToolRegistry":
         await self._stack.__aenter__()
         try:

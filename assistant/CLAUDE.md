@@ -327,6 +327,29 @@ and asked about first (`web/src/ui/ConfirmDelete.tsx`). Run for real on throwawa
   what will go with the read-only tool and calls the destructive one only on a confirmed press, never to
   find out what it would do.
 
+## On a timer (`schedule.py`, 2026-10-30)
+
+A tool's entry in `tools.yaml` may say `schedule: [{tool: sync, every_minutes: 30}]`, and the server runs that
+tool, with no arguments, at start and then that long after each run ends, whether or not a page is open. Only
+mail-ai's `sync` has one. It used to be a timer in the web page: a closed tab left the mailbox five days stale
+(2026-10-24), and two tabs synced twice.
+
+- **Declared, never known.** The server reads `registry.schedules`; nothing in it names mail. A wrong entry
+  (no tool, an interval under five minutes, not a whole number) stops the server starting, because a schedule
+  that silently never ran is the failure this replaced.
+- **The path a button takes**, `session.execute` with the gate answered by the declaration (`allow_gate`), and
+  the origin `schedule`, which History shows as "Schedule".
+- **Audited when its outcome changes**, not every run: the first run, a failure, a recovery. A row every half
+  hour pushed a person's own actions out of History and the Overview when the page's timer did it. The newest
+  row per tool, which Settings reads for health, is still the current state.
+- **Not conversation.** No events, no note for the model. It speaks only through a notice, once when it starts
+  failing and once when it recovers. A run never overlaps the one before it; a failure never stops the timer.
+
+Run for real: the first scheduled run after a rebuild, with no page involved, was a full re-sync (the
+mailbox's sync point had lapsed) that took 5 min 34 s and added 1,040 messages. **Not handled:** a sync pressed
+in Mail while the scheduled one runs reaches the same tool process at the same time, as two open tabs could
+before.
+
 ## Memory and history in the interface
 
 - **Facts in the prompt carry their ids.** `forget` takes an id; a prompt showing facts without
