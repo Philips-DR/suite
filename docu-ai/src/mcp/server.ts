@@ -12,6 +12,7 @@ import {
   lintDocument,
   listDocuments,
   preview,
+  saveExport,
   trashDocument,
   type ThemeName,
 } from '../operations.js'
@@ -44,12 +45,17 @@ function failed(error: unknown) {
   }
 }
 
+/** Where `save_export` writes. Injected like auth; unset, that one tool says so and the rest work. */
+export interface ServerPaths {
+  exportsDir?: string
+}
+
 /**
  * Auth comes in, exactly as it does for every other caller of `operations.ts`. The server does not
  * resolve credentials, which is what lets a test drive it with a stub and a future service account
  * drop in without touching this file.
  */
-export function createDocuAiServer(auth: AuthProvider): McpServer {
+export function createDocuAiServer(auth: AuthProvider, paths: ServerPaths = {}): McpServer {
   const server = new McpServer({ name: 'docu-ai', version: VERSION })
 
   server.registerTool(
@@ -271,7 +277,9 @@ export function createDocuAiServer(auth: AuthProvider): McpServer {
       title: 'Export a built document as PDF or DOCX',
       description:
         'Download a Google Doc docu-ai built as a file. Returns the raw bytes base64-encoded, with a ' +
-        'suggested filename. Only documents docu-ai built can be exported (drive.file scope).',
+        'suggested filename: this is what the web app\'s download button uses. Never use it to attach a CV or ' +
+        'letter to an email: the whole file comes back as text, far more than you can carry into another call. ' +
+        'Use save_export for that. Only documents docu-ai built can be exported (drive.file scope).',
       inputSchema: {
         documentId: z.string().describe('The Google Docs document id, as returned by build or list.'),
         format: z
@@ -296,13 +304,48 @@ export function createDocuAiServer(auth: AuthProvider): McpServer {
     },
   )
 
+  server.registerTool(
+    'save_export',
+    {
+      title: 'Save a built document as a Word or PDF file, to attach to an email',
+      description:
+        'Export a Google Doc docu-ai built and save it as a file in the exports folder the suite gave docu-ai. ' +
+        'Returns the file\'s path, name and size, never its bytes. This is how a CV or cover letter is attached ' +
+        'to an email: pass the returned `path` to mail_ai__draft_new in `attachments`, as {path}. Do not use ' +
+        '`export` for that: it returns the whole file as text (a Word CV is about 650 KB), far more than you ' +
+        'can copy into another call. `filename` is the name the recipient will see, for example ' +
+        '"Philip_Baah_Afriyie_CV.docx"; it is given the format\'s extension, and a file already there is never ' +
+        'overwritten (a number is added, and the returned name says so). Use the format the recipient asked ' +
+        'for. Only documents docu-ai built can be saved.',
+      inputSchema: {
+        documentId: z.string().describe('The Google Docs document id, as returned by build or list.'),
+        format: z.enum(['pdf', 'docx']).describe("'docx' for a Word document, 'pdf' for a PDF."),
+        filename: z
+          .string()
+          .optional()
+          .describe('The file name the recipient will see. Default: the document\'s title.'),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, openWorldHint: true },
+      // The approval names the document, not just its id.
+      _meta: { approval: { preview_tool: 'info', argument_map: { documentId: 'documentId' }, field: 'summary' } },
+    },
+    async ({ documentId, format, filename }) => {
+      try {
+        if (!paths.exportsDir) return failed(new Error('No exports folder: the suite gives docu-ai one in DOCU_AI_EXPORTS.'))
+        return ok(await saveExport(paths.exportsDir, await exportDocument(auth, documentId, format), filename))
+      } catch (error) {
+        return failed(error)
+      }
+    },
+  )
+
   return server
 }
 
 async function main(): Promise<void> {
   tolerateSlowConnections()
   // The one place this entry point reaches for the environment, and named so it is visible.
-  const server = createDocuAiServer(GoogleOAuthProvider.fromEnvironment())
+  const server = createDocuAiServer(GoogleOAuthProvider.fromEnvironment(), { exportsDir: process.env.DOCU_AI_EXPORTS || undefined })
   await server.connect(new StdioServerTransport())
 }
 

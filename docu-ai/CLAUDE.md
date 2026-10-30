@@ -25,7 +25,7 @@ two disagree, this file wins and `plan.md` should be corrected.
     npm start -- letter <dir> [out]   # a cover letter in the letter look (resume <dir> for a CV): one file, no cover; writes out.pdf AND out.docx, prints the page count
     npm start -- export <documentId> [out.pdf|out.docx]   # export a built document; the extension picks the format (no extension: PDF)
     # build, resume and letter also take  --title "..."  and  --replaces <documentId>  (see "Word, PDF and replacing" below)
-    npm run mcp                       # serve preview/build/layout/lint/info/trash over MCP on stdio, for a model to call
+    npm run mcp                       # serve preview/build/layout/lint/info/trash/list/export/save_export over MCP on stdio
 
 Don't confuse the two "lint"s: `npm run lint` is ESLint checking source code quality; `npm start -- lint` is the
 CLI subcommand that reads a *built Google Doc* back and re-runs the markdown-residue lint against it.
@@ -519,7 +519,30 @@ Closes gap-plan step 1 (`../plan.md`, "Gaps found on 2026-10-24"), which the use
   description says. Add it to the door only together with a preview of what it would trash.
 - **Not run against Drive yet (2026-10-29):** all of the above is unit-tested with Drive stubbed. The Google login had
   lapsed (`invalid_grant`), so a real Word export, a real `resume` with both files and the page count, and a real
-  `--replaces` have not been seen. Record them here when they have.
+  `--replaces` have not been seen. Record them here when they have. **A real Word export has now been seen**
+  (2026-10-30, through `save_export`): two real documents, 654,050 and 651,163 bytes, each opening with `PK`. A real
+  `resume` with both files and a real `--replaces` still have not.
+
+## Saving an export for another tool: `save_export` (2026-10-30)
+
+A file cannot travel through a model: one reply holds 16,000 tokens, and a Word CV is at least 217,000 as base64 (a
+cover-letter PDF, the smallest real file, at least 17,000). So a CV reaches an email by path. `save_export` exports a
+document and writes it into `DOCU_AI_EXPORTS` (injected by `tools.yaml`: the assistant's `uploads/exports`, which
+mail-ai is given as the one folder it may attach from) and returns `{path, filename, size}`, never the bytes
+(`src/exports.ts`). The rules, each tested; the name, overwrite and no-folder rules were also each shown to be caught by
+breaking the code in a copy:
+
+- **A tool of its own, not a flag on `export`.** `export` is read-only and the web app's download button uses it;
+  a tool that writes a file is not read-only, so chat asks before `save_export` runs, and its approval shows `info`
+  (the document's title and link) as `trash`'s does. `export`'s description now says never to use it to attach.
+- **The name is the recipient's**, chosen by the model, so it is checked like an upload's: no slash, control
+  character or reversing mark, no leading dot, at most 120 characters, and it ends in the format's extension (a
+  `.pdf` name for a Word file is refused, not given a second extension).
+- **Nothing is overwritten.** `name.docx`, then `name (2).docx`, written with the exclusive flag so there is no
+  check-then-write race; the returned name says which.
+- **No folder, no save**, before Drive is asked anything. The folder is created on first use.
+- The escapes for the reversing marks are written as `\u202a`…, never as the characters themselves: a first
+  version held the invisible characters in the source, and only a scan for them found it.
 
 ## Definition of done for a feature
 

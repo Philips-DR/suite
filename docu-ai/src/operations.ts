@@ -14,6 +14,7 @@ import { measureLayout, type LayoutResult } from './verify/layout.js'
 import { countParagraphs, fetchDocument, residueFindings } from './verify/readback.js'
 
 export { documentInfo, exportDocument, listDocuments, trashDocument } from './drive.js'
+export { exportName, saveExport, type SavedExport } from './exports.js'
 export type { DocumentInfo, ExportFormat, ExportResult, ListDocumentsResult, ListedDocument, TrashResult } from './drive.js'
 export type { LayoutResult } from './verify/layout.js'
 

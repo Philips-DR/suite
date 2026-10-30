@@ -48,16 +48,16 @@ afterEach(async () => {
 })
 
 describe('the MCP front door', () => {
-  it('advertises exactly the eight operations, and no more', async () => {
+  it('advertises exactly the nine operations, and no more', async () => {
     const client = await connect()
     const names = (await client.listTools()).tools.map((t) => t.name).sort()
-    expect(names).toEqual(['build', 'export', 'info', 'layout', 'lint', 'list', 'preview', 'trash'])
+    expect(names).toEqual(['build', 'export', 'info', 'layout', 'lint', 'list', 'preview', 'save_export', 'trash'])
   })
 
-  it('marks only build and trash as writes, and trash as destructive', async () => {
+  it('marks only build, save_export and trash as writes, and trash as destructive', async () => {
     const tools = (await (await connect()).listTools()).tools
     const writes = tools.filter((t) => t.annotations?.readOnlyHint !== true).map((t) => t.name).sort()
-    expect(writes).toEqual(['build', 'trash'])
+    expect(writes).toEqual(['build', 'save_export', 'trash'])
     expect(tools.find((t) => t.name === 'trash')?.annotations?.destructiveHint).toBe(true)
   })
 
@@ -149,5 +149,25 @@ describe('the MCP front door — single files', () => {
     const parsed = JSON.parse(textOf(result)) as { single: boolean; chapters: { title: string }[] }
     expect(parsed.single).toBe(true)
     expect(parsed.chapters.map((c) => c.title)).toEqual(['Notes'])
+  })
+
+  it('has save_export name the document in its approval, return a path, and say not to carry bytes', async () => {
+    const tools = (await (await connect()).listTools()).tools
+    const save = tools.find((t) => t.name === 'save_export')
+    const approval = (save?._meta as { approval?: Record<string, unknown> } | undefined)?.approval
+    expect(approval).toEqual({ preview_tool: 'info', argument_map: { documentId: 'documentId' }, field: 'summary' })
+    expect(save?.annotations?.destructiveHint).toBe(false)
+    expect(save?.description).toMatch(/mail_ai__draft_new/)
+    expect(save?.description).toMatch(/never its bytes/)
+    // and export, which does return the bytes, is the button's: the model is pointed away from it for attaching
+    expect(save?.description).toMatch(/Do not use\s+`export`/)
+    expect(tools.find((t) => t.name === 'export')?.description).toMatch(/Use save_export for that/)
+  })
+
+  it('refuses save_export with no exports folder, before touching auth', async () => {
+    const client = await connect() // no folder given, and auth that explodes if used
+    const result = await client.callTool({ name: 'save_export', arguments: { documentId: 'abc', format: 'docx' } })
+    expect((result as { isError?: boolean }).isError).toBe(true)
+    expect(textOf(result)).toMatch(/No exports folder/)
   })
 })
