@@ -58,6 +58,11 @@ def memory_tools(store: MemoryStore) -> list[LocalTool]:
             description=(
                 "Record something worth knowing next time: a person, a project, a "
                 "preference, or the correct spelling of a name the transcriber mis-hears. "
+                "Record only what the user stated, in the sense they meant it. An instruction "
+                "about a draft ('leave out X', 'don't mention Y') is not a fact about the user: "
+                "never record it as one ('no X', 'has never done Y'), since it is true of that "
+                "draft and may be false of them. A spelling records only forms the user gave or "
+                "a transcript showed, never ones you guessed. "
                 "Use kind='spelling' with the aliases as a comma-separated list in "
                 "content, and those become the lexicon used to correct transcripts. "
                 "Recording the same kind and subject twice replaces the earlier note."

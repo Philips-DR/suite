@@ -40,9 +40,11 @@ def test_the_descriptions_carry_the_procedure_the_assistant_must_follow(server):
     by_name = {t.name: t.description for t in asyncio.run(server.list_tools())}
     assert "FIRST" in by_name["requirements"] and "ONE message" in by_name["requirements"]
     assert "remember" in by_name["requirements"]
-    assert "BEFORE write_draft" in by_name["claims"] and "clean: true" in by_name["claims"]
+    assert "before write_draft" in by_name["claims"] and "clean: true" in by_name["claims"]
     # An email body claims things too, and a private claim needs the addresses checked (2026-10-30).
-    assert "BEFORE draft_new" in by_name["claims"] and "github_visibility" in by_name["claims"]
+    assert "before draft_new" in by_name["claims"] and "github_visibility" in by_name["claims"]
+    # A letter only shown in chat went unchecked, and so did a line the user dictated (2026-10-30).
+    assert "BEFORE YOU SHOW IT TO THE USER" in by_name["claims"] and "a line the user asks you to add" in by_name["claims"]
 
 
 def test_public_links_reach_the_check_through_the_door(server, folder):

@@ -133,6 +133,14 @@ def test_the_memory_tools_that_write_pass_through_the_gate(store):
     assert tools["recall"].read_only is True
 
 
+def test_remember_says_an_instruction_about_a_draft_is_not_a_fact_about_the_user(store):
+    """Told "leave out published research", a model asked to remember "no published research" as a fact about
+    the user, and three spellings of a name nobody gave (2026-10-30). Both were caught only at the gate."""
+    description = next(t for t in memory_tools(store) if t.name == "remember").description
+    assert "leave out X" in description and "not a fact about the user" in description
+    assert "never ones you guessed" in description
+
+
 def test_the_model_sees_the_id_it_needs_to_forget_a_fact(store):
     """forget takes an id. A prompt that showed facts without ids gave the model no valid
     way to act on "forget that" -- only a guess."""
