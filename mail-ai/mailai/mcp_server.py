@@ -23,7 +23,8 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import ToolAnnotations
 
 from mailai.auth import AuthConfig
-from mailai.compose import Attachment
+from mailai.attach import read_attachment
+from mailai.compose import Attachment, BadAttachment
 from mailai.operations import (
     as_dict,
     discard_draft,
@@ -70,11 +71,13 @@ def approval_preview(preview_tool: str, argument_map: dict[str, str], field: str
 
 
 class AttachmentArgument(TypedDict):
-    """One file for `draft_new`: its name, its bytes as standard base64, and optionally its
-    type (worked out from the name when left out)."""
+    """One file for `draft_new`: either `path`, a file in the folder this server may attach from (what
+    docu_ai__save_export returns), or `filename` with `data`, its bytes as standard base64. `filename`
+    renames a file given by path; `mime_type` is worked out from the name when left out."""
 
-    filename: str
-    data: str
+    path: NotRequired[str]
+    filename: NotRequired[str]
+    data: NotRequired[str]
     mime_type: NotRequired[str]
 
 
@@ -83,10 +86,21 @@ class ServerPaths:
     """Where this server may read and write. Supplied by the caller, never assumed."""
 
     store: Path
+    # The one folder a file may be attached from by path (docu-ai saves exports there). None: no file by path.
+    attach_root: Path | None = None
 
 
 def _failed(error: Exception) -> dict:
     return {"error": str(error)}
+
+
+def _attachment(argument: AttachmentArgument, root: Path | None) -> Attachment:
+    """One file, by its bytes or by its path, never both: a file given twice is a question of which is meant."""
+    if ("data" in argument) == ("path" in argument):
+        raise BadAttachment("give each attachment either `data` (its bytes as base64) or `path`, not both")
+    if "path" in argument:
+        return read_attachment(argument["path"], root, argument.get("filename", ""), argument.get("mime_type", ""))
+    return Attachment.from_base64(argument.get("filename", ""), argument["data"], argument.get("mime_type", ""))
 
 
 def create_mail_ai_server(paths: ServerPaths, auth: AuthConfig,
@@ -206,11 +220,15 @@ def create_mail_ai_server(paths: ServerPaths, auth: AuthConfig,
         description=(
             "Compose a new message and leave it as a draft. Sends nothing. Returns a draft "
             "id and a confirmation; read it back with review_draft before sending. "
-            "`attachments` is a list of files, each {filename, data, mime_type?}, where data "
-            "is the file's bytes as standard base64. Every file is listed by review_draft and "
+            "`attachments` is a list of files. To attach a CV or cover letter, save each one "
+            "with docu_ai__save_export first and give its returned path here as {path}; only "
+            "files in the folder that tool saves to are accepted. Do not copy a file's bytes "
+            "yourself: a Word document is far more text than you can carry. A small file you "
+            "already hold can instead be {filename, data, mime_type?}, data being standard "
+            "base64. Files may come to 10 MB in all. Every file is listed by review_draft and "
             "covered by the confirmation: changing one afterwards invalidates it. A file with "
-            "no content, a name with a slash or a hidden character, or data that is not "
-            "valid base64 is refused and no draft is made."
+            "no content, a path outside that folder or a link, a name with a slash or a hidden "
+            "character, or data that is not valid base64 is refused and no draft is made."
         ),
         annotations=ToolAnnotations(
             read_only_hint=False, destructive_hint=False, open_world_hint=True
@@ -220,10 +238,7 @@ def create_mail_ai_server(paths: ServerPaths, auth: AuthConfig,
                    attachments: list[AttachmentArgument] | None = None) -> dict:
         try:
             # Built here, before anything reaches Gmail, so a refused file makes no draft.
-            files = [
-                Attachment.from_base64(a["filename"], a["data"], a.get("mime_type", ""))
-                for a in attachments or []
-            ]
+            files = [_attachment(a, paths.attach_root) for a in attachments or []]
             return as_dict(draft_new(compose_auth, to, subject, body, cc=cc, attachments=files))
         except Exception as error:
             return _failed(error)
@@ -302,7 +317,9 @@ def create_mail_ai_server(paths: ServerPaths, auth: AuthConfig,
 def main() -> None:
     """The one place this entry point reaches for the environment, named so it is visible."""
     root = Path(__file__).resolve().parent.parent
-    paths = ServerPaths(store=Path(os.environ.get("MAIL_AI_STORE", root / "mailbox.sqlite3")))
+    attach_root = os.environ.get("MAIL_AI_ATTACH_ROOT")
+    paths = ServerPaths(store=Path(os.environ.get("MAIL_AI_STORE", root / "mailbox.sqlite3")),
+                        attach_root=Path(attach_root) if attach_root else None)
 
     # Drafting is off unless asked for, and asking is a deliberate act: MAIL_AI_COMPOSE=1
     # in the server's own environment. Without it this door has no sending tool at all.

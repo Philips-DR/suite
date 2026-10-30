@@ -123,10 +123,18 @@ covers files the way it covers `bcc`.
   at all, not a draft without it.
 - **`send` still takes only a draft id and a confirmation**; a test says no function in `sending.py`
   can take a file.
-- **Not yet seen on a real draft.** The stand-in shows attachments as Gmail documents them (a name and a
-  size, no bytes, and an `attachmentId`). Until a real draft has been read back this is the documented
-  shape, not an observed one. How the bytes reach `draft_new` (base64 typed by a model, or a named file
-  from one allowed folder) is undecided: `plan.md`, "Waiting on the user".
+- **A file arrives by path, from one folder (2026-10-30, the user's call).** A model cannot carry a file's
+  bytes: one reply holds 16,000 tokens, a cover-letter PDF is at least 17,000 as base64, a Word CV at least
+  217,000. So `draft_new` also takes `{path}`, read by `attach.py` (not `compose.py`, which stays pure) from
+  `MAIL_AI_ATTACH_ROOT` only, which `tools.yaml` sets to the folder docu-ai's `save_export` writes to. A link
+  is refused wherever it points (one to a file in the same folder would otherwise pass), as is a path that
+  resolves outside the folder, a folder, and a file over the limit (checked by size before it is read).
+  Each attachment is `data` or `path`, never both. **All files together are at most 10 MB** (`check_total`,
+  in `draft_new` before Gmail), however they arrived. Base64 `data` still works for a small file.
+- **Seen on a real draft (2026-10-30).** The real African Languages Lab CV and letter, saved as Word files
+  (654,050 and 651,163 bytes), attached by path to a draft to the user's own address: `review_draft` read both
+  files back from Gmail and its confirmation equalled `draft_new`'s, so Gmail held the same bytes. The draft
+  was discarded through the gate. The attachment shape the stand-in uses is now an observed one.
 
 ## Approval previews
 

@@ -19,6 +19,9 @@ from email.message import EmailMessage
 from typing import Any
 
 MAX_NAME_LENGTH = 255
+# Gmail takes a message of up to 25 MB; a CV and a letter are under a megabyte each. Ten in all is room for any
+# application, and a stop to a folder of something else going out by mistake (plan.md, decision 13).
+MAX_ATTACHMENTS_BYTES = 10 * 1024**2
 
 # Characters that change which way a name reads. "cv‮fdp.exe" shows as "cvexe.pdf".
 _BIDI_CONTROLS = frozenset(
@@ -85,6 +88,14 @@ class Attachment:
     @property
     def size(self) -> int:
         return len(self.data)
+
+
+def check_total(attachments: tuple[Attachment, ...] | list[Attachment]) -> None:
+    """Refuse files that come to more than MAX_ATTACHMENTS_BYTES together, however they arrived."""
+    total = sum(a.size for a in attachments)
+    if total > MAX_ATTACHMENTS_BYTES:
+        raise BadAttachment(f"the files come to {total / 1024**2:.1f} MB; at most "
+                            f"{MAX_ATTACHMENTS_BYTES // 1024**2} MB in all")
 
 
 def _length_prefixed(fields: list[bytes]) -> bytes:

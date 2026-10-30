@@ -230,8 +230,9 @@ def draft_new(auth: AuthConfig, to: str, subject: str, body: str,
     file that is refused never gets as far as Gmail.
     """
     from mailai import drafts
-    from mailai.compose import Composition
+    from mailai.compose import Composition, check_total
 
+    check_total(list(attachments))  # before Gmail is asked anything
     service = _compose_service(auth)
     composition = Composition(to=to, subject=subject, body=body, cc=cc, bcc=bcc,
                               attachments=tuple(attachments))
