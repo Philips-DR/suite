@@ -2,6 +2,8 @@
 so every name is hostile until checked."""
 
 import asyncio
+import json
+from pathlib import Path
 
 import pytest
 
@@ -231,3 +233,163 @@ def test_with_no_declared_folders_nothing_is_served(tmp_path):
     async def body(client):
         return (await client.get("/api/files", params={"path": str(tmp_path / "output" / "a.mp3")}, headers=AUTH)).status_code
     assert client_for(tmp_path, body) == 404
+
+
+# ---------------------------------------------------------------------------
+# Deleting. The same suspicion as uploading: the name comes from a browser, and what it names must be
+# something an upload made, directly inside its own folder.
+# ---------------------------------------------------------------------------
+
+def make(root, *parts, data=b"x" * 10):
+    path = root.joinpath(*parts)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    return path
+
+
+def audit_rows(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+
+@pytest.mark.parametrize("kind,folder,name", [
+    ("audio", "audio", "meeting.m4a"), ("book", "books", "novel.pdf"), ("voice", "voices", "me.wav"),
+])
+def test_one_upload_of_each_kind_is_deleted_and_nothing_beside_it(tmp_path, kind, folder, name):
+    root = tmp_path / "uploads"
+    target = make(root, folder, name)
+    neighbour = make(root, folder, "other" + Path(name).suffix)
+    gone = up.delete_upload(root, kind, name)
+    assert not target.exists() and neighbour.exists()
+    assert gone == {"kind": kind, "name": name, "files": 1, "bytes": 10}
+
+
+def test_a_batch_is_deleted_with_every_file_in_it_and_its_draft_marker(tmp_path):
+    root = tmp_path / "uploads"
+    make(root, "docs", "cv", "a.md")
+    make(root, "docs", "cv", "b.md")
+    make(root, "docs", "cv", ".draft", data=b"")
+    neighbour = make(root, "docs", "other", "c.md")
+    gone = up.delete_upload(root, "docs", "cv")
+    assert not (root / "docs" / "cv").exists() and neighbour.exists()
+    assert gone == {"kind": "docs", "name": "cv", "files": 3, "bytes": 20}
+
+
+@pytest.mark.parametrize("kind,name", [
+    ("audio", "../books/novel.pdf"), ("audio", ".."), ("audio", "a/b.m4a"), ("audio", "a\\b.m4a"),
+    ("audio", "x\x00.m4a"), ("audio", ""), ("audio", ".hidden.m4a"),
+    ("docs", ".."), ("docs", "../audio"), ("docs", ""), ("docs", "."),
+])
+def test_a_hostile_name_deletes_nothing(tmp_path, kind, name):
+    root = tmp_path / "uploads"
+    kept = [make(root, "audio", "meeting.m4a"), make(root, "books", "novel.pdf"), make(root, "docs", "cv", "a.md")]
+    with pytest.raises(up.UploadError):
+        up.delete_upload(root, kind, name)
+    assert all(p.exists() for p in kept)
+
+
+def test_a_kind_cannot_reach_another_kinds_folder_and_an_unknown_kind_is_refused(tmp_path):
+    root = tmp_path / "uploads"
+    book = make(root, "books", "novel.pdf")
+    for kind in ("audio", "voice", "books", "../books", ""):  # the kind is "book"; the others are wrong
+        with pytest.raises(up.UploadError):
+            up.delete_upload(root, kind, "novel.pdf")
+    assert book.exists()
+
+
+def test_only_what_the_listing_would_show_can_be_deleted(tmp_path):
+    root = tmp_path / "uploads"
+    note = make(root, "audio", "notes.txt")
+    half = make(root, "audio", "meeting.m4a.part")
+    for name in ("notes.txt", "meeting.m4a.part"):
+        with pytest.raises(up.UploadError):
+            up.delete_upload(root, "audio", name)
+    assert note.exists() and half.exists()
+
+
+def test_deleting_something_that_is_not_there_is_refused(tmp_path):
+    root = tmp_path / "uploads"
+    (root / "audio").mkdir(parents=True)
+    for kind, name in (("audio", "ghost.m4a"), ("docs", "ghost")):
+        with pytest.raises(up.UploadError):
+            up.delete_upload(root, kind, name)
+
+
+def test_a_link_is_never_followed(tmp_path):
+    root = tmp_path / "uploads"
+    outside = tmp_path / "outside.m4a"
+    outside.write_bytes(b"precious")
+    (root / "audio").mkdir(parents=True)
+    (root / "audio" / "link.m4a").symlink_to(outside)
+    with pytest.raises(up.UploadError):
+        up.delete_upload(root, "audio", "link.m4a")
+    assert outside.read_bytes() == b"precious" and (root / "audio" / "link.m4a").is_symlink()
+
+
+def test_a_batch_that_is_a_link_to_a_folder_elsewhere_is_left_alone(tmp_path):
+    root = tmp_path / "uploads"
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (elsewhere / "a.md").write_text("mine")
+    (root / "docs").mkdir(parents=True)
+    (root / "docs" / "cv").symlink_to(elsewhere, target_is_directory=True)
+    with pytest.raises(up.UploadError):
+        up.delete_upload(root, "docs", "cv")
+    assert (elsewhere / "a.md").read_text() == "mine"
+
+
+def test_a_batch_holding_a_subfolder_is_left_exactly_as_it_was(tmp_path):
+    root = tmp_path / "uploads"
+    a = make(root, "docs", "cv", "a.md")
+    b = make(root, "docs", "cv", "sub", "b.md")
+    with pytest.raises(up.UploadError):
+        up.delete_upload(root, "docs", "cv")
+    assert a.exists() and b.exists()
+
+
+def test_the_delete_endpoint_needs_the_token(tmp_path):
+    async def body(client):
+        return (await client.post("/api/uploads/delete", json={"kind": "audio", "name": "a.m4a"})).status_code
+    assert client_for(tmp_path, body) == 401
+
+
+def test_deleting_an_upload_removes_it_tells_the_page_and_the_model_and_is_audited(tmp_path):
+    root = tmp_path / "uploads"
+    make(root, "audio", "meeting.m4a")
+
+    async def body(client):
+        done = await client.post("/api/uploads/delete", headers=AUTH, json={"kind": "audio", "name": "meeting.m4a"})
+        state = (await client.get("/api/state", headers=AUTH)).json()
+        listing = (await client.get("/api/uploads", headers=AUTH)).json()
+        return done, state, listing
+
+    done, state, listing = run(with_client(app_for(tmp_path, uploads_path=root), body))
+    assert done.status_code == 200 and done.json()["name"] == "meeting.m4a"
+    assert listing["audio"] == []
+    assert any(e["type"] == "upload_deleted" and e["name"] == "meeting.m4a" for e in state["history"])
+    assert any("deleted" in note and "meeting.m4a" in note for note in state["notes"])
+    row = audit_rows(tmp_path)[-1]
+    assert (row["tool"], row["outcome"], row["origin"]) == ("assistant__delete_upload", "ok", "button")
+
+
+def test_a_refused_delete_is_a_400_that_removes_and_records_nothing(tmp_path):
+    root = tmp_path / "uploads"
+    kept = make(root, "audio", "meeting.m4a")
+
+    async def body(client):
+        return await client.post("/api/uploads/delete", headers=AUTH, json={"kind": "audio", "name": "../audio/meeting.m4a"})
+
+    refused = run(with_client(app_for(tmp_path, uploads_path=root), body))
+    assert refused.status_code == 400 and "error" in refused.json()
+    assert kept.exists() and audit_rows(tmp_path) == []
+
+
+def test_a_link_to_another_file_in_the_same_folder_deletes_neither(tmp_path):
+    """Without the link check this is the dangerous one: the link resolves to a real file inside the very
+    folder, passes every location test, and the real file is what would be removed."""
+    root = tmp_path / "uploads"
+    real = make(root, "audio", "real.m4a")
+    (root / "audio" / "link.m4a").symlink_to(real)
+    with pytest.raises(up.UploadError):
+        up.delete_upload(root, "audio", "link.m4a")
+    assert real.exists() and (root / "audio" / "link.m4a").is_symlink()

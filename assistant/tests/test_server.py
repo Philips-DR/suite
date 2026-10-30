@@ -6,6 +6,7 @@ send email as you.
 """
 
 import asyncio
+import json
 
 import httpx
 import pytest
@@ -401,3 +402,89 @@ def test_without_configured_names_only_localhost_is_allowed(tmp_path):
     async def body(client):
         return (await client.get("/api/tools", headers={**AUTH, "host": "suite.tail1234.ts.net"})).status_code
     assert run(with_client(app_for(tmp_path), body)) == 403
+
+
+# ---------------------------------------------------------------------------
+# Clearing the chat
+# ---------------------------------------------------------------------------
+
+def test_clearing_the_chat_needs_the_token(tmp_path):
+    async def body(client):
+        return (await client.post("/api/chat/clear")).status_code
+    assert run(with_client(app_for(tmp_path), body)) == 401
+
+
+def test_clearing_the_chat_forgets_the_conversation_but_keeps_what_other_pages_read(tmp_path):
+    app = app_for(tmp_path)
+
+    async def body(client):
+        hub = app.state.hub
+        hub.messages.extend([{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}])
+        hub.notes.append("a button was pressed")
+        for event in (
+            {"type": "user_message", "text": "hi"},
+            {"type": "assistant_text", "text": "hello"},
+            {"type": "tool_started", "tool": "x__y", "origin": "chat"},
+            {"type": "tool_finished", "tool": "x__y", "origin": "chat", "outcome": "ok"},
+            {"type": "turn_done", "text": "hello"},
+            {"type": "notice", "title": "Transcription finished"},
+            {"type": "upload", "kind": "audio", "name": "a.m4a"},
+            {"type": "tool_finished", "tool": "meet_ai__start", "origin": "button", "outcome": "ok", "read_only": False},
+        ):
+            await hub.emit(event)
+        cleared = await client.post("/api/chat/clear", headers=AUTH)
+        state = (await client.get("/api/state", headers=AUTH)).json()
+        return cleared, state, hub
+
+    cleared, state, hub = run(with_client(app, body))
+    assert cleared.status_code == 200 and cleared.json() == {"cleared": 2}
+    assert hub.messages == [] and state["notes"] == []
+    # What stays is not conversation: a notice, an upload and a button's own result, then the marker that
+    # tells every open page to fetch this pruned history.
+    assert [e["type"] for e in state["history"]] == ["notice", "upload", "tool_finished", "chat_cleared"]
+    assert state["history"][2]["origin"] == "button"
+    seqs = [e["seq"] for e in state["history"]]
+    assert seqs == sorted(seqs) and len(set(seqs)) == len(seqs)  # a page de-duplicates by seq
+
+
+def test_clearing_the_chat_leaves_memory_alone_and_is_audited(tmp_path):
+    async def body(client):
+        await client.post("/api/actions", headers=AUTH, json={
+            "tool": "assistant__remember", "arguments": {"kind": "fact", "subject": "office", "content": "Accra"}})
+        return await client.post("/api/chat/clear", headers=AUTH)
+
+    assert run(with_client(app_for(tmp_path), body)).status_code == 200
+    assert "Accra" in (tmp_path / "memory.json").read_text()
+    rows = [json.loads(line) for line in (tmp_path / "audit.jsonl").read_text().splitlines()]
+    assert (rows[-1]["tool"], rows[-1]["outcome"], rows[-1]["origin"]) == ("assistant__clear_chat", "ok", "button")
+
+
+def test_the_chat_cannot_be_cleared_while_a_message_is_being_worked_on(tmp_path):
+    app = app_for(tmp_path)
+
+    async def body(client):
+        hub = app.state.hub
+        hub.messages.append({"role": "user", "content": "hi"})
+        hub.turn = asyncio.create_task(asyncio.sleep(30))
+        try:
+            refused = await client.post("/api/chat/clear", headers=AUTH)
+        finally:
+            hub.turn.cancel()
+        return refused, len(hub.messages)
+
+    refused, kept = run(with_client(app, body))
+    assert refused.status_code == 409 and kept == 1
+
+
+def test_the_chat_cannot_be_cleared_while_an_approval_is_waiting(tmp_path):
+    app = app_for(tmp_path)
+
+    async def body(client):
+        hub = app.state.hub
+        hub.messages.append({"role": "user", "content": "hi"})
+        hub.pending["a1"] = (object(), asyncio.get_running_loop().create_future())
+        refused = await client.post("/api/chat/clear", headers=AUTH)
+        return refused, len(hub.messages)
+
+    refused, kept = run(with_client(app, body))
+    assert refused.status_code == 409 and kept == 1

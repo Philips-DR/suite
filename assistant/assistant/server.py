@@ -93,6 +93,18 @@ def parsed(output: str) -> Any:
         return output
 
 
+# The events that make up Chat's conversation. Clearing the chat removes these and nothing else: a finished-job
+# notice, an upload, and a button's own result are not conversation, and other pages read them.
+CONVERSATION_EVENTS = {"user_message", "assistant_text", "turn_done", "turn_error",
+                       "approval_needed", "approval_resolved"}
+
+
+def is_conversation(event: dict[str, Any]) -> bool:
+    if event.get("type") in CONVERSATION_EVENTS:
+        return True
+    return event.get("type") in ("tool_started", "tool_finished") and event.get("origin") != "button"
+
+
 class Hub:
     """Everything the browser and the model share."""
 
@@ -169,6 +181,25 @@ class Hub:
             self.notes = held + self.notes
             await self.emit({"type": "turn_error", "error": str(error)[:500]})
 
+    async def clear_chat(self) -> int:
+        """Forget the conversation: what the model remembers of it and what Chat shows. Returns how many
+        messages it held.
+
+        The notes go too -- they are what buttons did since the last message, handed to the model with
+        the next one, and a model with no conversation has no use for them. Memory (what the assistant
+        knows about the user), finished-job notices, uploads and the audit log are not conversation and
+        stay. The caller makes sure no turn is running: a turn holds an index into these messages."""
+        cleared = len(self.messages)
+        self.messages.clear()
+        self.notes.clear()
+        kept = [event for event in self.history if not is_conversation(event)]
+        self.history.clear()
+        self.history.extend(kept)
+        # Tells every open page to fetch the pruned history; the rule for what counts as conversation
+        # lives here and nowhere else.
+        await self.emit({"type": "chat_cleared"})
+        return cleared
+
     def note_text(self, text: str) -> None:
         """Something that happened outside any tool call -- an upload -- told to the model the
         same way a button press is, with the next message."""
@@ -187,6 +218,11 @@ class ChatRequest(BaseModel):
 
 class ApprovalAnswer(BaseModel):
     approve: bool
+
+
+class UploadDeletion(BaseModel):
+    kind: str
+    name: str
 
 
 class ActionRequest(BaseModel):
@@ -415,6 +451,18 @@ def create_app(
         h.turn = asyncio.create_task(h.run(body.message.strip()))
         return {"accepted": True}
 
+    @app.post("/api/chat/clear")
+    async def clear_chat() -> dict[str, Any]:
+        """Delete the conversation. Refused while a message is being worked on: the turn is in the
+        middle of that conversation, and an approval waiting on you is part of it."""
+        h = hub()
+        if h.busy or h.pending:
+            raise HTTPException(409, "still working on a message; clear the chat when it has finished")
+        cleared = await h.clear_chat()
+        await audit.record(tool="assistant__clear_chat", arguments={}, outcome="ok",
+                           result=f"{cleared} messages", origin="button")
+        return {"cleared": cleared}
+
     @app.post("/api/approvals/{approval_id}")
     async def answer(approval_id: str, body: ApprovalAnswer) -> dict[str, Any]:
         h = hub()
@@ -553,6 +601,23 @@ def create_app(
                     f"({size} bytes), saved at {target}.")
         await h.emit({"type": "upload", "kind": "voice", "name": target.name, "path": str(target)})
         return {"name": target.name, "path": str(target), "bytes": size}
+
+    @app.post("/api/uploads/delete")
+    async def delete_upload(body: UploadDeletion):
+        """Delete one upload by kind and name, as the listing gave them. Only buttons reach this: no tool
+        offers it, so a model cannot delete a person's files. Every delete is audited and noted."""
+        h = hub()
+        try:
+            gone = up.delete_upload(uploads_root, body.kind, body.name)
+        except up.UploadError as error:
+            return refuse(error)
+        except OSError as error:
+            return refuse(up.UploadError(f"could not delete it: {error.strerror or error}"))
+        h.note_text(f"The user deleted the {gone['kind']} upload {gone['name']}; it no longer exists.")
+        await h.emit({"type": "upload_deleted", "kind": gone["kind"], "name": gone["name"]})
+        await audit.record(tool="assistant__delete_upload", arguments={"kind": body.kind, "name": body.name},
+                           outcome="ok", result=f"{gone['files']} file(s), {gone['bytes']} bytes", origin="button")
+        return gone
 
     @app.get("/api/files")
     async def media(path: str):

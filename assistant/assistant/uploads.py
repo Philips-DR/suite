@@ -136,6 +136,59 @@ async def receive(target: Path, chunks: AsyncIterator[bytes], limit: int) -> int
         raise
 
 
+# What delete_upload may remove, by kind: the folder under uploads/ and the extensions that kind is
+# listed by. A file the listing would not show (a `.part`, a stray note) is not removable by name.
+DELETABLE = {
+    "audio": ("audio", AUDIO_EXTS),
+    "book": ("books", BOOK_EXTS),
+    "voice": ("voices", AUDIO_EXTS),
+}
+
+
+def _direct_child(root: Path, folder: Path, name: str) -> Path:
+    """`folder/name`, but only if it is really a direct child of `folder` inside the uploads folder.
+
+    A link is refused outright: nothing here ever makes one, so a link in an uploads folder is not an
+    upload, and following it could land on a file outside it."""
+    name = _clean_component(name)
+    candidate = folder / name
+    if candidate.is_symlink():
+        raise UploadError(f"{name} is a link, not an upload")
+    resolved = _inside(root, candidate)
+    if resolved.parent != folder.resolve():
+        raise UploadError(f"no such upload: {name}")
+    return resolved
+
+
+def delete_upload(root: Path, kind: str, name: str) -> dict[str, Any]:
+    """Remove one upload the listing offered, and say what went.
+
+    Only what an upload could have made: a single file of that kind's extensions, or a whole batch of
+    markdown (the batch folder holds files and nothing else, so one holding anything else is refused and
+    left exactly as it was). Never a path: the name is one component, checked like every other name."""
+    if kind == "docs":
+        batch = _direct_child(root, root / "docs", name)
+        if not batch.is_dir():
+            raise UploadError(f"no such upload: {name}")
+        files = list(batch.iterdir())
+        if any(f.is_symlink() or not f.is_file() for f in files):
+            raise UploadError(f"{name} holds something other than files, so it was left alone")
+        size = sum(f.stat().st_size for f in files)
+        for f in files:
+            f.unlink()
+        batch.rmdir()
+        return {"kind": kind, "name": batch.name, "files": len(files), "bytes": size}
+    if kind not in DELETABLE:
+        raise UploadError(f"unknown kind of upload: {kind!r}")
+    folder_name, extensions = DELETABLE[kind]
+    target = _direct_child(root, root / folder_name, name)
+    if target.suffix.lower() not in extensions or not target.is_file():
+        raise UploadError(f"no such upload: {name}")
+    size = target.stat().st_size
+    target.unlink()
+    return {"kind": kind, "name": target.name, "files": 1, "bytes": size}
+
+
 def doc_path(batch_dir: Path) -> Path:
     """What to hand docu-ai: the file itself when a batch holds one, which gets one tab and no
     cover; the folder when it holds several, which gets a tab per file and a contents page."""

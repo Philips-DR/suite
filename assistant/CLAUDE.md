@@ -302,6 +302,31 @@ to be recognised there.
 - **One allowed account, not accounts.** Per-user data (`memory.json`, uploads, each tool's credentials)
   is the larger option (c) in `plan.md` and is not part of this.
 
+## Deleting (2026-10-30)
+
+Three things the person can delete from the web app, each only by a button they press, each audited
+and asked about first (`web/src/ui/ConfirmDelete.tsx`). Run for real on throwaway files, in Chrome.
+
+- **The chat** (`POST /api/chat/clear`). Clears what the model holds (`messages`), the button notes, and
+  the conversation events (`is_conversation`: messages, replies, approvals, and tool calls made from chat)
+  from the live history; keeps notices, uploads and a button's own result, which Overview and Activity
+  list. It emits `chat_cleared` and every open page fetches the pruned history, so the rule lives only
+  here. Chat itself shows nothing from before the last `chat_cleared`: a "You pressed" chip outlived the
+  first clear (found live). Refused while a turn runs or an approval waits -- the turn holds an index into
+  `messages`. Memory and the audit log are untouched; it is audited as `assistant__clear_chat`.
+- **An upload** (`POST /api/uploads/delete`, `{kind, name}` as the listing gave them). No tool offers it,
+  so a model cannot delete a person's files. The name is hostile, like an upload's: one component, a
+  direct child of its kind's folder, only the extensions that kind is listed by (never a `.part`), and a
+  markdown batch only if it holds plain files. **A link is refused outright**: a link to a sibling in the
+  same folder resolves inside it, passes every location check, and the real file is what would go (a test
+  pins it; the first version's tests passed without that check). Audited as `assistant__delete_upload`,
+  noted for the model, and announced as `upload_deleted`. The assistant cannot tell that a file is in use
+  (a recording being transcribed); the Meetings page hides its upload chips while a transcription runs.
+- **A Google Doc or an audiobook** is the owning tool's: `docu_ai__trash` (to Drive's bin, its approval shows
+  `info`) and `audiobook__delete_audiobook` (its approval shows `describe_audiobook`). The page fetches
+  what will go with the read-only tool and calls the destructive one only on a confirmed press, never to
+  find out what it would do.
+
 ## Memory and history in the interface
 
 - **Facts in the prompt carry their ids.** `forget` takes an id; a prompt showing facts without
