@@ -112,7 +112,9 @@ Each was tested (`./test`) and run for real; the real runs found most of the bug
 
 | 10-30 | **`./publish-check` (gap-plan step 7, approved the same day).** Before a push to the public repository, it reads the commits GitHub does not have: every added line, message and author. **Must fix** (exit 1): a key or token in a known shape (AWS, Google, Anthropic, GitHub, Hugging Face, Slack, private keys, JSON web tokens), any value in this machine's own login files (`.env`, the Google client and token files, the Hugging Face token, the AWS SSO cache: 20 values here), and a credentials file. **Look first** (exit 2): an email, a phone number, a server id, an AWS account number, a public IP address, a personal-data file, or a word in the git-ignored `.publish-watch`, unless already public on the remote. `--all` reads every commit for what must be fixed. A secret is shown as four characters and a length, never whole. Stdlib only, in `publish/`, its tests in `./test`. **Run:** 15 tests and twenty deliberate breaks, each caught (two first survived, both checks that could never fire; removed); the whole real history (101 commits) against the 20 real secret values: nothing; in a throwaway clone, this session's real pending changes (16 files): nothing to fix, two details already public; the same plus a planted real Hugging Face token and a phone number: both caught, exit 1, the token never printed. **Found by testing:** an IP address at the end of a sentence was missed. **Not run:** a push of a real commit through it (it is a command, not a hook). | `CLAUDE.md` → Working in this repo |
 
-Test counts on 2026-10-30 (one `./test` run, all passed): assistant 208 + 8 Postgres tests that skip without `TEST_DATABASE_URL`, meet-ai 113, mail-ai 150, apply-ai 111, web-ai 149, audiobook 107, docu-ai 386 (+1 skipped, the live test), web 39 (+ typecheck), publish 15.
+| 10-30 | **Audiobooks: the title, the chapters, and the page (the user's request).** A book was named by its 120-character file name, its title was "Praise for" (the first heading), and its chapter list was its contents page: 16 chapters of one sentence and a 3 h 52 min "Introduction" holding the book. Now: the title from the PDF's own metadata (placeholders like `about:blank` ignored), else the file name without what Z-Library or Library Genesis added and cut at the title page's heading ("Dreams and Visions", Jane Hamon); the contents page left out and each chapter started on its own first page and named as the contents page names it (19 chapters, 5 to 23 minutes each). The page is two levels: a library (each book with its state, its audio, Open and Delete; the voices and their samples) and a book (back link, title, the chapters as a list with a play button on each rendered one and its text opening under it, Render, its other audio, what was left out, corrections). An upload opens its book and starts reading it; deleting a book can keep its audio. Jobs carry the book's title. On a phone the stat tiles are left out and a chapter's title has its row's width. **Run:** audiobook 131 tests (24 new) and twenty deliberate breaks, each caught; the real book re-planned; in Chrome at 360, 390, 412 (as a phone renders it), 820 and 1440, light and dark: nothing wider than the screen, axe clean (it found the icon rail's logo link had no name: fixed); then, after the user's screenshot from a 1066-wide window showed chapter titles a letter a line (the rows were laid out by the window, not their card), every width from 360 to 1920 measured; a never-seen PDF uploaded, read by itself, its chapters shown, deleted; the delete dialog opened and cancelled on a real book. **Not run:** rendering the book with its new chapters (hours; the old files show as "From an earlier reading"). | `audiobook/CLAUDE.md` → How a book's title and chapters are found |
+
+Test counts on 2026-10-30 (one `./test` run, all passed): assistant 208 + 8 Postgres tests that skip without `TEST_DATABASE_URL`, meet-ai 113, mail-ai 150, apply-ai 111, web-ai 149, audiobook 131, docu-ai 386 (+1 skipped, the live test), web 39 (+ typecheck), publish 15.
 
 ## Known rough edges
 
@@ -488,7 +490,10 @@ when the prompt gets too big.
   - **The model asks to remember instructions as facts** (2026-10-30). Told "leave out published research" and
     "leave it out unless my CV shows it", it asked to remember "no published research" and "no … experience beyond
     what CV shows" as facts about the user, and three spellings of the referrer's name nobody gave. Both declined
-    at the gate; only the person approving stops it.
+    at the gate; only the person approving stops it. **Changed the same day, the user's go-ahead:** `remember`'s
+    description now says an instruction about a draft is not a fact about the user, and a spelling records only
+    forms the user gave or a transcript showed (a test pins the wording). Live since the evening's rebuild; **not
+    yet tried through the model.**
   - **What the claims check did not see** (2026-10-30): a sweeping sentence with no figure, tool or watched word
     passed ("AI for Africans, by Africans — is work I have spent my career doing"), and the email body was never
     checked. **Both addressed the same day** (see "Built and verified"): "spent my career" is watched, and the model
@@ -498,9 +503,12 @@ when the prompt gets too big.
     my CV says", the model went straight to `draft_new`; the check would have caught it (shown when asked). The
     check stays advisory: only the person approving stops this. **Nor is a letter only shown in chat**: asked to
     show one, not save it, the model skipped the check and said "nothing invented" over a "resonates directly"
-    the check then flagged. Its description ties the check to `write_draft` and `draft_new`.
+    the check then flagged. Its description tied the check to `write_draft` and `draft_new`. **Changed the same
+    day, the user's go-ahead:** it now says to run on every draft before it is shown to the user, and again after
+    a line the user asks to add. Live since the evening's rebuild; **not yet tried through the model.**
   - **A spelling fact rewrote the employer's name** (2026-10-30): memory's `AyaData` spelling turned the CV's
-    "Ayadata GH" into "AyaData GH". The CVs already sent say "Ayadata".
+    "Ayadata GH" into "AyaData GH". The CVs already sent say "Ayadata". **Fixed the same day** (the user: "Ayadata
+    GH is right"): the spelling fact and the two experience facts now say `Ayadata`.
   - A failed build still leaves a stray Doc (a letter with no `# heading` failed in docu-ai after creating it).
   - Letters: the model chose the `technical` look and needed four drafts to fit one page; the `resume` look
     then made them cramped (the user: "ugly, not well formatted"). docu-ai now has a `letter` look (10.5pt, 115%
