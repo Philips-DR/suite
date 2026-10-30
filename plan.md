@@ -108,7 +108,11 @@ Each was tested (`./test`) and run for real; the real runs found most of the bug
 
 | 10-30 | **apply-ai: the rest of gap-plan step 4.** `claims` takes `employer` (the employer's pages as text): a finding drawn from their pages or the posting, in a sentence addressed to them that says nothing of the user, is listed in `about_the_employer` instead of counted; anything else stays a finding, marked. A negation reaches four words back within its clause. A limit said anywhere in its paragraph counts as kept. **Run:** 111 tests (8 more), 24 deliberate breaks across both batches each caught; on seven real documents with the employer's real homepage and research page, two false alarms gone ("production" in the 2026-10-24 letter, a dropped limit in today's) and nothing else changed; the backend rebuilt and the chat driven: checking a letter written from the employer's site, the model passed `employer` and used the marker to keep "ACL 2026" and "74+". **Not followed:** asked only to show a letter, it skipped the check. It also asked to remember Sheriff Issaka as the referrer (the user's own words of 2026-10-24); approved, fact `718ca00f`. | `apply-ai/CLAUDE.md` → Verified for real (2026-10-30) |
 
-Test counts on 2026-10-30 (one `./test` run, all passed): assistant 191 + 8 Postgres tests that skip without `TEST_DATABASE_URL`, meet-ai 113, mail-ai 150, apply-ai 111, web-ai 149, audiobook 107, docu-ai 386 (+1 skipped, the live test), web 39 (+ typecheck).
+| 10-30 | **Mail syncs every 30 minutes, open page or not (the user's own to-do, approved the same day).** A tool's entry in `tools.yaml` may carry `schedule: [{tool, every_minutes}]`; the backend runs it at start and after each interval through `session.execute`, origin `schedule`, audited only when its outcome changes, never shown in the conversation or noted for the model, with a notice when it starts failing and when it recovers. mail-ai's `sync` has one; the web page's own timer is gone; History shows "Schedule". A wrong entry stops the server starting. **Run:** 17 new assistant tests (208 in all) and fourteen deliberate breaks, each caught (one first survived: a check for YAML's `true` that the five-minute floor already covered, so the check was removed); then the real rebuild with no page open: the first scheduled sync, a full re-sync, took 5 min 34 s and added 1,040 messages the mailbox lacked (3,337 to 4,378), audited as the schedule's, with nothing in the chat. **Not handled:** a sync pressed in Mail during a scheduled one reaches mail-ai at the same time. | `assistant/CLAUDE.md` → On a timer |
+
+| 10-30 | **`./publish-check` (gap-plan step 7, approved the same day).** Before a push to the public repository, it reads the commits GitHub does not have: every added line, message and author. **Must fix** (exit 1): a key or token in a known shape (AWS, Google, Anthropic, GitHub, Hugging Face, Slack, private keys, JSON web tokens), any value in this machine's own login files (`.env`, the Google client and token files, the Hugging Face token, the AWS SSO cache: 20 values here), and a credentials file. **Look first** (exit 2): an email, a phone number, a server id, an AWS account number, a public IP address, a personal-data file, or a word in the git-ignored `.publish-watch`, unless already public on the remote. `--all` reads every commit for what must be fixed. A secret is shown as four characters and a length, never whole. Stdlib only, in `publish/`, its tests in `./test`. **Run:** 15 tests and twenty deliberate breaks, each caught (two first survived, both checks that could never fire; removed); the whole real history (101 commits) against the 20 real secret values: nothing; in a throwaway clone, this session's real pending changes (16 files): nothing to fix, two details already public; the same plus a planted real Hugging Face token and a phone number: both caught, exit 1, the token never printed. **Found by testing:** an IP address at the end of a sentence was missed. **Not run:** a push of a real commit through it (it is a command, not a hook). | `CLAUDE.md` → Working in this repo |
+
+Test counts on 2026-10-30 (one `./test` run, all passed): assistant 208 + 8 Postgres tests that skip without `TEST_DATABASE_URL`, meet-ai 113, mail-ai 150, apply-ai 111, web-ai 149, audiobook 107, docu-ai 386 (+1 skipped, the live test), web 39 (+ typecheck), publish 15.
 
 ## Known rough edges
 
@@ -164,7 +168,7 @@ A third real application, made with the checks built on 2026-10-15, showed what 
    Drive. Each rebuild makes a new Doc, so superseded ones are trashed by hand.
 6. **mail-ai.** A draft cannot carry attachments, and cannot be edited from the command line (`drafts.update`
    exists in the module; the CLI does not offer it). The mailbox was five days stale because nothing syncs it on a
-   schedule.
+   schedule. *The schedule is fixed (2026-10-30): the backend syncs every 30 minutes, open page or not.*
 7. **No pre-publish check.** Making `suite` public needed a hand-built scan of every commit. This file also mixed
    private operating notes with public documentation.
 8. **The web app cannot open or download a built document** (also on the user's own to-do list). *Stale: the
@@ -185,7 +189,8 @@ Sizes are rough. Steps 1 and 2 change docu-ai and mail-ai, so confirm with the u
 2. **mail-ai (medium).** `./mail edit`. Attachments from the uploads folder only, under the same hostile-name rules
    as uploads. Attachment names and file hashes go inside the send fingerprint, so changing one invalidates a
    review the way `bcc` does. `send` still has no content parameter and the test that says so stays. Sync every
-   30 minutes.
+   30 minutes. *Attachments built 2026-10-29; the sync every 30 minutes built 2026-10-30, in the backend (see
+   "Built and verified"). `./mail edit` is not built.*
 3. **A new `web-ai` tool, read-only (medium).** `read_page`: plain HTTP first, then a headless browser for
    script-driven sites; returns text with the URL, time and method, never a summary. `check_link`. And
    `github_visibility`, asked without a login so it answers what a stranger sees. GET only, no cookies or headers,
@@ -208,7 +213,8 @@ Sizes are rough. Steps 1 and 2 change docu-ai and mail-ai, so confirm with the u
    already used for audio, with an extension allow-list); later a dossier view.
 7. **Repo hygiene (small).** A `./publish-check` script: secret patterns across all history, plus the non-secret
    exposures (server ids, emails, names). Private operating notes move to a git-ignored file. The decision on the
-   public history is item 10 under "Waiting on the user".
+   public history is item 10 under "Waiting on the user". **`./publish-check` built 2026-10-30** (see "Built and
+   verified"). Not done: moving private operating notes out of tracked files (this file still names the instance).
 
 ### Not building
 
