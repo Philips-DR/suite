@@ -25,7 +25,7 @@ not read for meaning at all.
   `not_found` (no line shares its words: look before asking), `partly`, `trait` (see below), `supported`.
   `ask_the_user` is the list of questions for what the material does not settle, merged so the same one is
   asked once.
-- **`claims(draft, sources, facts, posting, public_links)`** checks every figure, every word that overstates,
+- **`claims(draft, sources, facts, posting, public_links, employer)`** checks every figure, every word that overstates,
   every tool, language, degree and name in a draft against the material, and a claim that code is private
   against the addresses found public, and shows the nearest source line for each finding. It is for a CV, a
   letter and the body of the email that goes with them. **It cannot tell that a sentence is true.** `clean: true` means nothing it looks for was
@@ -52,7 +52,9 @@ not read for meaning at all.
   then: a bullet must not take a neighbour's subject, or any figure would be supported by the next sentence.
 - **A negated word is not support.** "(prototype, not deployed to production)" contains "deployed". A draft
   that says "deployed" is told the material says the opposite; a draft that says "not deployed" is honest and
-  is left alone (the first run flagged it).
+  is left alone (the first run flagged it). A negator reaches four words back and never across a clause (a
+  comma, colon, bracket, dash, "but", "however"...): "has not been deployed to production" denies production
+  (four back; a real letter was flagged when the reach was three), "not cheap but deployed" claims deployment.
 - **The watch-list compares exact forms, never stems.** "directly" must not be supported by "directed".
   Hyphenated entries ("open-source", "end-to-end") are found as phrases, since the tokenizer splits them.
   The list is in `vocabulary.py`, short and literal on purpose; it grows by a line when a real draft shows a
@@ -77,8 +79,20 @@ not read for meaning at all.
   "(application/producer-consumer layer)" — the qualifiers that made the CV honest about Kafka and Redis.
   Nothing was added, so nothing was flagged. `dropped limit` finds a source sentence carrying a hedge
   (`HEDGES` in `vocabulary.py`) whose point the draft keeps — a draft sentence with 60% of its other words —
-  and flags it only when *no* carrier keeps the limit. It misses a heavily condensed rewrite that merges
-  several bullets into one; that is a limit of a word-overlap check, not a promise.
+  and flags it only when *no* carrier's paragraph keeps the limit: a real letter said what was fine-tuned in
+  one sentence and "configs our cloud engineer applies" in the next, and was flagged until the whole paragraph
+  (`unit_blocks` numbers each sentence's paragraph or bullet) counted. It misses a heavily condensed rewrite
+  that merges several bullets into one, and it still flags a limit kept in other words ("a colleague runs the
+  clusters"); both are limits of a word-overlap check, not promises.
+- **The employer's own words are data, and only excuse what is said to them.** A real letter said "Your ACL
+  2026 paper argues..." and the year was flagged as missing from the user's material. `employer` takes the
+  employer's pages as text (what web-ai's `read_page` returned). A finding whose token is in the posting or
+  those pages, in a sentence addressed to them ("you", "your") that says nothing of the user ("I", "my",
+  "we", "our"...), moves to `about_the_employer`: listed, not counted. Anything else stays a finding, marked
+  `also_on_the_employers_pages`: "my 2026 paper" is a claim whatever their site says, and so is a sentence
+  that mixes both ("your 2026 review covers the country I work in"), since telling which half a figure belongs
+  to needs grammar. Their product names go to `names_that_come_from_the_employer`. This is text a model
+  passes, not a file read from disk, so it can be an excerpt; at worst that moves a sentence about them.
 - **Numbers inside a name are not figures.** "Research Assistant_1", "DR4D", "YOLOv8" and the digits of a URL
   or an email are not claims; spelled-out numbers two to twelve are (a claim of "three years" is a figure).
   Number words are not distinctive words, or "five" would support itself.
@@ -141,7 +155,7 @@ not read for meaning at all.
 ## Commands
 
     ./apply requirements POSTING.txt CV.md [--fact "..."]...
-    ./apply claims DRAFT.md CV.md [--fact "..."]... [--posting POSTING.txt] [--public [URL ...]]
+    ./apply claims DRAFT.md CV.md [--fact "..."]... [--posting POSTING.txt] [--employer PAGES.txt] [--public [URL ...]]
     cd apply-ai && ../.venv/bin/python -m pytest tests -q
 
 ## Verified for real (2026-10-15)
@@ -166,3 +180,15 @@ fixed "directly" and re-checked. **Not followed:** asked to add "my repositories
 says", it went straight to `draft_new` without re-checking: a line the user dictates reads to it as
 confirmed. Asked to check, it called `github_visibility` first, passed `public_links`, got the `public link`
 finding, and told the user the line would be false. Both drafts were declined at the gate.
+
+Later the same day: the employer's pages, a four-word negation that stops at a clause, a limit kept anywhere in
+its paragraph. Tests: 111 (8 more); 24 deliberate breaks across both batches, each caught (two were missed at
+first because no example put the negator within reach but across a clause; those examples were added). On the
+seven real documents with the employer's real homepage and research page: the 2026-10-24 letter lost its
+"production" false alarm and today's letter its dropped-limit one, and nothing else changed. The 2026-10-24
+letter's "Your ACL 2026 paper ... covers the country I work in" stays a finding, now marked as the employer's:
+the sentence also speaks of the user. Through the real chat, after a rebuild: asked to check a letter it had
+written from the employer's site, the model passed `employer` (an excerpt of 634 characters holding "ACL 2026"
+and "Mansa"), and kept "2026" and "74+" with that marker as its reason. **Not followed:** asked only to *show*
+a letter, not save or send it, it did not run the check at all and said "nothing invented"; the description
+ties the check to `write_draft` and `draft_new`.

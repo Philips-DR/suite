@@ -54,6 +54,14 @@ def test_public_links_reach_the_check_through_the_door(server, folder):
     assert call(server, "claims", draft=draft, sources=source, public_links=[])["clean"] is True
 
 
+def test_the_employer_s_pages_reach_the_check_through_the_door(server, folder):
+    source = [str(folder / "uploads" / "cv.md")]
+    draft = "- Your 2026 review of NLP was useful."
+    assert call(server, "claims", draft=draft, sources=source)["clean"] is False
+    out = call(server, "claims", draft=draft, sources=source, employer="Our 2026 review of NLP")
+    assert out["clean"] is True and out["about_the_employer"][0]["token"] == "2026"
+
+
 def test_requirements_through_the_door(server, folder):
     out = call(server, "requirements", posting="Selection Criteria\n\n● Proficiency in Python\n\n● Master's degree in statistics\n",
                sources=[str(folder / "uploads" / "cv.md")])

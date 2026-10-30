@@ -39,6 +39,8 @@ CLAIMS_NEXT = (
     "role being named; if the sentence says the user DID or HAS it, it is a claim and needs the user's word. Read "
     "each `weakly_traced` sentence against the material. An `unchecked` finding means the draft says code is "
     "private and nothing has looked: check the addresses with web-ai and call this again with `public_links`. "
+    "`about_the_employer` lists what a sentence addressed to the employer takes from their own posting or pages "
+    "(\"your 2026 paper\"): not counted against the draft, but read each to be sure it is about them. "
     "In your reply, say which findings you kept and why. "
     "`clean: true` means nothing this check looks for was unsupported; it does not prove the sentences are true."
 )
@@ -120,21 +122,25 @@ def requirements_report(posting: str, paths: list[str], facts: list[str], roots:
 
 
 def claims_report(draft: str, paths: list[str], facts: list[str], posting: str = "",
-                  roots: list[Path] | None = None, *, public_links: list[str] | None = None) -> dict[str, Any]:
+                  roots: list[Path] | None = None, *, public_links: list[str] | None = None,
+                  employer: str = "") -> dict[str, Any]:
     if not draft.strip():
         raise ValueError("the draft is empty")
     lines = gather(paths, facts, roots)
-    report = check_claims(draft, lines, posting, public_links)
+    report = check_claims(draft, lines, posting, public_links, employer)
 
-    unknown_names = [f for f in report.names if not f.in_posting]
+    unknown_names = [f for f in report.names if not f.in_posting and not f.in_employer]
     posting_names = sorted({f.token for f in report.names if f.in_posting}, key=str.lower)
+    employer_names = sorted({f.token for f in report.names if f.in_employer and not f.in_posting}, key=str.lower)
     return {
         "units_checked": report.units_checked,
         "clean": not report.findings,
         "findings": [f.as_dict() for f in report.findings[:MAX_FINDINGS]],
         "findings_not_shown": max(0, len(report.findings) - MAX_FINDINGS),
+        "about_the_employer": [f.as_dict() for f in report.about_them[:20]],
         "names_to_review": [f.as_dict() for f in unknown_names[:20]],
         "names_that_come_from_the_posting": ", ".join(posting_names),
+        "names_that_come_from_the_employer": ", ".join(employer_names),
         "weakly_traced": report.weak[:8],
         "figures_traced": report.traced,
         "limits": LIMITS,

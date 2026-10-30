@@ -39,3 +39,16 @@ def test_a_word_is_negated_only_when_every_use_of_it_is():
     assert not negated("We deployed it", "deployed")
     assert not negated("not deployed at first, then deployed", "deployed")
     assert not negated("no such word here", "deployed")
+
+
+def test_a_negation_reaches_four_words_back_within_its_clause():
+    # A real letter (2026-10-30): "production" four words after "not" was flagged when the reach was three.
+    assert negated("the voice agent has not been deployed to production", "production")
+    assert negated("it is not yet deployed to production", "production")
+    # A clause break or "but" ends it, even within reach: these claim what follows.
+    assert not negated("not cheap but deployed", "deployed")
+    assert not negated("not slow, deployed to production", "production")
+    assert not negated("Not slow: deployed to production", "production")
+    assert not negated("not just a prototype but deployed to production", "deployed")
+    # Five words back is too far: "not" there is about something else.
+    assert not negated("did not stop until it was deployed to production", "production")

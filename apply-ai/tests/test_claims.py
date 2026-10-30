@@ -305,6 +305,58 @@ def test_a_public_account_page_says_nothing_about_its_repositories():
                                 ["https://github.com/Philips-DR/suite"])) == 1
 
 
+def test_a_draft_that_says_has_not_been_deployed_is_not_claiming_production():
+    # A real letter (2026-10-24): "the voice agent is a prototype that has not been deployed to production".
+    report = run("To be clear about scope: the voice survey platform is a prototype that has not been deployed to "
+                 "production, and our cloud engineer runs the clusters.")
+    assert not any(f.token in ("deployed", "production") for f in report.findings)
+
+
+# A real letter (2026-10-30) said what was fine-tuned in one sentence and "the configs our cloud engineer applies
+# to provision the cluster" in the next, and was flagged for dropping the limit.
+LIMIT_NEXT_SENTENCE = ("I built agentic RAG systems on LangChain and LangGraph, with Kafka producers and consumers for "
+                       "high-throughput event processing. Our cloud engineer provisions and operates the underlying "
+                       "clusters, and I write the code that runs on them.")
+
+
+def test_a_limit_in_another_sentence_of_the_same_paragraph_is_kept():
+    assert not [f for f in run(LIMIT_NEXT_SENTENCE).findings if f.kind == "dropped limit"]
+
+
+def test_a_limit_in_another_paragraph_is_still_dropped():
+    apart = LIMIT_NEXT_SENTENCE.replace(" Our cloud engineer", "\n\nOur cloud engineer")
+    assert [f.token for f in run(apart).findings if f.kind == "dropped limit"] == [
+        "our cloud engineer provisions and operates the underlying clusters"]
+
+
+# A real letter (2026-10-24) said "Your ACL 2026 paper argues ...", and its year was flagged as missing from the
+# user's material: only the posting had been given as context.
+EMPLOYER = "Research. Our ACL 2026 paper shows that data, not model size, is the bottleneck for African languages."
+
+
+def employer_run(draft: str):
+    return check_claims(draft, material(), "", None, EMPLOYER)
+
+
+def test_a_sentence_about_the_employer_in_their_own_words_is_listed_apart():
+    draft = "- Your ACL 2026 paper argues that data, not model size, is the bottleneck for African languages."
+    assert ("figure", "2026") in kinds(run(draft))                 # without their pages: a finding
+    report = employer_run(draft)
+    assert report.findings == []
+    assert [(f.kind, f.token) for f in report.about_them] == [("figure", "2026")]
+    assert report.about_them[0].as_dict()["also_on_the_employers_pages"] is True
+
+
+def test_the_employer_s_words_do_not_excuse_a_claim_about_the_user():
+    # First person, or no one addressed: a claim about the user, whatever the employer's pages say.
+    for draft in ("- My ACL 2026 paper argues that data is the bottleneck.",
+                  "- Published an ACL 2026 paper on African languages.",
+                  "- Your ACL 2026 paper builds on work I published."):
+        report = employer_run(draft)
+        assert ("figure", "2026") in kinds(report) and report.about_them == [], draft
+        assert next(f for f in report.findings if f.token == "2026").in_employer, draft
+
+
 def test_a_figure_in_a_short_lead_line_leans_on_the_heading_above_it_and_a_bullet_does_not():
     ok = run("- BSc in Information Technology from BlueCrest University College, CGPA 3.63.")
     assert not any(f.kind == "figure" for f in ok.findings)

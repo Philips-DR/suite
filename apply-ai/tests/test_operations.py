@@ -104,6 +104,17 @@ def test_a_private_claim_is_unchecked_until_links_are_passed_and_then_judged_by_
     assert claims_report(draft, [cv], [], "", [tmp_path], public_links=[])["clean"] is True
 
 
+def test_the_employer_s_pages_name_their_own_products_and_explain_their_own_figures(cv, tmp_path):
+    employer = "Products: Mansa, our models and APIs. All Voices, data collection. Our 2026 review of NLP."
+    draft = "- I would welcome the chance to contribute to Mansa and All Voices.\n- Your 2026 review was useful."
+    before = claims_report(draft, [cv], [], "", [tmp_path])
+    assert {n["token"] for n in before["names_to_review"]} >= {"Mansa", "Voices"} and before["clean"] is False
+    after = claims_report(draft, [cv], [], "", [tmp_path], employer=employer)
+    assert after["names_to_review"] == [] and after["names_that_come_from_the_employer"] == "All, Mansa, Voices"
+    assert after["clean"] is True and [f["token"] for f in after["about_the_employer"]] == ["2026"]
+    assert "about_the_employer" in after["next_step"]
+
+
 def test_the_command_line_takes_public_addresses_and_an_empty_list(cv, tmp_path, capsys):
     from applyai.cli import main
     draft = tmp_path / "letter.md"
@@ -112,6 +123,16 @@ def test_the_command_line_takes_public_addresses_and_an_empty_list(cv, tmp_path,
     assert main(["claims", str(draft), cv, "--public", "https://github.com/a/b"]) == 0
     assert "[public link] private" in capsys.readouterr().out
     assert main(["claims", str(draft), cv, "--public"]) == 0 and "Clean." in capsys.readouterr().out
+    about = tmp_path / "about.md"
+    about.write_text("- Your 2026 review of NLP was useful.\n")
+    pages = tmp_path / "pages.txt"
+    pages.write_text("Our 2026 review of NLP.")
+    assert main(["claims", str(about), cv, "--employer", str(pages)]) == 0
+    assert "about the employer, in their own words (figure 2026)" in capsys.readouterr().out
+    # A sentence that also speaks of the user stays a finding, marked as the employer's figure.
+    about.write_text("- Your 2026 review of NLP covers the country I work in.\n")
+    assert main(["claims", str(about), cv, "--employer", str(pages)]) == 0
+    assert "[figure] 2026" in (out := capsys.readouterr().out) and "(also on the employer's pages)" in out
 
 
 def test_an_empty_draft_and_a_missing_source_are_errors(cv, tmp_path):

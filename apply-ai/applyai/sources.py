@@ -53,6 +53,12 @@ def plain(text: str) -> str:
 
 def units(markdown: str) -> list[str]:
     """Headings, bullets and paragraphs of a document, soft-wrapped lines joined, one string each."""
+    return [u for _, u in unit_blocks(markdown)]
+
+
+def unit_blocks(markdown: str) -> list[tuple[int, str]]:
+    """`units`, each with the number of the heading, bullet or paragraph it came from: a long paragraph is
+    split into sentences, and a limit said in one of them still belongs to the others."""
     blocks: list[str] = []
     current: list[str] = []
 
@@ -76,11 +82,11 @@ def units(markdown: str) -> list[str]:
             current.append(raw.strip())
     flush()
 
-    out: list[str] = []
-    for block in blocks:
+    out: list[tuple[int, str]] = []
+    for number, block in enumerate(blocks):
         text = plain(block)
-        out.extend(sentences(text) if len(text) > 160 else [text])
-    return [u for u in out if u]
+        out.extend((number, s) for s in (sentences(text) if len(text) > 160 else [text]))
+    return [(n, u) for n, u in out if u]
 
 
 def read_source(path: str, roots: list[Path] | None = None) -> tuple[str, list[Line]]:

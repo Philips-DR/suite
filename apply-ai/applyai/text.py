@@ -108,17 +108,27 @@ _NEGATORS = frozenset({"not", "no", "never", "without", "neither", "nor", "isn't
                        "weren't", "didn't", "don't", "doesn't", "hasn't", "haven't", "cannot", "can't"})
 
 
+# A negation reaches four words back, and never across a clause: "has not been deployed to production" denies
+# "production" (four back, seen in a real letter on 2026-10-30, flagged when the reach was three), while "not just a
+# prototype but deployed to production" claims it.
+NEGATION_REACH = 4
+_CLAUSE = re.compile(r"[,;:.!?()\[\]—–]|\b(?:but|however|although|though|whereas)\b", re.IGNORECASE)
+
+
 def negated(line: str, word: str) -> bool:
-    """Is every occurrence of `word` in `line` preceded, within three words, by a negator?
+    """Is every occurrence of `word` in `line` preceded, within its clause and four words, by a negator?
 
     A CV that says "prototype, not deployed to production" contains the word "deployed". A draft
     that says "deployed" must not be called supported by it.
     """
-    words = [t.lower().replace("’", "'") for t in _TOKEN.findall(line)]
     target = word.lower()
-    positions = [i for i, w in enumerate(words) if w == target]
-    if not positions and re.search(re.escape(target), line.lower()):
-        return False  # a hyphenated word ("open-source") is not a token, so it has no words before it to read
-    if not positions:
-        return False
-    return all(any(w in _NEGATORS for w in words[max(0, i - 3): i]) for i in positions)
+    found = False
+    for clause in _CLAUSE.split(line):
+        words = [t.lower().replace("’", "'") for t in _TOKEN.findall(clause)]
+        for i, w in enumerate(words):
+            if w == target:
+                found = True
+                if not any(x in _NEGATORS for x in words[max(0, i - NEGATION_REACH): i]):
+                    return False
+    # Not a token at all -- absent, or hyphenated ("open-source"), with no words before it to read.
+    return found

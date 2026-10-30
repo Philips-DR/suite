@@ -1,7 +1,7 @@
 """./apply -- the human front door.
 
     ./apply requirements POSTING.txt CV.md [--fact "..."]...
-    ./apply claims DRAFT.md CV.md [--fact "..."]... [--posting POSTING.txt] [--public [URL ...]]
+    ./apply claims DRAFT.md CV.md [--fact "..."]... [--posting POSTING.txt] [--employer PAGES.txt] [--public [URL ...]]
 
 Reads only. Prints what a model would be given, in a form a person can read.
 """
@@ -44,10 +44,15 @@ def _print_requirements(r: dict[str, Any]) -> None:
 def _print_claims(r: dict[str, Any]) -> None:
     print(f"{r['units_checked']} sentences checked. {'Clean.' if r['clean'] else str(len(r['findings'])) + ' findings.'}")
     for f in r["findings"]:
-        print(f"\n[{f['kind']}] {f['token']}: {f['why']}{'  (also in the posting)' if f.get('also_in_the_posting') else ''}")
+        marks = "".join(note for key, note in (("also_in_the_posting", "  (also in the posting)"),
+                                               ("also_on_the_employers_pages", "  (also on the employer's pages)"))
+                        if f.get(key))
+        print(f"\n[{f['kind']}] {f['token']}: {f['why']}{marks}")
         print(f"   draft:   {f['in_your_draft'][:140]}")
         if "nearest_line_in_your_material" in f:
             print(f"   nearest: {f['nearest_line_in_your_material']['line'][:140]}")
+    for f in r["about_the_employer"]:
+        print(f"\nabout the employer, in their own words ({f['kind']} {f['token']}): {f['in_your_draft'][:140]}")
     if r["names_to_review"]:
         print("\nNames in the draft that are in neither your material nor the posting:",
               ", ".join(sorted({n["token"] for n in r["names_to_review"]})))
@@ -68,6 +73,7 @@ def main(argv: list[str] | None = None) -> int:
     cl.add_argument("sources", nargs="+")
     cl.add_argument("--fact", action="append", default=[])
     cl.add_argument("--posting", help="The posting, so a finding that echoes it is marked")
+    cl.add_argument("--employer", help="The employer's own pages as text, so a sentence about them is not a claim")
     cl.add_argument("--public", nargs="*", action="extend", metavar="URL",
                     help="Addresses a stranger can open (checked with web-ai); --public alone: checked, none is")
     args = parser.parse_args(argv)
@@ -76,7 +82,8 @@ def main(argv: list[str] | None = None) -> int:
             _print_requirements(requirements_report(_read(args.posting), args.sources, args.fact))
         else:
             _print_claims(claims_report(_read(args.draft), args.sources, args.fact,
-                                        _read(args.posting) if args.posting else "", public_links=args.public))
+                                        _read(args.posting) if args.posting else "", public_links=args.public,
+                                        employer=_read(args.employer) if args.employer else ""))
     except (SourceError, ValueError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

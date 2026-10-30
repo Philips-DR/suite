@@ -23,7 +23,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-from applyai.sources import Line, units
+from applyai.sources import Line, unit_blocks
 from applyai.text import content_stems, negated, numbers, stem, tokens
 from applyai.vocabulary import (
     ABOUT_CODE,
@@ -67,6 +67,7 @@ class Finding:
     why: str
     nearest: dict | None = None
     in_posting: bool = False
+    in_employer: bool = False
 
     def as_dict(self) -> dict:
         out = {"kind": self.kind, "token": self.token, "in_your_draft": _clip(self.unit), "why": self.why}
@@ -74,6 +75,8 @@ class Finding:
             out["nearest_line_in_your_material"] = self.nearest
         if self.in_posting:
             out["also_in_the_posting"] = True
+        if self.in_employer:
+            out["also_on_the_employers_pages"] = True
         return out
 
 
@@ -84,6 +87,21 @@ class Report:
     names: list[Finding] = field(default_factory=list)
     traced: list[dict] = field(default_factory=list)
     weak: list[dict] = field(default_factory=list)
+    about_them: list[Finding] = field(default_factory=list)
+
+
+_FIRST_PERSON = frozenset("i i'm i've i'd i'll my me mine myself we we're we've our ours us".split())
+_SECOND_PERSON = frozenset("you you're you've your yours".split())
+
+
+def about_them(unit: str) -> bool:
+    """A sentence addressed to the employer that says nothing of the user: "Your ACL 2026 paper argues that...".
+
+    A real letter (2026-10-24) said that, and its year was flagged as missing from the user's material. Only
+    the employer's own words can move a figure out of the findings, and only in such a sentence: "my 2026
+    paper" stays a claim, whatever the employer's site says."""
+    words = {t.lower().replace("’", "'") for t in tokens(unit)}
+    return bool(words & _SECOND_PERSON) and not words & _FIRST_PERSON
 
 
 def _clip(text: str) -> str:
@@ -166,16 +184,22 @@ _HEDGE = [re.compile(h, re.I) for h in HEDGES]
 CARRIED = 0.6          # how much of a source sentence's other words a draft sentence must keep to count as it
 
 
-def dropped_limits(draft_units: list[str], material: _Material) -> list[Finding]:
+def dropped_limits(draft_units: list[str], material: _Material, blocks: list[int] | None = None) -> list[Finding]:
     """A source sentence that carries a limit, kept in the draft without it.
 
     Found live on the first real run of this check: asked to fit a CV on two pages the model cut "our cloud
     engineer provisions and operates the underlying clusters" and "(application/producer-consumer layer)" --
     the very qualifiers that made the CV honest about Kafka and Redis -- and the draft read as claiming
     more than the material did. Nothing was added, so nothing added was flagged.
+
+    `blocks` numbers the paragraph or bullet each unit came from. A limit said in another sentence of the same
+    paragraph is kept: a real letter (2026-10-30) said what was fine-tuned in one sentence and "configs our cloud
+    engineer applies to provision the cluster" in the next, and was flagged for it.
     """
     findings: list[Finding] = []
     unit_stems = [(u, content_stems(u), u.lower()) for u in draft_units]
+    blocks = blocks if blocks is not None else list(range(len(draft_units)))
+    paragraph = {b: " ".join(lowered for (_, _, lowered), b2 in zip(unit_stems, blocks) if b2 == b) for b in blocks}
     for i, line in enumerate(material.lines):
         # Every limit in the line, minus any that sits inside a longer one ("not deployed to production"
         # is part of "prototype, not deployed to production" and is said once).
@@ -188,11 +212,11 @@ def dropped_limits(draft_units: list[str], material: _Material) -> list[Finding]
             if len(rest) < 3:
                 continue
             key_words = [w.lower() for w in tokens(limit) if len(w) > 3][:2] or [limit.lower()]
-            carried = [(u, lowered) for u, stems, lowered in unit_stems
+            carried = [(u, paragraph[b]) for (u, stems, _), b in zip(unit_stems, blocks)
                        if len(rest & stems) >= 3 and len(rest & stems) / len(rest) >= CARRIED]
-            # Flag only when the point was carried and NO carrier keeps its limit: a sibling sentence that
-            # merely shares the label's words is not the point, and the limit may sit in the label itself.
-            if carried and not any(any(w in lowered for w in key_words) for _, lowered in carried):
+            # Flag only when the point was carried and NO carrier's paragraph keeps its limit: a sibling sentence
+            # that merely shares the label's words is not the point, and the limit may sit in the label itself.
+            if carried and not any(any(w in text for w in key_words) for _, text in carried):
                 findings.append(Finding(
                     carried[0][0], "dropped limit", limit,
                     f"your material limits this: “{_clip(line.text)}” — the draft keeps the point without “{limit}”",
@@ -228,29 +252,35 @@ def _privacy_said(unit: str) -> str | None:
     return None
 
 
-def check_claims(draft: str, lines: list[Line], posting: str = "", public: list[str] | None = None) -> Report:
+def check_claims(draft: str, lines: list[Line], posting: str = "", public: list[str] | None = None,
+                 employer: str = "") -> Report:
     """`public` is every address a stranger was found able to open (by web-ai; this has no network). None
-    means nothing was checked, which is not the same as [] -- checked, and none is public."""
+    means nothing was checked, which is not the same as [] -- checked, and none is public. `employer` is the
+    employer's own pages, as text: what a sentence about them may say without it being a claim about the user."""
     material = _Material(lines)
     posting_words = {t.lower() for t in tokens(posting)}
     posting_numbers = set(numbers(posting))
+    employer_words = {t.lower() for t in tokens(employer)}
+    employer_numbers = set(numbers(employer))
     report = Report(units_checked=0)
     seen: set[tuple[str, str, str]] = set()
     # One address per entry, even when a list arrives as one string ("a b c" or "a, b, c"): it did, in a real run.
     public_as_given = {_address(u): u for entry in public or [] for u in re.split(r"[\s,]+", entry) if u}
     in_draft = _addresses(draft)
 
-    def add(bucket: list[Finding], unit: str, kind: str, token: str, why: str, nearest: dict | None, posting_has: bool) -> None:
+    def add(bucket: list[Finding], unit: str, kind: str, token: str, why: str, nearest: dict | None, posting_has: bool,
+            employer_has: bool = False) -> None:
         key = (unit, kind, token.lower())
         if key in seen:
             return
         seen.add(key)
-        bucket.append(Finding(unit, kind, token, why, nearest, posting_has))
+        if bucket is report.findings and (posting_has or employer_has) and about_them(unit):
+            bucket = report.about_them   # their own words, said to them: listed, not counted against the draft
+        bucket.append(Finding(unit, kind, token, why, nearest, posting_has, employer_has))
 
-    draft_units = [u for u in units(draft) if not _DATE_ONLY.match(u)]
-    for unit in units(draft):
-        if _DATE_ONLY.match(unit):
-            continue  # a letter's date line is today's date, not a claim
+    tagged = [(b, u) for b, u in unit_blocks(draft) if not _DATE_ONLY.match(u)]  # a letter's date line is not a claim
+    draft_units = [u for _, u in tagged]
+    for unit in draft_units:
         report.units_checked += 1
         stems = content_stems(unit)
         words = tokens(unit)
@@ -265,7 +295,8 @@ def check_claims(draft: str, lines: list[Line], posting: str = "", public: list[
             why = (f"the figure {n} is in your material, but not in a line about this" if in_material
                    else f"the figure {n} is nowhere in your material")
             add(report.findings, unit, "figure", n, why,
-                material.nearest(stems, number=n) if in_material else material.nearest(stems), n in posting_numbers)
+                material.nearest(stems, number=n) if in_material else material.nearest(stems), n in posting_numbers,
+                n in employer_numbers)
 
         for word in sorted(watch_words_in(unit)):
             category = WATCH_CATEGORY[word]
@@ -282,17 +313,17 @@ def check_claims(draft: str, lines: list[Line], posting: str = "", public: list[
             else:
                 why = f"“{word}” ({category}) is nowhere in your material"
                 near = material.nearest(stems)
-            add(report.findings, unit, "claim word", word, why, near, word in posting_words)
+            add(report.findings, unit, "claim word", word, why, near, word in posting_words, word in employer_words)
 
         for tool in tools_named(unit):
             if not tool_in(material.text, TOOLS[tool]):
                 add(report.findings, unit, "tool", tool, f"{tool} is nowhere in your material",
-                    material.nearest(stems), tool.lower() in posting_words)
+                    material.nearest(stems), tool.lower() in posting_words, tool_in(employer, TOOLS[tool]))
 
         for name in languages_named(unit):
             if name != "English" and not re.search(rf"\b{name}\b", material.text, re.I):
                 add(report.findings, unit, "language", name, f"{name} is nowhere in your material",
-                    material.nearest(stems), name.lower() in posting_words)
+                    material.nearest(stems), name.lower() in posting_words, name.lower() in employer_words)
 
         for level in degree_levels(unit):
             if DEGREE_LEVELS.index(level) > material.degree:
@@ -305,7 +336,7 @@ def check_claims(draft: str, lines: list[Line], posting: str = "", public: list[
             if _is_name(tok, first=i == 0) and tok.lower() not in material.all_words and stem(tok) not in material.all_stems and tok.lower() not in {
                     n.lower() for n in tools_named(unit)} and tok not in LANGUAGES:
                 add(report.names, unit, "name", tok, f"“{tok}” does not appear in your material",
-                    material.nearest(stems), tok.lower() in posting_words)
+                    material.nearest(stems), tok.lower() in posting_words, tok.lower() in employer_words)
 
         # Checked against the world, not the material: the material itself said "Repositories are private".
         said = _privacy_said(unit)
@@ -336,7 +367,7 @@ def check_claims(draft: str, lines: list[Line], posting: str = "", public: list[
                 report.weak.append({"in_your_draft": _clip(unit), "found_in_your_material": f"{round(covered * 100)}%"})
 
     seen_limits: set[tuple[str, str]] = set()
-    for f in dropped_limits(draft_units, material):
+    for f in dropped_limits(draft_units, material, [b for b, _ in tagged]):
         if (f.unit, f.token.lower()) not in seen_limits:
             seen_limits.add((f.unit, f.token.lower()))
             report.findings.append(f)

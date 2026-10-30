@@ -69,15 +69,18 @@ def create_apply_ai_server(roots: list | None = None) -> MCPServer:
             "every address a stranger can open as `public_links` ([] if none is): the user's own CV once "
             "said its repositories were private when most were public. "
             "Pass the draft as text, the user's documents as `sources` (paths), the facts the user has "
-            "confirmed as `facts`, and the posting as `posting` so a finding that merely echoes the "
-            "posting is marked. Reads only; changes nothing."
+            "confirmed as `facts`, the posting as `posting` so a finding that merely echoes the "
+            "posting is marked, and the text of the employer's own pages you read (read_page) as `employer`, "
+            "so a sentence about them (\"your 2026 paper\") is not taken for a claim about the user. "
+            "Reads only; changes nothing."
         ),
         annotations=READS_ONLY,
     )
     def _claims(draft: str, sources: list[str], facts: list[str] | None = None, posting: str = "",
-                public_links: list[str] | None = None) -> dict[str, Any]:
+                public_links: list[str] | None = None, employer: str = "") -> dict[str, Any]:
         try:
-            return claims_report(draft, sources, facts or [], posting, folders, public_links=public_links)
+            return claims_report(draft, sources, facts or [], posting, folders, public_links=public_links,
+                                 employer=employer)
         except (SourceError, ValueError) as error:
             return {"error": str(error)}
 
