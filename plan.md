@@ -106,7 +106,9 @@ Each was tested (`./test`) and run for real; the real runs found most of the bug
 
 | 10-30 | **apply-ai: career claims, private code and the email body (the user's go-ahead, the same day).** `claims` takes `public_links`, the addresses web-ai found a stranger can open: a sentence calling code private is a `public link` finding when the address it names, or a repository on a code host, is public, and `unchecked` (saying how to check) when nothing was passed. "Spent my career" and its kin are watched phrases. The description says to check the email body before `draft_new`, and to check addresses before calling code private. `CV - ML Engineer` (the assistant's own, 2026-09-28) now carries the `.draft` marker. **Run:** 103 apply-ai tests (16 new) and thirteen deliberate breaks, each caught; seven real documents, old code against new, changed only where they should; the backend rebuilt (`./start-docker up`) and the chat driven for real: the model checked an email body unasked, fixed what it found and re-checked; asked to check a "repositories are private" line, it looked GitHub up, passed the addresses and told the user the line was false. **Not followed:** a line the user dictated went to `draft_new` without a re-check. Every draft was declined at the gate; nothing reached Gmail. | `apply-ai/CLAUDE.md` → Verified for real (2026-10-30) |
 
-Test counts on 2026-10-30 (one `./test` run, all passed): assistant 191 + 8 Postgres tests that skip without `TEST_DATABASE_URL`, meet-ai 113, mail-ai 150, apply-ai 103, web-ai 149, audiobook 107, docu-ai 386 (+1 skipped, the live test), web 39 (+ typecheck).
+| 10-30 | **apply-ai: the rest of gap-plan step 4.** `claims` takes `employer` (the employer's pages as text): a finding drawn from their pages or the posting, in a sentence addressed to them that says nothing of the user, is listed in `about_the_employer` instead of counted; anything else stays a finding, marked. A negation reaches four words back within its clause. A limit said anywhere in its paragraph counts as kept. **Run:** 111 tests (8 more), 24 deliberate breaks across both batches each caught; on seven real documents with the employer's real homepage and research page, two false alarms gone ("production" in the 2026-10-24 letter, a dropped limit in today's) and nothing else changed; the backend rebuilt and the chat driven: checking a letter written from the employer's site, the model passed `employer` and used the marker to keep "ACL 2026" and "74+". **Not followed:** asked only to show a letter, it skipped the check. It also asked to remember Sheriff Issaka as the referrer (the user's own words of 2026-10-24); approved, fact `718ca00f`. | `apply-ai/CLAUDE.md` → Verified for real (2026-10-30) |
+
+Test counts on 2026-10-30 (one `./test` run, all passed): assistant 191 + 8 Postgres tests that skip without `TEST_DATABASE_URL`, meet-ai 113, mail-ai 150, apply-ai 111, web-ai 149, audiobook 107, docu-ai 386 (+1 skipped, the live test), web 39 (+ typecheck).
 
 ## Known rough edges
 
@@ -192,10 +194,11 @@ Sizes are rough. Steps 1 and 2 change docu-ai and mail-ai, so confirm with the u
 4. **apply-ai (small to medium, stays network-free).** Accept link-check results and employer text as data, as it
    takes `facts` today. Flag a "private" or "confidential" claim next to a link that resolves publicly. Tune the two
    false alarms seen: a negated "not deployed to production", and a limit still present in reworded text.
-   **Partly done 2026-10-30:** link results are taken (`public_links`) and a private claim is flagged. Not done:
-   employer text as data (a real letter's "ACL 2026" paper was still flagged), and both false alarms (seen again
-   the same day: "has not been deployed to production", the negator four words back; and a limit carried in the
-   next sentence).
+   **Done 2026-10-30, but one piece:** link results (`public_links`) with a private claim flagged; employer text
+   (`employer`), which sets apart what a sentence addressed to them takes from their pages; a negation four words
+   back within its clause ("has not been deployed to production"); and a limit kept anywhere in its paragraph.
+   **Not done:** a limit kept in other words ("a colleague runs the clusters") is still flagged; a word-overlap
+   check cannot see it. A sentence mixing the employer's figure and a claim about the user stays a finding, marked.
 5. **Dossiers and fact provenance (large; do it with "Agent memory and a database" below).** A dossier is a
    generic record of one goal: a title, a status, ordered references (a Google Doc id, a Gmail draft id, a file, a
    URL) and facts scoped to it. No job logic in the assistant. Each fact gets a source (who said it, when) and a
@@ -487,7 +490,9 @@ when the prompt gets too big.
     literal.
   - **A line the user dictates is not re-checked** (2026-10-30). Asked to add "my repositories are private ... as
     my CV says", the model went straight to `draft_new`; the check would have caught it (shown when asked). The
-    check stays advisory: only the person approving stops this.
+    check stays advisory: only the person approving stops this. **Nor is a letter only shown in chat**: asked to
+    show one, not save it, the model skipped the check and said "nothing invented" over a "resonates directly"
+    the check then flagged. Its description ties the check to `write_draft` and `draft_new`.
   - **A spelling fact rewrote the employer's name** (2026-10-30): memory's `AyaData` spelling turned the CV's
     "Ayadata GH" into "AyaData GH". The CVs already sent say "Ayadata".
   - A failed build still leaves a stray Doc (a letter with no `# heading` failed in docu-ai after creating it).
