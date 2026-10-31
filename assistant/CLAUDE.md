@@ -327,6 +327,27 @@ and asked about first (`web/src/ui/ConfirmDelete.tsx`). Run for real on throwawa
   what will go with the read-only tool and calls the destructive one only on a confirmed press, never to
   find out what it would do.
 
+## Stopping a reply (`POST /api/chat/stop`, 2026-10-31)
+
+Chat had no way to stop a reply once sent. `Hub.request_stop` sets the turn's own `stop` event (a new one each turn,
+so a stop never carries over) and answers no to any approval waiting. `run_turn` stops at the next safe point:
+
+- **While the model thinks**, its request is raced against the stop; the answer, if it comes, is thrown away
+  (the request's thread runs to its end on its own).
+- **A tool already running is never cut off.** It finishes and is audited: stopping halfway through a change would
+  leave it done but unrecorded. A tool the model asked for that has not started gets `STOPPED_TOOL` as its result.
+- **The conversation is left whole**: every tool call answered, then one short assistant reply (`STOPPED_REPLY`),
+  so the next message carries on. Run for real: a reply stopped while the model thought, then a new question was
+  answered normally (the API took the conversation as it stood).
+- `turn_stopped` is conversation (`CONVERSATION_EVENTS`), so Clear chat removes it.
+- The check at the top of each round is a second guard: with it removed the race above still stops the turn before
+  the next request goes out, so no test can tell the difference (a deliberate break of it survives). It is kept so
+  that does not rest on the order asyncio runs tasks in.
+
+Tools now carry their `title` (MCP's, or their annotations'), passed to the interface in `/api/tools` and in an
+approval, so a person reads "Write a new draft" rather than "draft new". The model is still shown name and
+description only.
+
 ## On a timer (`schedule.py`, 2026-10-30)
 
 A tool's entry in `tools.yaml` may say `schedule: [{tool: sync, every_minutes: 30}]`, and the server runs that

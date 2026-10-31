@@ -2,10 +2,12 @@
 // waiting on you whichever page you happen to be on.
 
 import { useState, type CSSProperties } from 'react'
-import { answerApproval, toolLabel, type Approval } from '../api'
+import { answerApproval, type Approval } from '../api'
 import { isTool, toolColor, toolName, toolOf } from '../charts/palette'
 import { IconCheck, IconClose } from '../ui/icons'
 import { TOOL_ICON, humanise } from '../ui/toolMeta'
+import { Fields } from './StepDetails'
+import { fieldsOf } from './toolSteps'
 
 export function ApprovalCard({ approval }: { approval: Approval }) {
   const [sending, setSending] = useState(false)
@@ -24,10 +26,13 @@ export function ApprovalCard({ approval }: { approval: Approval }) {
 
   const tool = toolOf(approval.tool)
   const Icon = isTool(tool) ? TOOL_ICON[tool] : null
-  const hasArguments = Object.keys(approval.arguments).length > 0
+  // What the tool calls itself ("Write a new draft"), and what it was asked as fields a person reads: an email's
+  // body was a line of JSON that ran off a phone's screen, so it could be approved half read.
+  const title = approval.title || humanise(approval.name)
+  const fields = fieldsOf(approval.arguments)
 
   return (
-    <div className="approval" role="alertdialog" aria-label={`Approve ${toolLabel(approval.tool)}?`}>
+    <div className="approval" role="alertdialog" aria-label={`Approve: ${title}?`}>
       <div className="approval-head">
         <span className="approval-kicker">Needs your approval</span>
       </div>
@@ -35,8 +40,8 @@ export function ApprovalCard({ approval }: { approval: Approval }) {
       <div className="approval-what">
         <span className="navtile" style={{ '--tile': toolColor(tool) } as CSSProperties}>{Icon ? <Icon size={18} strokeWidth={2} aria-hidden /> : null}</span>
         <div>
-          <strong>{humanise(approval.name)}</strong>
-          <span className="approval-tool">{isTool(tool) ? toolName(tool) : tool} · {toolLabel(approval.tool)}</span>
+          <strong>{title}</strong>
+          <span className="approval-tool">{toolName(tool)}</span>
         </div>
       </div>
 
@@ -51,12 +56,14 @@ export function ApprovalCard({ approval }: { approval: Approval }) {
         </p>
       ) : null}
 
-      {hasArguments && (
-        <details className="approval-args" open={!approval.preview}>
-          <summary>Details</summary>
-          <pre>{JSON.stringify(approval.arguments, null, 2)}</pre>
-        </details>
-      )}
+      {fields.length > 0 && (approval.preview
+        ? (
+          <details className="approval-args">
+            <summary>Details</summary>
+            <Fields fields={fields} />
+          </details>
+        )
+        : <Fields fields={fields} />)}
 
       {error && <p className="error">{error}</p>}
 

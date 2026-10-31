@@ -11,6 +11,8 @@ interface State {
   connected: boolean
   model: string
   tools: Set<string>
+  /** Each tool's own title for a person, by qualified name: what Chat and an approval call it. */
+  titles: Record<string, string>
   /** Highest event seq in the first snapshot, or null before it arrives. Events at or below
    * it happened before this page opened. */
   openedAt: number | null
@@ -20,9 +22,9 @@ type Action =
   | { type: 'snapshot'; events: AssistantEvent[]; pending: Approval[]; busy: boolean; model: string }
   | { type: 'event'; event: AssistantEvent }
   | { type: 'connected'; value: boolean }
-  | { type: 'tools'; names: string[] }
+  | { type: 'tools'; names: string[]; titles: Record<string, string> }
 
-const initial: State = { events: [], pending: [], busy: false, connected: false, model: '', tools: new Set(), openedAt: null }
+const initial: State = { events: [], pending: [], busy: false, connected: false, model: '', tools: new Set(), titles: {}, openedAt: null }
 
 function reduce(state: State, action: Action): State {
   switch (action.type) {
@@ -40,7 +42,7 @@ function reduce(state: State, action: Action): State {
     case 'connected':
       return { ...state, connected: action.value }
     case 'tools':
-      return { ...state, tools: new Set(action.names) }
+      return { ...state, tools: new Set(action.names), titles: action.titles }
     case 'event': {
       const event = action.event
       // A reconnect replays from a fresh snapshot; drop anything already held.
@@ -51,6 +53,7 @@ function reduce(state: State, action: Action): State {
           return { ...state, events, busy: true }
         case 'turn_done':
         case 'turn_error':
+        case 'turn_stopped':
           return { ...state, events, busy: false }
         case 'approval_needed':
           return {
@@ -63,6 +66,7 @@ function reduce(state: State, action: Action): State {
                 tool: event.tool ?? '',
                 server: event.server ?? '',
                 name: event.name ?? '',
+                title: event.title ?? '',
                 arguments: event.arguments ?? {},
                 preview: event.preview ?? null,
                 preview_expected: event.preview_expected ?? false,
@@ -91,7 +95,7 @@ export function StateProvider({ children }: { children: ReactNode }) {
     const [snapshot, tools] = await Promise.all([getState(), getTools()])
     // Views adapt to what the server actually offers -- mail drafting, for instance, only
     // exists when it has been switched on for mail-ai.
-    dispatch({ type: 'tools', names: tools.map((t) => t.qualified_name) })
+    dispatch({ type: 'tools', names: tools.map((t) => t.qualified_name), titles: Object.fromEntries(tools.filter((t) => t.title).map((t) => [t.qualified_name, t.title!])) })
     dispatch({
       type: 'snapshot',
       events: snapshot.history,

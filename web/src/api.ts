@@ -145,6 +145,7 @@ export type EventType =
   | 'approval_resolved'
   | 'turn_done'
   | 'turn_error'
+  | 'turn_stopped'
   | 'notice'
   | 'upload'
   | 'upload_deleted'
@@ -180,6 +181,7 @@ export interface Approval {
   tool: string
   server: string
   name: string
+  title?: string
   arguments: Record<string, unknown>
   preview: string | null
   preview_expected: boolean
@@ -204,6 +206,8 @@ export interface ToolInfo {
   qualified_name: string
   server: string
   name: string
+  /** What the tool calls itself for a person ("Write a new draft"); empty when it gives none. */
+  title?: string
   read_only: boolean
   has_preview: boolean
 }
@@ -274,6 +278,8 @@ export const sendChat = (message: string) =>
 
 /** Delete the conversation (the model's memory of it and what Chat shows). Refused while a message is being worked on. */
 export const clearChat = () => request<{ cleared: number }>('/api/chat/clear', { method: 'POST' })
+/** Stop the reply being worked on, at its next safe point: a tool already running finishes, nothing after it starts. */
+export const stopChat = () => request<{ stopping: boolean }>('/api/chat/stop', { method: 'POST' })
 
 export type UploadKind = 'audio' | 'book' | 'voice' | 'docs'
 export interface DeletedUpload { kind: UploadKind; name: string; files: number; bytes: number }

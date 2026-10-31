@@ -79,6 +79,7 @@ def approval_view(request: ApprovalRequest) -> dict[str, Any]:
         "tool": request.tool.qualified_name,
         "server": request.tool.server,
         "name": request.tool.name,
+        "title": request.tool.title,
         "arguments": request.arguments,
         # Untrusted content (an email body, a transcript) on its way to a screen. The
         # browser renders it as text, never HTML; this also caps its length.
@@ -96,7 +97,7 @@ def parsed(output: str) -> Any:
 
 # The events that make up Chat's conversation. Clearing the chat removes these and nothing else: a finished-job
 # notice, an upload, and a button's own result are not conversation, and other pages read them.
-CONVERSATION_EVENTS = {"user_message", "assistant_text", "turn_done", "turn_error",
+CONVERSATION_EVENTS = {"user_message", "assistant_text", "turn_done", "turn_error", "turn_stopped",
                        "approval_needed", "approval_resolved"}
 
 
@@ -121,6 +122,8 @@ class Hub:
         self.messages: list[dict[str, Any]] = []
         self.notes: list[str] = []
         self.turn: asyncio.Task | None = None
+        # Set by Stop; a new one for each turn, so a stop never carries over to the next message.
+        self.stop: asyncio.Event | None = None
         self.pending: dict[str, tuple[ApprovalRequest, asyncio.Future]] = {}
         self.subscribers: set[asyncio.Queue] = set()
         self.history: deque[dict[str, Any]] = deque(maxlen=HISTORY_LIMIT)
@@ -172,9 +175,10 @@ class Hub:
                 # goes ahead with the context it already has.
                 pass
         self.messages.append({"role": "user", "content": self.compose(message)})
+        self.stop = asyncio.Event()
         try:
             await run_turn(self.registry, self.config, self.messages, self.audit,
-                           context=self.context, gate=self.web_gate, emit=self.emit)
+                           context=self.context, gate=self.web_gate, emit=self.emit, stop=self.stop)
         except Exception as error:
             # A failed turn can leave a tool call without its result, which would poison
             # every later turn. Roll the conversation back to before it, and keep the notes.
@@ -200,6 +204,17 @@ class Hub:
         # lives here and nowhere else.
         await self.emit({"type": "chat_cleared"})
         return cleared
+
+    def request_stop(self) -> bool:
+        """Ask the running turn to stop at its next safe point (see `run_turn`). An approval waiting on
+        the person is answered no, which is what stopping means for it. False if nothing is running."""
+        if not self.busy or self.stop is None:
+            return False
+        self.stop.set()
+        for _request, future in list(self.pending.values()):
+            if not future.done():
+                future.set_result(False)
+        return True
 
     def note_text(self, text: str) -> None:
         """Something that happened outside any tool call -- an upload -- told to the model the
@@ -427,7 +442,7 @@ def create_app(
     async def tools() -> list[dict[str, Any]]:
         return [
             {
-                "qualified_name": t.qualified_name, "server": t.server, "name": t.name,
+                "qualified_name": t.qualified_name, "server": t.server, "name": t.name, "title": t.title,
                 "description": t.description, "read_only": t.read_only,
                 "has_preview": t.preview is not None, "input_schema": t.input_schema,
             }
@@ -454,6 +469,14 @@ def create_app(
             raise HTTPException(409, "still working on the last message")
         h.turn = asyncio.create_task(h.run(body.message.strip()))
         return {"accepted": True}
+
+    @app.post("/api/chat/stop")
+    async def stop_chat() -> dict[str, Any]:
+        """Stop the reply being worked on. It ends at the next safe point: a tool already running
+        finishes and is recorded, nothing after it starts, and an approval waiting is declined."""
+        if not hub().request_stop():
+            raise HTTPException(409, "nothing is being worked on")
+        return {"stopping": True}
 
     @app.post("/api/chat/clear")
     async def clear_chat() -> dict[str, Any]:

@@ -1,19 +1,23 @@
-// Chat: the same conversation the buttons see, in a calmer frame. Tool calls collapse into chips
-// between messages, an approval waiting on you is impossible to miss, and an empty page offers things
-// to ask instead of a blank box.
+// Chat: the same conversation the buttons see, in a calmer frame. A reply's tool calls fold into one line that opens
+// to what each was asked and what came back; what you did on other pages folds into one line too; an approval
+// waiting on you is impossible to miss; a reply can be stopped; and a page with no conversation offers things to ask.
 
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { AUDIO_EXTS, clearChat, isAudio, isMarkdown, sendChat, splitDocs, toolLabel, uploadAudio, uploadDocs, type AssistantEvent } from '../api'
+import { AUDIO_EXTS, clearChat, isAudio, isMarkdown, sendChat, splitDocs, stopChat, uploadAudio, uploadDocs } from '../api'
 import { useAppState } from '../state'
 import { BrandMark } from '../ui/Shell'
 import { DropZone } from '../ui/DropZone'
-import { IconAttach, IconCheck, IconClose, IconCopy, IconSend, IconSpark, IconTrash } from '../ui/icons'
+import { IconAttach, IconCheck, IconChevron, IconCopy, IconSend, IconSpark, IconStop, IconTrash } from '../ui/icons'
 import { ConfirmDelete } from '../ui/ConfirmDelete'
 import { PickFiles, UploadProgress } from './Upload'
 import { ApprovalCard } from './ApprovalCard'
+import { StepGroup } from './StepDetails'
+import { pairSteps, type Step } from './toolSteps'
 import '../styles/panels/chat.css'
+
+const CONVERSATION = new Set(['user_message', 'assistant_text', 'approval_needed', 'turn_error', 'turn_stopped'])
 
 const SUGGESTIONS = [
   'What is in my inbox?',
@@ -21,22 +25,6 @@ const SUGGESTIONS = [
   'Write up my latest meeting as a Google Doc',
   'Turn my newest PDF into an audiobook',
 ]
-
-function ToolChip({ event }: { event: AssistantEvent }) {
-  const fromButton = event.origin === 'button'
-  const outcome = event.outcome ?? 'ok'
-  return (
-    <span className={`tool-line ${outcome}`}>
-      <span className="tool-mark" aria-hidden>
-        {outcome === 'ok' ? <IconCheck size={12} strokeWidth={3} /> : outcome === 'declined' ? <span>–</span> : <IconClose size={12} strokeWidth={3} />}
-      </span>
-      {fromButton && <span className="muted">You pressed</span>}
-      <span className="tool-name">{toolLabel(event.tool)}</span>
-      {outcome === 'declined' && <span className="muted">declined</span>}
-      {outcome === 'failed' && <span className="muted">failed</span>}
-    </span>
-  )
-}
 
 function Copy({ text }: { text: string }) {
   const [done, setDone] = useState(false)
@@ -58,7 +46,7 @@ function Copy({ text }: { text: string }) {
 }
 
 export function Chat() {
-  const { events, pending, busy, connected } = useAppState()
+  const { events, pending, busy, connected, titles } = useAppState()
   const [draft, setDraft] = useState('')
   const [error, setError] = useState('')
   const [attached, setAttached] = useState<string[]>([])
@@ -67,6 +55,7 @@ export function Chat() {
   const [clearing, setClearing] = useState(false)
   const [clearBusy, setClearBusy] = useState(false)
   const [clearError, setClearError] = useState('')
+  const [stopping, setStopping] = useState(false)
   const scroller = useRef<HTMLDivElement>(null)
   const bottom = useRef<HTMLDivElement>(null)
   const field = useRef<HTMLTextAreaElement>(null)
@@ -127,11 +116,25 @@ export function Chat() {
     }
   }
 
+  // Stop, at the reply's next safe point (the server's rule): the button says so until the reply has ended.
+  useEffect(() => { if (!busy) setStopping(false) }, [busy])
+  const stop = async () => {
+    setStopping(true)
+    setError('')
+    try {
+      await stopChat()
+    } catch (err) {
+      setStopping(false)
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   // A cleared chat starts empty. The server keeps a button's own result, which Overview and Activity list, but
   // Chat shows nothing from before the last clear (found live: a "You pressed" chip outlived Clear chat).
   const clearedAt = Math.max(0, ...events.filter((e) => e.type === 'chat_cleared').map((e) => e.seq))
   const visible = events.filter((e) => e.seq > clearedAt)
   const asked = visible.filter((e) => e.type === 'user_message').length
+  const talked = visible.some((e) => CONVERSATION.has(e.type) || (e.type === 'tool_finished' && e.origin !== 'button'))
   const canClear = connected && !busy && pending.length === 0
 
   const doClear = async () => {
@@ -154,20 +157,31 @@ export function Chat() {
     }
   }
 
-  // Consecutive tool calls read as one cluster of chips, not a column of rows.
+  // A reply's tool calls fold into one line; so do the changes made with buttons on other pages, which the model is
+  // told about but which are not the conversation. One group per run of the same kind.
+  const steps = pairSteps(visible)
   const rows: ReactNode[] = []
-  let cluster: AssistantEvent[] = []
+  let cluster: Step[] = []
   const flush = (key: string) => {
-    if (cluster.length) rows.push(<div className="tool-cluster" key={key}>{cluster.map((e) => <ToolChip key={e.seq} event={e} />)}</div>)
+    if (cluster.length) {
+      const fromButtons = cluster[0]!.origin === 'button'
+      rows.push(fromButtons
+        ? <StepGroup key={key} steps={cluster} titles={titles} summary={cluster.length === 1 ? 'You did this on another page' : `You did ${cluster.length} things on other pages`} />
+        : <StepGroup key={key} steps={cluster} titles={titles} />)
+    }
     cluster = []
   }
   for (const event of visible) {
     switch (event.type) {
-      case 'tool_finished':
+      case 'tool_finished': {
         // Read-only button presses are status polls; they would flood the transcript.
         if (event.origin === 'button' && event.read_only) break
-        cluster.push(event)
+        const step = steps.get(event.seq)
+        if (!step) break
+        if (cluster.length && cluster[0]!.origin !== step.origin) flush(`c${event.seq}`)
+        cluster.push(step)
         break
+      }
       case 'user_message':
         flush(`c${event.seq}`)
         rows.push(<div key={event.seq} className="bubble user">{event.text}</div>)
@@ -193,6 +207,10 @@ export function Chat() {
       case 'turn_error':
         flush(`c${event.seq}`)
         rows.push(<div key={event.seq} className="chat-error" role="alert">Something went wrong: {event.error}</div>)
+        break
+      case 'turn_stopped':
+        flush(`c${event.seq}`)
+        rows.push(<p key={event.seq} className="chat-stopped muted small">You stopped this reply.</p>)
         break
       default:
         break
@@ -223,8 +241,9 @@ export function Chat() {
         </div>
       )}
       <div className="transcript" aria-live="polite" ref={scroller}>
-        {/* Empty means nothing to show, not no events: a background notice is an event too. */}
-        {rows.length === 0 && !busy && pending.length === 0 && (
+        {/* Empty means no conversation, not no events: a background notice, or a button pressed on another page,
+            is an event too, and once hid the suggestions behind four chips. */}
+        {!talked && !busy && pending.length === 0 && (
           <div className="chat-empty">
             <BrandMark size={48} />
             <h2>What can I do for you?</h2>
@@ -242,7 +261,9 @@ export function Chat() {
         {busy && pending.length === 0 && (
           <div className="msg assistant-msg">
             <span className="avatar working" aria-hidden><BrandMark size={26} /></span>
-            <div className="thinking" role="status" aria-label="Working"><i /><i /><i /></div>
+            <div className="thinking" role="status" aria-label={stopping ? 'Stopping' : 'Working'}>
+              {stopping ? <span className="small muted">Stopping…</span> : <><i /><i /><i /></>}
+            </div>
           </div>
         )}
         {pending
@@ -252,8 +273,8 @@ export function Chat() {
       </div>
 
       {!atBottom && (
-        <button className="to-latest" onClick={() => bottom.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })}>
-          Jump to latest
+        <button className="to-latest" aria-label="Jump to latest" onClick={() => bottom.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })}>
+          <IconChevron size={18} aria-hidden style={{ transform: 'rotate(90deg)' }} /><span>Jump to latest</span>
         </button>
       )}
 
@@ -280,16 +301,24 @@ export function Chat() {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKey}
-          placeholder={!connected ? 'Reconnecting…' : busy ? 'Working on the last message…' : 'Message the assistant'}
+          placeholder={!connected ? 'Reconnecting…' : busy ? 'Working…' : 'Message the assistant'}
           disabled={!connected}
           rows={1}
           aria-label="Message"
         />
-        <button className="primary send" type="submit" disabled={busy || !draft.trim() || !connected} aria-label="Send">
-          <IconSend size={18} aria-hidden />
-        </button>
+        {busy
+          ? (
+            <button className="send stop" type="button" onClick={() => void stop()} disabled={stopping} aria-label={stopping ? 'Stopping the reply' : 'Stop the reply'} title="Stop">
+              <IconStop size={16} aria-hidden />
+            </button>
+          )
+          : (
+            <button className="primary send" type="submit" disabled={!draft.trim() || !connected} aria-label="Send">
+              <IconSend size={18} aria-hidden />
+            </button>
+          )}
       </form>
-      <p className="composer-hint muted small">Enter to send · Shift+Enter for a new line · drop a recording or a markdown file to attach it</p>
+      <p className="composer-hint muted small">{busy ? 'Stop ends the reply: a step already running finishes, nothing after it starts' : 'Enter to send · Shift+Enter for a new line · drop a recording or a markdown file to attach it'}</p>
       {error && <p className="error composer-error">{error}</p>}
       {clearing && (
         <ConfirmDelete

@@ -26,6 +26,11 @@ MAX_TOKENS = 16000
 # and rebuild, clear the superseded Docs. Measured live (2026-10-15): it stopped at twelve, mid-trim.
 MAX_TOOL_ROUNDS = 30
 
+# What a stopped turn leaves in the conversation, so the next turn knows what happened: the model's own reply
+# that was never finished, and each tool it asked for that did not run.
+STOPPED_REPLY = "(The user stopped this reply.)"
+STOPPED_TOOL = "Not run: the user stopped this reply before it ran."
+
 SYSTEM_PROMPT = """\
 You coordinate a small set of local tools on the user's own machine. Each tool does one \
 thing well; you decide which to call and with what.
@@ -208,18 +213,27 @@ async def run_turn(
     context: str = "",
     gate: Gate | None = None,
     emit: EventSink = _discard,
+    stop: asyncio.Event | None = None,
 ) -> str:
     """One user request, through as many tool calls as it takes. Mutates `messages`.
 
     `gate` decides approvals; without one, a terminal prompt built from `ask` does. `emit`
     receives each step as it happens, which is how a browser watches a turn unfold.
+
+    `stop`, once set, ends the turn at the next safe point: the model's answer still on its way is
+    thrown away, and a tool not yet started is not started. A tool already running is never cut off:
+    it finishes and is audited, because stopping halfway through a change would leave it done but
+    unrecorded. Either way the conversation is left whole -- every tool call answered, the model's
+    turn closed with STOPPED_REPLY -- so the next message carries on from it.
     """
     gate = gate or terminal_gate(ask)
     client = build_client(config)
     tools = registry.anthropic_tools()
 
     for _ in range(MAX_TOOL_ROUNDS):
-        response = await asyncio.to_thread(
+        if stop is not None and stop.is_set():
+            return await _stopped(messages, emit)
+        asked = asyncio.ensure_future(asyncio.to_thread(
             client.messages.create,
             model=config.resolved_model,
             max_tokens=MAX_TOKENS,
@@ -228,7 +242,16 @@ async def run_turn(
             thinking={"type": "adaptive"},
             tools=tools,
             messages=messages,
-        )
+        ))
+        if stop is not None:
+            stopped = asyncio.ensure_future(stop.wait())
+            await asyncio.wait({asked, stopped}, return_when=asyncio.FIRST_COMPLETED)
+            stopped.cancel()
+            if not asked.done():
+                # The request's thread runs to its end on its own; what it brings back is not used.
+                asked.cancel()
+                return await _stopped(messages, emit)
+        response = await asked
 
         # The whole content list, not just the text: thinking and tool_use blocks have to
         # travel back unchanged or the next turn loses the model's own reasoning.
@@ -245,6 +268,11 @@ async def run_turn(
         results: list[dict[str, Any]] = []
         for block in response.content:
             if getattr(block, "type", None) != "tool_use":
+                continue
+
+            if stop is not None and stop.is_set():
+                results.append({"type": "tool_result", "tool_use_id": block.id,
+                                "content": STOPPED_TOOL, "is_error": True})
                 continue
 
             tool = registry.find(block.name)
@@ -274,3 +302,12 @@ async def run_turn(
     final = "I stopped after too many tool calls without reaching an answer."
     await emit({"type": "turn_done", "text": final})
     return final
+
+
+async def _stopped(messages: list[dict[str, Any]], emit: EventSink) -> str:
+    """Close the model's turn as stopped. The conversation always ends on the user's side here (their
+    message, or the results of the tools just run), so one short reply keeps it alternating as the API
+    requires, and tells the model next time that it was cut short rather than leaving it to guess."""
+    messages.append({"role": "assistant", "content": [{"type": "text", "text": STOPPED_REPLY}]})
+    await emit({"type": "turn_stopped"})
+    return STOPPED_REPLY

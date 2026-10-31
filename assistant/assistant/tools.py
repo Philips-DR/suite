@@ -115,6 +115,9 @@ class RemoteTool:
     input_schema: dict[str, Any]
     read_only: bool
     preview: ApprovalPreview | None = None
+    # What the tool calls itself for a person ("Write a new draft"), for the interface; the model is
+    # shown the name and description only.
+    title: str = ""
 
     def as_anthropic_tool(self) -> dict[str, Any]:
         return {
@@ -207,6 +210,7 @@ class ToolRegistry:
                     # a tool that forgot to annotate itself past the approval gate.
                     read_only=bool(annotations and annotations.read_only_hint),
                     preview=ApprovalPreview.parse(tool.meta),
+                    title=tool.title or (annotations.title if annotations and annotations.title else "") or "",
                 )
             )
         return out
