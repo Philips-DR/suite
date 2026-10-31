@@ -136,6 +136,21 @@ covers files the way it covers `bcc`.
   files back from Gmail and its confirmation equalled `draft_new`'s, so Gmail held the same bytes. The draft
   was discarded through the gate. The attachment shape the stand-in uses is now an observed one.
 
+## For the Mail page (2026-10-30)
+
+- **`status` says when the last sync finished (`synced_at`)**, written once every label's pass is done, never
+  part-way. The newest message is not that: a quiet day brings no mail, and the page said "newest 6 h ago" of a
+  mailbox the schedule had synced minutes before.
+- **`list_drafts` says who each draft is to, its subject, first words and when it changed**, read as `metadata`
+  (headers and Gmail's snippet), so a listing never fetches a file: a job-application draft carries 1.3 MB of
+  them. It is one read per draft. A draft deleted between the listing and its read is left out, not an error.
+- **The page's own find, not this tool's:** an HTML newsletter's text is mostly empty lines (one was 431 of 462,
+  122 in a row). The page folds them when it shows a message (`web/src/components/mailText.ts`); the stored text
+  is untouched, so a model reading the thread sees what was synced.
+- **Run for real:** the page saved a draft to the user's own address through `draft_new`, showed it whole at the
+  first press of Send, was cancelled, opened it from Drafts and discarded it through the gate; the audit log has
+  `draft_new` and `discard_draft` and no `send_draft`, Gmail held its 6 drafts again, and a sync found nothing sent.
+
 ## Approval previews
 
 `send_draft` and `discard_draft` declare, in MCP's `_meta`, that a caller should show

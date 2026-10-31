@@ -31,27 +31,16 @@
   height: max(440px, var(--mbox-h));
 }
 
-/* ---- the mailbox card --------------------------------------------------------------------------------- */
+/* ---- the mailbox card: how full, how fresh, and Sync ----------------------------------------------------- */
 
-.mbox-head { flex: none; display: flex; flex-direction: column; gap: 14px; padding: 16px; container: mhead / inline-size; }
+.mbox-head { flex: none; display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; }
 .mbox-head-top { display: flex; align-items: center; gap: 12px; }
 .mbox-head-top .navtile { color: var(--ink); }
 .mbox-head-title { flex: 1; min-width: 0; }
 .mbox-head-title h2 { font-size: var(--fs-md); }
-.mbox-head-title .sub { color: var(--ink-3); font-size: var(--fs-xs); }
-.mbox-stats { margin: 0; display: flex; justify-content: space-between; gap: 8px 12px; }
-.mbox-stats dt { color: var(--ink-3); font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; }
-.mbox-stats dd { margin: 2px 0 0; font-size: 1.25rem; font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; line-height: 1.2; white-space: nowrap; }
-.mbox-skel-num { display: block; width: 3.2ch; height: 1.25rem; }
-.mbox-newest { margin: -6px 0 0; }
-.mbox-volume { margin: 0; display: flex; align-items: center; gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
-.mbox-volume .spark { flex: none; }
-.mbox-volume figcaption { flex: 1; min-width: 0; line-height: 1.35; }
-/* a narrow side column keeps the figures and drops the explanations */
-@container mhead (max-width: 300px) {
-  .mbox-head-title .sub { display: none; }
-  .mbox-volume { flex-direction: column; align-items: flex-start; gap: 8px; }
-}
+.mbox-head-title .sub { color: var(--ink-3); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }
+.mbox-head-top > button { flex: none; }
+.mbox-skel-line { display: block; width: 14ch; height: 0.8rem; margin-top: 3px; }
 
 .mbox-note {
   display: flex;
@@ -73,12 +62,19 @@
 /* ---- the list ----------------------------------------------------------------------------------------- */
 
 .mbox-listcard { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
-.mbox-searchbar { flex: none; padding: 14px 14px 6px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.mbox-searchbar { flex: none; display: flex; flex-direction: column; gap: 10px; padding: 14px 14px 6px; background: var(--surface); border-bottom: 1px solid var(--line); }
+/* Inbox or Drafts, and New email: one row while it fits, the button under the switch when not */
+.mbox-tabs { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.mbox-tabs .seg button { min-height: 36px; }
+.mbox-tabs .seg b { font-variant-numeric: tabular-nums; }
+.mbox-new { min-height: 38px; }
+.mbox-new[aria-current='true'] { color: var(--brand); background: var(--brand-soft); border-color: var(--brand-line); }
+.mbox-listnote { padding: 14px; }
 .mbox-search { display: flex; gap: 8px; }
 .mbox-field { position: relative; flex: 1; min-width: 0; display: block; }
 .mbox-field svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--ink-3); pointer-events: none; }
 .mbox-field input { width: 100%; padding-left: 36px; }
-.mbox-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; margin-top: 4px; color: var(--ink-3); font-size: var(--fs-xs); }
+.mbox-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 30px; margin: -4px 0 0; color: var(--ink-3); font-size: var(--fs-xs); }
 .mbox-meta .ghost { min-height: 28px; padding: 0 8px; font-size: var(--fs-xs); }
 
 .mbox-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; list-style: none; margin: 0; padding: 6px 8px 8px; }
@@ -123,7 +119,10 @@
   font-variant-numeric: tabular-nums;
 }
 .mbox-item.is-on .mbox-count { background: var(--surface); }
-.mbox-item-sub .mbox-spin { flex: none; color: var(--brand); }
+.mbox-line { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--ink-3); font-size: var(--fs-xs); line-height: 1.4; overflow-wrap: anywhere; }
+.mbox-more { display: flex; justify-content: center; padding: 6px 0 2px; }
+.mbox-more button { min-height: 40px; gap: 6px; }
+.mbox-more-icon { transform: rotate(90deg); }
 
 .mbox-avatar {
   flex: none;
@@ -151,7 +150,7 @@
 
 /* ---- the conversation ----------------------------------------------------------------------------------- */
 
-.mbox-thread { display: flex; flex-direction: column; min-width: 0; padding: 0; min-height: max(440px, var(--mbox-h)); overflow: hidden; }
+.mbox-thread { container: mpane / inline-size; display: flex; flex-direction: column; min-width: 0; padding: 0; min-height: max(440px, var(--mbox-h)); overflow: hidden; }
 .mbox-thread > .empty { margin: auto; }
 .mbox-opening { padding: 28px var(--card-pad); display: flex; flex-direction: column; gap: 14px; }
 .mbox-opening .skeleton { display: block; height: 18px; }
@@ -161,6 +160,8 @@
 .mbox-thread-head { display: flex; flex-direction: column; gap: 4px; padding: 18px var(--card-pad) 14px; border-bottom: 1px solid var(--line); }
 .mbox-thread-head h2 { font-family: var(--font-display); font-size: var(--fs-xl); letter-spacing: -0.02em; overflow-wrap: anywhere; }
 .mbox-thread-head h2:focus { outline: none; }
+.mbox-thread-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.mbox-thread-facts .ghost { min-height: 32px; padding: 0 8px; margin-left: -8px; font-size: var(--fs-xs); }
 .mbox-back { display: none; align-self: flex-start; margin: -4px 0 6px -8px; padding-left: 10px; }
 
 .mbox-messages { padding: 0 var(--card-pad); }
@@ -177,6 +178,31 @@
 .mbox-body pre a { color: var(--brand); text-decoration: underline; text-underline-offset: 2px; }
 .mbox-body pre a:hover { text-decoration-thickness: 2px; }
 .mbox-body .ghost { margin: 6px 0 0 -10px; }
+.mbox-msg .mbox-fold { margin: 4px 0 0 38px; min-height: 32px; font-size: var(--fs-xs); color: var(--ink-3); }
+
+/* an earlier message folded to a line: who, when, and its first words; pressing it opens it */
+.mbox-msg-line {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 10px 0;
+  text-align: left;
+  font-weight: 400;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+}
+.mbox-msg-line:hover:not(:disabled) { background: var(--bg-2); border: 0; border-bottom: 1px solid var(--line); }
+.mbox-msg-line .mbox-avatar { width: 36px; height: 36px; font-size: var(--fs-sm); }
+.mbox-msg-line-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mbox-msg-line .mbox-subject { color: var(--ink-3); }
+
+/* a draft, read whole */
+.mbox-draft-text { margin: 18px 0 0; max-height: none; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* ---- replying: the ladder, and the one thing that cannot be undone ------------------------------------------- */
 
@@ -217,6 +243,15 @@
 
 .mbox-label { font-size: var(--fs-sm); font-weight: 650; color: var(--ink-2); }
 .mbox-reply textarea { width: 100%; min-height: 128px; background: var(--surface); }
+.mbox-field-row { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); align-items: center; gap: 10px; }
+.mbox-field-row input { width: 100%; background: var(--surface); }
+.mbox-addcc { align-self: flex-start; min-height: 32px; margin: -4px 0 -4px calc(5.5rem + 2px); font-size: var(--fs-xs); gap: 4px; }
+.mbox-compose textarea { min-height: 200px; }
+/* a narrow pane (a phone, or beside the list on a laptop) puts each label over its field */
+@container mpane (max-width: 480px) {
+  .mbox-field-row { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .mbox-addcc { margin-left: -8px; }
+}
 .mbox-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .mbox-actions .hint { flex: 1 1 200px; }
 
@@ -295,7 +330,11 @@
 
 @media (max-width: 639px) {
   .mbox-head { padding: 14px; }
-  .mbox-head-top button { min-height: 40px; }
+  .mbox-head-top button { min-height: 44px; }
+  .mbox-tabs .seg { flex: 1 1 auto; }
+  .mbox-tabs .seg button { flex: 1; min-height: 40px; }
+  .mbox-new { flex: 1 1 auto; min-height: 44px; }
+  .mbox-more button { min-height: 44px; }
   .mbox-meta .ghost { min-height: 36px; }
   .mbox-actions > button { flex: 1 1 140px; min-height: 44px; }
   .mbox-confirm-actions > button { flex: 1 1 0; min-height: 44px; }

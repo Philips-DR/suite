@@ -96,6 +96,20 @@ def test_search_finds_by_body_text(server):
     assert [m["id"] for m in found] == ["m2"]
 
 
+def test_status_says_when_the_last_sync_finished(store_path, tmp_path, monkeypatch):
+    """The newest message is not when the mailbox was last brought level: a quiet day has no new mail."""
+    from mailai import operations
+    from tests.fake_gmail import FakeGmail, message
+
+    assert operations.status(store_path).synced_at == ""
+    fake = FakeGmail([message("m9", "t9", "Hello", "Hi.", date=5000)], history_id="900")
+    monkeypatch.setattr("mailai.client.build_service", lambda credentials: fake)
+    monkeypatch.setattr(operations, "load_credentials", lambda auth: None)
+    operations.sync_mailbox(AuthConfig(credentials_path=tmp_path / "c.json", token_path=tmp_path / "t.json"),
+                            store_path, labels=["INBOX"])
+    assert operations.status(store_path).synced_at.startswith("20")
+
+
 def test_nothing_is_written_to_stdout_while_a_tool_runs(server):
     """On stdio, stdout IS the protocol stream: one stray line corrupts the session."""
     sink = io.StringIO()
@@ -231,3 +245,25 @@ def test_a_refused_file_is_an_error_and_makes_no_draft(composing_server, gmail, 
                   body="Attached.", attachments=attachments)
     assert "error" in result
     assert gmail.store == {}
+
+
+def test_drafts_are_listed_with_who_they_are_to_and_what_about(composing_server, gmail):
+    """A list of bare ids is no list a person can choose from. Read as metadata, so no file is fetched."""
+    first = gmail.add("hr@example.org", "Application", "Please find my CV attached.", thread_id="t1",
+                      files=[("cv.pdf", b"%PDF-1.4 cv", "application/pdf")])
+    gmail.add("me@example.com", "Notes", "Remember the meeting.")
+    listed = call(composing_server, "list_drafts")["drafts"]
+    assert [(d["draft_id"], d["to"], d["subject"], d["thread_id"]) for d in listed] == [
+        (first, "hr@example.org", "Application", "t1"), ("d2", "me@example.com", "Notes", "")]
+    assert listed[0]["snippet"].startswith("Please find") and listed[0]["updated"].startswith("2023")
+    assert set(gmail.formats) == {"metadata"}
+
+
+def test_a_draft_deleted_while_drafts_are_listed_is_left_out(composing_server, gmail, monkeypatch):
+    gmail.add("a@example.org", "Gone", "x")
+    kept = gmail.add("b@example.org", "Kept", "y")
+    from mailai import drafts
+
+    real = drafts.summary
+    monkeypatch.setattr(drafts, "summary", lambda service, draft_id: real(service, "nope") if draft_id == "d1" else real(service, draft_id))
+    assert [d["draft_id"] for d in call(composing_server, "list_drafts")["drafts"]] == [kept]

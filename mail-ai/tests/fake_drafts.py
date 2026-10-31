@@ -55,6 +55,7 @@ class FakeDrafts:
         self._next_blob = 1
         # How the second call behaves: "ok", "fails" (an error) or "short" (one byte missing).
         self.fetch_mode = "ok"
+        self.formats: list[str] = []  # the format each drafts.get asked for: a listing must not read files
 
     def users(self):
         return self
@@ -75,6 +76,8 @@ class FakeDrafts:
             "message": {
                 "id": f"m-{draft_id}",
                 "threadId": thread_id,
+                "snippet": body[:40],
+                "internalDate": str(1_700_000_000_000 + self._next * 60_000),
                 "payload": _payload_for(to, subject, body),
             },
         }
@@ -156,6 +159,7 @@ class _Drafts:
         return _Request(self.gmail.store[draft_id])
 
     def get(self, userId: str, id: str, format: str = "full"):  # noqa: A002, N803
+        self.gmail.formats.append(format)
         if id not in self.gmail.store:
             raise KeyError(f"no draft {id}")
         return _Request(self.gmail.store[id])

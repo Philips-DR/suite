@@ -33,6 +33,11 @@ class MailboxStatus:
     watermark: str | None
     full_sync_complete: bool
     newest: str
+    synced_at: str = ""  # when the last sync of every label finished; "" if none has
+
+
+# Written once every label's pass has finished, never part-way, so it means "level with Gmail as of then".
+SYNCED_AT = "synced_at"
 
 
 def status(store_path: Path) -> MailboxStatus:
@@ -48,6 +53,7 @@ def status(store_path: Path) -> MailboxStatus:
         watermark=db.get_state(connection, HISTORY_KEY),
         full_sync_complete=db.get_state(connection, FULL_SYNC_DONE) == "1",
         newest=_when(int(rows["newest"] or 0)),
+        synced_at=db.get_state(connection, SYNCED_AT) or "",
     )
 
 
@@ -97,6 +103,8 @@ def sync_mailbox(auth: AuthConfig, store_path: Path,
         modes[name] = result.mode
         recovered = recovered or result.recovered_gap
 
+    db.set_state(connection, SYNCED_AT, datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    connection.commit()
     return SyncReport(
         mode="+".join(sorted(set(modes.values()))) or "none",
         **totals,
@@ -292,10 +300,16 @@ def list_drafts(auth: AuthConfig, limit: int = 25) -> list[dict[str, Any]]:
     from mailai import drafts
 
     service = _compose_service(auth)
-    return [
-        {"draft_id": str(d.get("id", "")), "thread_id": str(d.get("message", {}).get("threadId", ""))}
-        for d in drafts.list_all(service, limit=limit)
-    ]
+    listed = []
+    for d in drafts.list_all(service, limit=limit):
+        draft_id = str(d.get("id", ""))
+        try:
+            about = drafts.summary(service, draft_id)
+        except Exception:  # deleted between the listing and this read: it is not a draft any more
+            continue
+        listed.append({"draft_id": draft_id, "thread_id": str(d.get("message", {}).get("threadId", "")),
+                       **about, "updated": _when(int(about.pop("internal_date") or 0))})
+    return listed
 
 
 def discard_draft(auth: AuthConfig, draft_id: str) -> dict[str, str]:

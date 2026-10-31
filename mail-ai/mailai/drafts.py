@@ -63,6 +63,14 @@ def read(service, draft_id: str) -> Composition:
     return draft_body(resource, fetch_attachment=attachment_fetcher(service, resource))
 
 
+def summary(service, draft_id: str) -> dict[str, str]:
+    """Who a draft is to and what it is about, without its body's files: headers and Gmail's snippet only."""
+    message = service.users().drafts().get(userId="me", id=draft_id, format="metadata").execute().get("message", {})
+    headers = {h.get("name", "").lower(): h.get("value", "") for h in message.get("payload", {}).get("headers", [])}
+    return {"to": headers.get("to", ""), "cc": headers.get("cc", ""), "subject": headers.get("subject", ""),
+            "snippet": str(message.get("snippet", "")), "internal_date": str(message.get("internalDate", "") or "")}
+
+
 def list_all(service, limit: int = 25) -> list[dict[str, Any]]:
     response = service.users().drafts().list(userId="me", maxResults=limit).execute()
     return list(response.get("drafts", []) or [])

@@ -112,9 +112,9 @@ def create_mail_ai_server(paths: ServerPaths, auth: AuthConfig,
         name="status",
         title="What the local mailbox holds",
         description=(
-            "How many messages and threads are stored, how recent they are, and whether a "
-            "sync watermark exists. Reads the local file only — no network, no "
-            "credentials. The safe thing to check first."
+            "How many messages and threads are stored, how recent they are, whether a "
+            "sync watermark exists, and when the last sync finished (`synced_at`). Reads the "
+            "local file only — no network, no credentials. The safe thing to check first."
         ),
         annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
     )
@@ -246,7 +246,10 @@ def create_mail_ai_server(paths: ServerPaths, auth: AuthConfig,
     @server.tool(
         name="list_drafts",
         title="List drafts",
-        description="Draft ids and the threads they belong to. Sends nothing.",
+        description=(
+            "The drafts in Gmail: each one's id, who it is to, its subject, its first words and when it "
+            "was last changed, and the thread it belongs to. Sends nothing."
+        ),
         annotations=ToolAnnotations(read_only_hint=True, open_world_hint=True),
     )
     def _list_drafts(limit: int = 25) -> dict:
