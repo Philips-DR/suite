@@ -118,19 +118,26 @@ def write_notes(out_path: Path, notes: VerifiedNotes, title: str, source: str,
 
 MINUTES_VERSION = 1
 
-# Phone and recorder apps name files by when they started: 20260812_102457.m4a.
-_RECORDED_AT = re.compile(r"(\d{4})(\d{2})(\d{2})[_-](\d{2})(\d{2})(\d{2})")
+# Phone and recorder apps name files by when they started: 20260812_102457.m4a. meet-ai's own
+# recorder writes 2026-09-28-000036.flac (capture.py), which the first pattern never matched.
+# A six-digit date (260915_140601) is not read: it could be year-first or day-first.
+_RECORDED_AT = (
+    re.compile(r"(\d{4})(\d{2})(\d{2})[_-](\d{2})(\d{2})(\d{2})"),
+    re.compile(r"(\d{4})-(\d{2})-(\d{2})-(\d{2})(\d{2})(\d{2})"),
+)
 
 
 def recorded_at(source: str) -> dt.datetime | None:
     """When the recording began, if its file name says so. Never guessed otherwise."""
-    match = _RECORDED_AT.search(Path(source).stem)
-    if not match:
-        return None
-    try:
-        return dt.datetime(*(int(part) for part in match.groups()))
-    except ValueError:
-        return None
+    for pattern in _RECORDED_AT:
+        match = pattern.search(Path(source).stem)
+        if not match:
+            continue
+        try:
+            return dt.datetime(*(int(part) for part in match.groups()))
+        except ValueError:
+            return None
+    return None
 
 
 def _titled(kind: str, meeting: str, source: str) -> str:

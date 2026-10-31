@@ -1,14 +1,15 @@
-// Meetings: a master-detail layout. The sidebar lists every transcript (and any live recording or
-// transcription); the main area shows the detail of one meeting, or a flow for recording and
-// transcribing a new one. The same tools the model calls in chat, called directly — no model,
+// Meetings: a master-detail layout. The sidebar lists every meeting by what is known of it (its name, date, length
+// and speakers, never just a file name), any live recording or transcription, and recordings not transcribed yet;
+// the main area shows the detail of one meeting, or a flow for recording and transcribing a new one. The same tools the model calls in chat, called directly — no model,
 // no waiting on one. The polls live in the root: recorder every 2 s, transcription every 5 s,
 // recordings every 15 s, uploads every 30 s.
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ComponentProps, type CSSProperties, type ReactElement, type ReactNode } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { AUDIO_EXTS, deleteUpload, getUploads, isAudio, uploadAudio, type Uploads } from '../api'
 import { canRecordInBrowser, useBrowserRecorder } from '../useBrowserRecorder'
 import { call } from '../call'
-import { toolColor } from '../charts/palette'
 import { Ring } from '../charts/Ring'
 import { ShareBar } from '../charts/ShareBar'
 import { useCountUp } from '../charts/useWidth'
@@ -23,6 +24,8 @@ import {
 } from '../ui/icons'
 import { ago } from '../ui/time'
 import { clock, fileName, usePoll } from '../usePoll'
+import { Builds, type BuiltDoc } from './builtDoc'
+import { audioStem, meetingFacts, meetingName, recordedText, stemOf, writeupTitle, type MeetingFacts } from './meetingText'
 import { PickFiles, UploadProgress } from './Upload'
 import '../styles/panels/meetings.css'
 
@@ -50,9 +53,18 @@ interface Job {
   detail: string
 }
 
+interface Transcript extends MeetingFacts {
+  markdown: string
+  timeline: string | null
+  notes: string | null
+  minutes?: string | null
+}
+
 interface Recordings {
   audio: string[]
-  transcripts: { markdown: string; timeline: string | null; notes: string | null; minutes?: string | null }[]
+  transcripts: Transcript[]
+  /** Audio in meet-ai's own folder that no transcript was made from. */
+  untranscribed?: { path: string; recorded: string | null }[]
 }
 
 interface Poll<T> {
@@ -73,8 +85,6 @@ function jumpTo(id: string) {
   el.scrollIntoView({ behavior: calm ? 'auto' : 'smooth', block: 'start' })
   el.focus({ preventScroll: true })
 }
-
-const isWebAddress = (url: string) => /^https?:\/\//i.test(url)
 
 function Problem({ children }: { children: ReactNode }) {
   return (
@@ -398,6 +408,10 @@ function Transcriber({ job, status, recordings, uploads, audio, setAudio, onWrit
     }
   }
 
+  // transcribe.py writes <audio's name>.md and skips one already there unless forced: without this, transcribing a
+  // recording again "finished" having made nothing. Named here, so replacing it is never a surprise.
+  const earlier = recordings.data?.transcripts.find((t) => stemOf(t.markdown) === audioStem(audio.trim()))
+
   const start = async () => {
     setBusy(true)
     setError('')
@@ -405,6 +419,7 @@ function Transcriber({ job, status, recordings, uploads, audio, setAudio, onWrit
       await call('meet_ai__start_transcription', {
         audio,
         ...(speakers ? { diarize: true, speakers: count } : {}),
+        ...(earlier ? { force: true } : {}),
       })
       await status.reload()
     } catch (e) {
@@ -559,10 +574,19 @@ function Transcriber({ job, status, recordings, uploads, audio, setAudio, onWrit
               )}
             </div>
             {speakers && <p className="hint">Give the real headcount — guessing over-splits badly.</p>}
+            {earlier && (
+              <p className="mt-note warn">
+                <IconAlert size={16} aria-hidden />
+                <span>
+                  This recording was transcribed before, as “{meetingName(earlier)}”. Transcribing it again replaces that
+                  transcript{earlier.notes || earlier.minutes ? '; the notes and minutes already written from it stay as they are' : ''}.
+                </span>
+              </p>
+            )}
 
             <button className="primary mt-big" disabled={busy || !audio.trim()} onClick={() => void start()}>
               <IconActivity size={17} aria-hidden />
-              {busy ? 'Starting…' : 'Transcribe'}
+              {busy ? 'Starting…' : earlier ? 'Transcribe again' : 'Transcribe'}
             </button>
           </div>
         )}
@@ -663,6 +687,40 @@ function TranscriptReader({ path }: { path: string }) {
   )
 }
 
+// ---- notes and minutes, read on the page -----------------------------------------------------------
+
+// Their headings sit under the meeting (h2) and the Notes or Minutes card (h3), so they start at h4: a page whose
+// headings jump from h3 back to h1 reads, to a screen reader, as a new page in the middle of this one.
+const shifted = (Tag: 'h4' | 'h5' | 'h6') =>
+  function Heading({ node: _node, ...rest }: ComponentProps<'h1'> & { node?: unknown }) { return <Tag {...rest} /> }
+const UNDER_THE_CARD = { h1: shifted('h4'), h2: shifted('h5'), h3: shifted('h6'), h4: shifted('h6'), h5: shifted('h6'), h6: shifted('h6') }
+
+function WrittenReader({ path, label }: { path: string; label: string }) {
+  const [text, setText] = useState<string | null>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    call<{ text: string }>('meet_ai__read_written', { path })
+      .then((r) => setText(r.text))
+      .catch((e: unknown) => setError(messageOf(e)))
+  }, [path])
+
+  return (
+    <div className="mt-written" tabIndex={0} aria-label={label}>
+      {error && <Problem>{error}</Problem>}
+      {text === null && !error && (
+        <div aria-busy="true">
+          <div className="skeleton" />
+          <div className="skeleton" />
+        </div>
+      )}
+      {text !== null && (
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={UNDER_THE_CARD}>{text}</ReactMarkdown>
+      )}
+    </div>
+  )
+}
+
 // ---- write-up types and result display -------------------------------------------------------------
 
 interface Preview { segments: number; words: number; approx_tokens: number }
@@ -674,16 +732,10 @@ interface Written {
   summary: string
 }
 
-interface BuiltDoc {
-  url: string
-  title: string
-  residue: string[]
-}
-
 type Kind = 'notes' | 'minutes'
 type WrittenResult = Written & Record<string, unknown>
 
-const KINDS: { kind: Kind; label: string; tool: string; working: string }[] = [
+const KINDS: { kind: Kind; label: 'Notes' | 'Minutes'; tool: string; working: string }[] = [
   { kind: 'notes', label: 'Notes', tool: 'meet_ai__generate_notes', working: 'Writing notes…' },
   { kind: 'minutes', label: 'Minutes', tool: 'meet_ai__generate_minutes', working: 'Writing minutes…' },
 ]
@@ -741,24 +793,25 @@ function Result({ kind, r }: { kind: Kind; r: WrittenResult }) {
 // ---- meeting card (one row in the sidebar list) ----------------------------------------------------
 
 function MeetingCard({ transcript, selected, onSelect }: {
-  transcript: Recordings['transcripts'][0]
+  transcript: Transcript
   selected: boolean
   onSelect: () => void
 }) {
-  const name = fileName(transcript.markdown)
+  const facts = meetingFacts(transcript)
   const hasTimeline = Boolean(transcript.timeline)
   const hasNotes = Boolean(transcript.notes)
   const hasMinutes = Boolean(transcript.minutes)
 
   return (
-    <li role="option" aria-selected={selected}>
-      <button type="button" className={`mt-mcard${selected ? ' is-selected' : ''}`} onClick={onSelect}>
-        <strong className="mt-mcard-title">{name}</strong>
+    <li>
+      <button type="button" className={`mt-mcard${selected ? ' is-selected' : ''}`} aria-current={selected ? 'true' : undefined} onClick={onSelect}>
+        <strong className="mt-mcard-title">{meetingName(transcript)}</strong>
+        {facts && <span className="mt-mcard-meta">{facts}</span>}
         <div className="mt-mcard-chips">
           {hasNotes && <span className="badge ok"><IconCheck size={12} strokeWidth={2.6} aria-hidden />Notes</span>}
           {hasMinutes && <span className="badge ok"><IconCheck size={12} strokeWidth={2.6} aria-hidden />Minutes</span>}
           {hasTimeline && !hasNotes && !hasMinutes && <span className="badge">Ready to write up</span>}
-          {!hasTimeline && <span className="badge warn"><IconAlert size={13} aria-hidden />No timeline</span>}
+          {!hasTimeline && <span className="badge warn"><IconAlert size={13} aria-hidden />Can't be written up</span>}
         </div>
       </button>
     </li>
@@ -767,18 +820,23 @@ function MeetingCard({ transcript, selected, onSelect }: {
 
 // ---- meeting detail (one transcript: read, write notes/minutes, build a doc) -----------------------
 
-function MeetingDetail({ transcript, onBack, busy, setBusy, recordings }: {
-  transcript: Recordings['transcripts'][0]
+function MeetingDetail({ transcript, onBack, busy, setBusy, recordings, audioFiles, onTranscribe }: {
+  transcript: Transcript
   onBack: () => void
   busy: string
   setBusy: (key: string) => void
   recordings: Poll<Recordings>
+  /** Every recording on hand, meet-ai's and uploaded: where a transcript's own audio may be found again. */
+  audioFiles: string[]
+  onTranscribe: (audio: string) => void
 }) {
   const [previews, setPreviews] = useState<Record<string, Preview>>({})
   const [results, setResults] = useState<Record<string, WrittenResult>>({})
-  const [docs, setDocs] = useState<Record<string, BuiltDoc>>({})
+  // Newest first, per written file: every Doc built from it while the page was open.
+  const [docs, setDocs] = useState<Record<string, BuiltDoc[]>>({})
   const [error, setError] = useState('')
   const [reading, setReading] = useState(false)
+  const [readingKind, setReadingKind] = useState<Kind | null>(null)
   const tools = useAppState().tools
   const timeline = transcript.timeline ?? ''
   const kinds = KINDS.filter((k) => tools.has(k.tool))
@@ -799,18 +857,23 @@ function MeetingDetail({ transcript, onBack, busy, setBusy, recordings }: {
 
   const write = (kind: (typeof KINDS)[number]) =>
     run(`${kind.kind}:${timeline}`, async () => {
+      if (readingKind === kind.kind) setReadingKind(null)
       const r = await call<WrittenResult>(kind.tool, { timeline })
       setResults((all) => ({ ...all, [`${kind.kind}:${timeline}`]: r }))
       await recordings.reload()
     })
 
-  const makeDoc = (path: string) =>
+  // Named for the meeting, as meet-ai names its own write-ups: not for the file, and not "20260812_102457 — notes".
+  const makeDoc = (path: string, label: 'Notes' | 'Minutes') =>
     run(`doc:${path}`, async () => {
-      const built = await call<BuiltDoc>('docu_ai__build', { path })
-      setDocs((all) => ({ ...all, [path]: built }))
+      const built = await call<Omit<BuiltDoc, 'at' | 'limit'>>('docu_ai__build', { path, title: writeupTitle(label, transcript) })
+      setDocs((all) => ({ ...all, [path]: [{ ...built, at: Date.now(), limit: 0 }, ...(all[path] ?? [])] }))
     })
 
   const p = previews[timeline]
+  const facts = meetingFacts(transcript)
+  // The recording this transcript was made from, if it is still here to transcribe again.
+  const ownAudio = audioFiles.find((a) => fileName(a) === transcript.source)
 
   return (
     <div className="panel mt-detail">
@@ -820,7 +883,7 @@ function MeetingDetail({ transcript, onBack, busy, setBusy, recordings }: {
       </button>
 
       <div className="card">
-        <CardHead icon={IconDocuments} tool="meet-ai" title={fileName(transcript.markdown)} />
+        <CardHead icon={IconDocuments} tool="meet-ai" title={meetingName(transcript)} sub={facts || undefined} />
 
         <div className="mt-mcard-chips" style={{ marginTop: -4 }}>
           {transcript.notes && <span className="badge ok"><IconCheck size={12} strokeWidth={2.6} aria-hidden />Notes</span>}
@@ -853,10 +916,18 @@ function MeetingDetail({ transcript, onBack, busy, setBusy, recordings }: {
       </div>
 
       {!timeline && (
-        <p className="mt-note warn">
+        <div className="mt-note warn mt-notimeline">
           <IconAlert size={16} aria-hidden />
-          <span>This transcript has no timeline, so notes and minutes cannot be made from it.</span>
-        </p>
+          <div>
+            <p>
+              This meeting was transcribed before meet-ai kept a timeline, the record of when each line was said that every
+              point in notes and minutes is checked against. So they can't be written from it. Its transcript can still be read.
+            </p>
+            {ownAudio
+              ? <button type="button" onClick={() => onTranscribe(ownAudio)}>Transcribe it again…</button>
+              : <p className="small">Transcribing its recording{transcript.source ? `, ${transcript.source},` : ''} again makes one; the recording is not here.</p>}
+          </div>
+        </div>
       )}
 
       {timeline && kinds.length > 0 && (
@@ -865,7 +936,7 @@ function MeetingDetail({ transcript, onBack, busy, setBusy, recordings }: {
             const key = `${k.kind}:${timeline}`
             const r = results[key]
             const path = r?.markdown ?? (k.kind === 'notes' ? transcript.notes : transcript.minutes) ?? ''
-            const doc = path ? docs[path] : undefined
+            const builds = path ? docs[path] ?? [] : []
             return (
               <div key={k.kind} className="card mt-out">
                 <div className="mt-out-head">
@@ -874,8 +945,6 @@ function MeetingDetail({ transcript, onBack, busy, setBusy, recordings }: {
                     ? <span className="badge ok"><IconCheck size={13} strokeWidth={2.6} aria-hidden />written</span>
                     : <span className="badge">not written yet</span>}
                 </div>
-                {path && <p className="mt-file muted small">{fileName(path)}</p>}
-
                 {r && <Result kind={k.kind} r={r} />}
                 {busy === key && (
                   <p className="mt-working" role="status">
@@ -884,37 +953,26 @@ function MeetingDetail({ transcript, onBack, busy, setBusy, recordings }: {
                   </p>
                 )}
 
-                <div className="row">
-                  <button className={path ? '' : 'primary'} disabled={busy !== ''} onClick={() => void write(k)}>
+                <div className="row mt-out-actions">
+                  {path && tools.has('meet_ai__read_written') && (
+                    <button aria-expanded={readingKind === k.kind} onClick={() => setReadingKind(readingKind === k.kind ? null : k.kind)}>
+                      {readingKind === k.kind ? 'Close' : `Read the ${k.kind}`}
+                    </button>
+                  )}
+                  {path && (
+                    <button className="primary" disabled={busy !== ''} onClick={() => void makeDoc(path, k.label)}>
+                      <IconDocuments size={16} aria-hidden />
+                      {busy === `doc:${path}` ? 'Building the Doc…' : builds.length ? 'Build the Doc again' : 'Make a Google Doc'}
+                    </button>
+                  )}
+                  <button className={path ? 'ghost' : 'primary'} disabled={busy !== ''} onClick={() => void write(k)}>
                     <IconSpark size={16} aria-hidden />
                     {busy === key ? k.working : path ? 'Write again' : `Write ${k.kind}`}
                   </button>
-                  {path && (
-                    <button className="primary" disabled={busy !== ''} onClick={() => void makeDoc(path)}>
-                      <IconDocuments size={16} aria-hidden />
-                      {busy === `doc:${path}` ? 'Building the Doc…' : 'Make a Google Doc'}
-                    </button>
-                  )}
                 </div>
 
-                {doc && (
-                  <div className="mt-doc">
-                    <span className="navtile" style={{ '--tile': toolColor('docu-ai') } as CSSProperties}>
-                      <IconDocuments size={16} strokeWidth={2} aria-hidden />
-                    </span>
-                    <div>
-                      {isWebAddress(doc.url)
-                        ? <a href={doc.url} target="_blank" rel="noreferrer">Open "{doc.title}" in Google Docs</a>
-                        : <span>"{doc.title}" was built in Google Docs.</span>}
-                      {doc.residue.length > 0 && (
-                        <p className="mt-note warn">
-                          <IconAlert size={16} aria-hidden />
-                          <span>markdown residue: {doc.residue.join('; ')}</span>
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
+                {path && readingKind === k.kind && <WrittenReader path={path} label={k.label} />}
+                <Builds builds={builds} onBinned={() => undefined} />
               </div>
             )
           })}
@@ -934,6 +992,19 @@ function MeetingDetail({ transcript, onBack, busy, setBusy, recordings }: {
 // ---- the panel -------------------------------------------------------------------------------------
 
 const HAS_BROWSER_MIC = canRecordInBrowser()
+// Where the list and the meeting sit side by side (meetings.css): the one width rule this file needs to know.
+const SIDE_BY_SIDE = '(min-width: 820px)'
+
+function useWide(): boolean {
+  const [wide, setWide] = useState(() => window.matchMedia(SIDE_BY_SIDE).matches)
+  useEffect(() => {
+    const query = window.matchMedia(SIDE_BY_SIDE)
+    const changed = () => setWide(query.matches)
+    query.addEventListener('change', changed)
+    return () => query.removeEventListener('change', changed)
+  }, [])
+  return wide
+}
 
 export function Meetings() {
   const [view, setView] = useState<'list' | 'new' | 'detail'>('list')
@@ -982,27 +1053,46 @@ export function Meetings() {
     void reloadUploads()
   }, [reloadUploads])
 
-  const selectMeeting = useCallback((timeline: string) => {
-    setSelected(timeline)
+  // A meeting is chosen by its transcript or its timeline, whichever the caller has: a transcript from before
+  // timelines has none, and choosing by timeline alone left those two on "Loading…" for ever.
+  const selectMeeting = useCallback((key: string) => {
+    setSelected(key)
     setView('detail')
   }, [])
 
   const goNew = useCallback(() => setView('new'), [])
   const goList = useCallback(() => { setView('list'); setSelected('') }, [])
+  const transcribe = useCallback((path: string) => { setAudio(path); setSelected(''); setView('new') }, [])
 
-  const selectedTranscript = transcripts.find((t) => t.timeline === selected)
+  const isSelected = (t: Transcript) => selected !== '' && (t.markdown === selected || t.timeline === selected)
+  const selectedTranscript = transcripts.find(isSelected)
   const isRecording = session?.state === 'recording'
   const isOrphaned = session?.state === 'orphaned'
   const isTranscribing = job?.state === 'running'
-  const reversed = [...transcripts].reverse()
+  const reversed = [...transcripts].sort((a, b) => (b.recorded ?? '').localeCompare(a.recorded ?? ''))
+  // Recordings never transcribed: meet-ai's own, and uploads no transcript was made from (one is named for its audio).
+  const stems = new Set(transcripts.map((t) => stemOf(t.markdown)))
+  const pending = [
+    ...(recordings.data?.untranscribed ?? []).map((a) => ({ path: a.path, name: recordedText(a.recorded) || audioStem(a.path) })),
+    ...(uploads.data?.audio ?? []).filter((a) => !stems.has(audioStem(a.path))).map((a) => ({ path: a.path, name: audioStem(a.name) })),
+  ]
+  const audioFiles = [...(recordings.data?.audio ?? []), ...(uploads.data?.audio ?? []).map((a) => a.path)]
+
+  // Side by side, the newest meeting opens by itself rather than leaving half the page empty; on a phone the list comes first.
+  const wide = useWide()
+  const newest = reversed[0]?.markdown ?? ''
+  useEffect(() => {
+    if (wide && view === 'list' && !selected && newest) selectMeeting(newest)
+  }, [wide, view, selected, newest, selectMeeting])
 
   return (
     <div className="mt" data-view={view}>
       {/* ---- sidebar: meeting list ---- */}
       <div className="mt-sidebar">
         <div className="mt-list-head">
+          <span className="muted small">{transcripts.length ? `${transcripts.length} meeting${transcripts.length === 1 ? '' : 's'}` : ''}</span>
           <button type="button" className="primary mt-new-btn" onClick={goNew}>
-            + New
+            New meeting
           </button>
         </div>
 
@@ -1032,13 +1122,13 @@ export function Meetings() {
         )}
 
         {reversed.length > 0 ? (
-          <ul className="mt-meetings" role="listbox" aria-label="Meetings">
+          <ul className="mt-meetings" aria-label="Meetings">
             {reversed.map((t) => (
               <MeetingCard
                 key={t.markdown}
                 transcript={t}
-                selected={selected === t.timeline}
-                onSelect={() => t.timeline ? selectMeeting(t.timeline) : selectMeeting(t.markdown)}
+                selected={isSelected(t)}
+                onSelect={() => selectMeeting(t.markdown)}
               />
             ))}
           </ul>
@@ -1049,6 +1139,23 @@ export function Meetings() {
             Record a meeting or upload audio. Transcribe it, then generate notes, minutes, and a Google Doc.
           </Empty>
         ) : null}
+
+        {pending.length > 0 && (
+          <section className="mt-pending" aria-label="Recordings not transcribed yet">
+            <h2 className="mt-label">Not transcribed yet</h2>
+            <ul className="mt-meetings">
+              {pending.map((a) => (
+                <li key={a.path} className="mt-mcard is-pending">
+                  <span className="mt-pending-text">
+                    <strong className="mt-mcard-title">{a.name}</strong>
+                    <span className="mt-mcard-meta">{fileName(a.path)}</span>
+                  </span>
+                  <button type="button" disabled={isTranscribing} onClick={() => transcribe(a.path)} aria-label={`Transcribe ${a.name}`}>Transcribe…</button>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
 
       {/* ---- main: detail or new meeting ---- */}
@@ -1087,6 +1194,8 @@ export function Meetings() {
             busy={busy}
             setBusy={setBusy}
             recordings={recordings}
+            audioFiles={audioFiles}
+            onTranscribe={transcribe}
           />
         ) : view === 'detail' && !selectedTranscript ? (
           <div className="panel mt-detail">

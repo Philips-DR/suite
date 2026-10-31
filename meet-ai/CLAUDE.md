@@ -263,6 +263,31 @@ for the cases a dictionary genuinely cannot reach.
 
 Correction may change the text inside a span. It may **never** move a span boundary.
 
+## For the Meetings page (2026-10-31)
+
+The page showed every meeting by its file name (`20260812_102457.md` for a two-hour members' meeting) and could not
+open the two transcribed before timelines existed. What changed here, all of it read from what is already on disk:
+
+- **`list_recordings` says what is known of each meeting**: `source`, `duration_seconds` and `speakers` from the
+  transcript's own header (only its first 4 KB is read: the list is polled), `recorded` from the recording's file name
+  (`recorded_at`), and `meeting` from the minutes' or notes' JSON, which holds a name only when its quote resolved. Each
+  is null when nothing says; a header never closed is not a header. `untranscribed` lists audio no transcript names as
+  its source (or, for a transcript older than headers, by name).
+- **`recorded_at` reads meet-ai's own recorder's names** (`2026-09-28-000036`, from `capture.py`), which it never did,
+  so minutes of a meeting recorded here fell back to the file name. A six-digit date (`260915_140601`) is still not
+  read: year-first and day-first are both valid dates.
+- **`read_written`** returns notes or minutes as markdown without their header, read-only, and only a `.notes.md` or
+  `.minutes.md` directly in the transcript folder, after following links (a link out of the folder is refused).
+- **`read_transcript` reads a transcript with no timeline from its markdown** (`timeline: null`), using the stamps
+  transcribe.py wrote into it (`**Speaker 1** *[00:00:01]*`, or `**[00:00:01]** text`), into the same paragraphs.
+  No lexicon is applied (it works on segments). Notes and minutes still cannot be made from one.
+- **Transcribing a recording again needs `force`.** transcribe.py skips audio whose `<name>.md` exists, so the job
+  "finished" having made nothing. The page now names the transcript it would replace and passes `force` only then.
+- **Run for real (2026-10-31):** the real five transcripts listed with their facts (the members' meeting as "Third
+  quarter meeting, Akra Tema branch", Wed 12 Aug 2026 10:24, 2 h 05 min); the two old ones read (658 and 141
+  paragraphs); the minutes and notes read on the page; the minutes built into a Google Doc twice through the page,
+  titled as minutes are, 4 pages, both moved to the bin after; the user's three earlier Docs of the same name untouched.
+
 ## Testing
 
 No model, no audio, no network — ever. `requirements-dev.txt` pulls in nothing heavier than pytest.

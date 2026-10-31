@@ -31,6 +31,7 @@ from meetnotes.operations import (
     preview_minutes,
     preview_notes,
     read_transcript,
+    read_written,
     recording_status,
     start_recording,
     start_transcription,
@@ -74,7 +75,11 @@ def create_meet_ai_server(paths: ServerPaths, config: ModelConfig) -> MCPServer:
         description=(
             "Show what audio files and transcripts are on disk, and for each transcript "
             "whether a timeline sits beside it. A transcript with no timeline cannot have "
-            "notes made from it and must be re-transcribed first."
+            "notes made from it and must be re-transcribed first. Each transcript also says "
+            "what is known of its meeting: `recorded` (from the recording's file name, or null), "
+            "`duration_seconds` and `speakers` (from the transcript's header), and `meeting` (its "
+            "name, only as notes or minutes verified it). `untranscribed` lists the audio that "
+            "no transcript was made from."
         ),
         annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
     )
@@ -82,6 +87,26 @@ def create_meet_ai_server(paths: ServerPaths, config: ModelConfig) -> MCPServer:
         try:
             return as_dict(list_recordings(paths.audio_dir, paths.transcript_dir))
         except OperationError as error:
+            return _failed(error)
+
+    @server.tool(
+        name="read_written",
+        title="Read notes or minutes",
+        description=(
+            "Return the notes or minutes meet-ai wrote for a meeting, as markdown without the "
+            "file's header. Pass the .notes.md or .minutes.md path that list_recordings gives, "
+            "or its name in the transcript folder. Every point in them was checked against the "
+            "transcript when they were written. Reads only."
+        ),
+        annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+    )
+    def _read_written(path: str) -> dict:
+        target = Path(path)
+        if not target.is_absolute():
+            target = paths.transcript_dir / target
+        try:
+            return as_dict(read_written(target, paths.transcript_dir))
+        except (OperationError, OSError, ValueError) as error:
             return _failed(error)
 
     @server.tool(
@@ -95,7 +120,9 @@ def create_meet_ai_server(paths: ServerPaths, config: ModelConfig) -> MCPServer:
             "start=end for the rest. Use it to answer questions about a meeting or draft "
             "something from it. What you write from it is NOT checked against the "
             "transcript: for notes or minutes somebody will circulate, use generate_notes "
-            "or generate_minutes, which drop anything they cannot find verbatim. Reads only."
+            "or generate_minutes, which drop anything they cannot find verbatim. A transcript "
+            "written before timelines existed is read from its markdown (timeline: null), with "
+            "the stamps written into it; notes and minutes cannot be made from one. Reads only."
         ),
         annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
     )

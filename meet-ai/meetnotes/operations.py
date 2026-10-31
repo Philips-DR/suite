@@ -15,12 +15,14 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from meetnotes.client import ModelConfig
 from meetnotes.lexicon import apply_lexicon, load_lexicon
-from meetnotes.render import minutes_title, notes_title, write_minutes, write_notes
+from meetnotes.render import minutes_title, notes_title, recorded_at, write_minutes, write_notes
 from meetnotes.spans import TimelineIndex
 from meetnotes.timeline import load_timeline, resolve_timeline, timeline_for
 
@@ -45,12 +47,78 @@ class TranscriptEntry:
     timeline: str | None
     notes: str | None
     minutes: str | None = None
+    # What a person knows a meeting by, so a list need not show a file name (2026-10-31). Each is
+    # read from what is on disk -- the transcript's own header, the date in the recording's name,
+    # the meeting's name as the minutes verified it -- and is None when nothing says. Never guessed.
+    source: str | None = None
+    recorded: str | None = None
+    duration_seconds: float | None = None
+    speakers: int | None = None
+    meeting: str | None = None
+
+
+@dataclass(frozen=True)
+class AudioEntry:
+    path: str
+    recorded: str | None = None
 
 
 @dataclass(frozen=True)
 class Recordings:
     audio: list[str] = field(default_factory=list)
     transcripts: list[TranscriptEntry] = field(default_factory=list)
+    # Audio in the audio folder that no transcript names as its source: recorded, never transcribed.
+    untranscribed: list[AudioEntry] = field(default_factory=list)
+
+
+# The header a transcript opens with is a few short lines; a long meeting's file is 100 KB and the
+# list is asked for every few seconds, so only its start is read.
+HEADER_BYTES = 4096
+
+
+def transcript_header(md: Path) -> dict[str, str]:
+    """The `key: value` lines between a transcript's opening `---` lines, as written by
+    transcribe.py. Nothing for a file with no header, or one that cannot be read."""
+    try:
+        with md.open("r", encoding="utf-8", errors="replace") as handle:
+            head = handle.read(HEADER_BYTES)
+    except OSError:
+        return {}
+    lines = head.splitlines()
+    if not lines or lines[0].strip() != "---":
+        return {}
+    header: dict[str, str] = {}
+    for line in lines[1:]:
+        if line.strip() == "---":
+            return header
+        key, sep, value = line.partition(":")
+        if sep and key.strip():
+            header[key.strip()] = value.strip().strip('"')
+    return {}  # never closed: not a header
+
+
+def _seconds(clock: str | None) -> float | None:
+    """'02:05:10' as 7510.0; None for anything else."""
+    parts = (clock or "").split(":")
+    if len(parts) != 3 or not all(part.isdigit() for part in parts):
+        return None
+    hours, minutes, seconds = (int(part) for part in parts)
+    return float(hours * 3600 + minutes * 60 + seconds)
+
+
+def _meeting_named(written: Path) -> str | None:
+    """The meeting's name as notes or minutes recorded it -- a claim that survived the check
+    against the transcript, or nothing (render.py drops a name whose quote did not resolve)."""
+    try:
+        meeting = json.loads(written.read_text(encoding="utf-8")).get("meeting")
+    except (OSError, ValueError, AttributeError):
+        return None
+    return meeting.strip() if isinstance(meeting, str) and meeting.strip() else None
+
+
+def _when(name: str) -> str | None:
+    when = recorded_at(name)
+    return when.isoformat(timespec="minutes") if when else None
 
 
 def list_recordings(audio_dir: Path, transcript_dir: Path) -> Recordings:
@@ -74,16 +142,33 @@ def list_recordings(audio_dir: Path, transcript_dir: Path) -> Recordings:
             timeline = timeline_for(md)
             notes = md.with_suffix("").with_suffix(".notes.md")
             minutes = md.with_suffix("").with_suffix(".minutes.md")
+            header = transcript_header(md)
+            source = header.get("source") or None
+            speakers = header.get("speakers", "")
+            meeting = None
+            for written in (minutes, notes):  # x.minutes.md beside x.minutes.json, which holds the claims
+                meeting = meeting or _meeting_named(written.with_name(written.name.removesuffix(".md") + ".json"))
             transcripts.append(
                 TranscriptEntry(
                     markdown=str(md),
                     timeline=str(timeline) if timeline.exists() else None,
                     notes=str(notes) if notes.exists() else None,
                     minutes=str(minutes) if minutes.exists() else None,
+                    source=source,
+                    recorded=_when(source or md.name),
+                    duration_seconds=_seconds(header.get("duration")),
+                    speakers=int(speakers) if speakers.isdigit() else None,
+                    meeting=meeting,
                 )
             )
 
-    return Recordings(audio=audio, transcripts=transcripts)
+    # A transcript names its audio in its header; one written before headers did is matched by name.
+    named = {t.source for t in transcripts if t.source} | {Path(t.markdown).stem for t in transcripts}
+    untranscribed = [
+        AudioEntry(path=path, recorded=_when(Path(path).name))
+        for path in audio if Path(path).name not in named and Path(path).stem not in named
+    ]
+    return Recordings(audio=audio, transcripts=transcripts, untranscribed=untranscribed)
 
 
 # ---------------------------------------------------------------------------
@@ -285,7 +370,7 @@ MAX_READ_CHARS = 200_000
 
 @dataclass(frozen=True)
 class TranscriptText:
-    timeline: str
+    timeline: str | None  # None: read from the markdown, for a transcript written before timelines
     source: str
     duration: float
     start: float
@@ -323,11 +408,13 @@ def read_transcript(path: Path, start: float | None = None, end: float | None = 
     from this text is not checked against the transcript the way notes and minutes are.
     """
     timeline_path = resolve_timeline(path)
-    timeline, segments, _ = _load_segments(timeline_path, lexicon_path)
     lower = start or 0.0
     upper = end if end is not None else float("inf")
     if upper <= lower:
         raise OperationError(f"end ({end}) must be after start ({lower}).")
+    if path.suffix == ".md" and not timeline_path.exists() and path.is_file():
+        return _read_markdown_transcript(path, lower, upper)
+    timeline, segments, _ = _load_segments(timeline_path, lexicon_path)
     chosen = [s for s in segments
               if float(s.get("end", 0.0)) > lower and float(s.get("start", 0.0)) < upper]
 
@@ -355,6 +442,104 @@ def read_transcript(path: Path, start: float | None = None, end: float | None = 
         truncated=truncated,
         text="\n\n".join(kept),
     )
+
+
+# How transcribe.py wrote a paragraph's start into the markdown: `**Speaker 2** *[00:01:05]*` on a line of its
+# own when speakers were labelled, `**[00:01:05]** text` when they were not.
+_MD_SPEAKER = re.compile(r"^\*\*(Speaker \d+)\*\* \*\[(\d\d):(\d\d):(\d\d)\]\*$")
+_MD_STAMPED = re.compile(r"^\*\*\[(\d\d):(\d\d):(\d\d)\]\*\*\s*(.*)$", re.S)
+
+
+def _read_markdown_transcript(path: Path, lower: float, upper: float) -> TranscriptText:
+    """A transcript written before timelines existed, read from its markdown into the same
+    `[hh:mm:ss] Speaker N: text` paragraphs. Its stamps are the ones transcribe.py wrote into the
+    file. No lexicon is applied: corrections work on a timeline's segments, and this has none."""
+    header = transcript_header(path)
+    text = path.read_text(encoding="utf-8")
+    if header:
+        lines = text.splitlines(keepends=True)
+        closing = next(i for i, line in enumerate(lines[1:], start=1) if line.strip() == "---")
+        text = "".join(lines[closing + 1:])
+    paragraphs: list[tuple[float, str]] = []
+    speaker, at = "", 0.0
+    for block in (b.strip() for b in text.split("\n\n")):
+        if not block or block.startswith("# "):
+            continue
+        named = _MD_SPEAKER.match(block)
+        if named:
+            speaker, at = named.group(1), _clock(*named.group(2, 3, 4))
+            paragraphs.append((at, f"[{_stamp(at)}] {speaker}:"))
+            continue
+        stamped = _MD_STAMPED.match(block)
+        if stamped:
+            at = _clock(*stamped.group(1, 2, 3))
+            paragraphs.append((at, f"[{_stamp(at)}] {' '.join(stamped.group(4).split())}"))
+        elif paragraphs and speaker:
+            opened, said = paragraphs[-1]
+            paragraphs[-1] = (opened, f"{said} {' '.join(block.split())}")
+        else:
+            paragraphs.append((at, " ".join(block.split())))
+    chosen = [(at, line) for at, line in paragraphs if lower <= at < upper]
+    kept: list[str] = []
+    size, truncated, reached = 0, False, chosen[-1][0] if chosen else lower
+    for opened_at, paragraph in chosen:
+        if kept and size + len(paragraph) > MAX_READ_CHARS:
+            truncated, reached = True, opened_at
+            break
+        kept.append(paragraph)
+        size += len(paragraph) + 2
+    return TranscriptText(
+        timeline=None,
+        source=header.get("source") or path.stem,
+        duration=_seconds(header.get("duration")) or 0.0,
+        start=lower,
+        end=reached,
+        segments=len(chosen),
+        truncated=truncated,
+        text="\n\n".join(kept),
+    )
+
+
+def _clock(hours: str, minutes: str, seconds: str) -> float:
+    return float(int(hours) * 3600 + int(minutes) * 60 + int(seconds))
+
+
+def _stamp(seconds: float) -> str:
+    whole = int(seconds)
+    return f"{whole // 3600:02d}:{whole % 3600 // 60:02d}:{whole % 60:02d}"
+
+
+@dataclass(frozen=True)
+class WrittenText:
+    path: str
+    kind: str
+    generated: str | None
+    text: str
+
+
+WRITTEN_SUFFIXES = {".notes.md": "notes", ".minutes.md": "minutes"}
+
+
+def read_written(path: Path, transcript_dir: Path) -> WrittenText:
+    """Notes or minutes meet-ai wrote, as their markdown, without the header.
+
+    Only a .notes.md or .minutes.md file directly in the transcript folder is read: this is a
+    door to what meet-ai wrote, not to any file a caller can name."""
+    kind = next((k for suffix, k in WRITTEN_SUFFIXES.items() if path.name.endswith(suffix)), None)
+    if kind is None:
+        raise OperationError(f"{path.name} is not notes or minutes: their names end in .notes.md or .minutes.md.")
+    folder = transcript_dir.resolve()
+    real = path.resolve()  # follows links: the check is on where the file really is
+    if real.parent != folder or not real.is_file():
+        raise OperationError(f"no notes or minutes called {path.name} in the transcript folder.")
+    text = real.read_text(encoding="utf-8")
+    header = transcript_header(real)
+    if header:
+        # drop the header: everything up to and including its closing line
+        lines = text.splitlines(keepends=True)
+        closing = next(i for i, line in enumerate(lines[1:], start=1) if line.strip() == "---")
+        text = "".join(lines[closing + 1:]).lstrip("\n")
+    return WrittenText(path=str(real), kind=kind, generated=header.get("generated") or None, text=text)
 
 
 # ---------------------------------------------------------------------------
