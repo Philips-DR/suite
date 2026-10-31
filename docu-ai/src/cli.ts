@@ -6,7 +6,7 @@ import { formatForPath } from './drive.js'
 import { buildFromPlan, createThemedDocument } from './emit/document.js'
 import type { TextBlock } from './emit/text.js'
 import {
-  buildDocument, checkReplaceable, exportDocument, layoutDocument, lintDocument, preview, replaceSuperseded, trashDocument,
+  buildDocument, checkReplaceable, exportDocument, layoutDocument, lintDocument, preview, renameDocument, replaceSuperseded, trashDocument,
   type LayoutResult, type ReplacedResult,
 } from './operations.js'
 import { loadChapterFiles } from './parse/loadDir.js'
@@ -34,7 +34,8 @@ const USAGE = `docu-ai — markdown to Google Docs
   npm start -- lint <documentId>     re-run the residue lint against an already-built document
   npm start -- layout <docId> [max]  page count and page-break warnings for a built document (max: page target)
   npm start -- trash <documentId>    move a document docu-ai built to Drive's Trash (30 days to restore it)
-  npm run mcp                        serve preview/build/layout/lint/info/trash over MCP on stdio, for a model to call
+  npm start -- rename <docId> <name> give a document docu-ai built a new name in Drive; its content is not changed
+  npm run mcp                        serve preview/build/layout/lint/info/trash/rename/list/export/save_export over MCP on stdio
 
   build, resume and letter also take:
     --title "..."       the document's name in Drive (default: its first heading, or the folder's name)
@@ -320,6 +321,14 @@ async function cmdTrash(documentId: string | undefined): Promise<void> {
   process.stdout.write(`trashed: "${result.title}"\n${result.restore}\n`)
 }
 
+/** A new name in Drive, nothing else. The words after the id are the name, so it needs no quotes. */
+async function cmdRename(documentId: string | undefined, words: string[]): Promise<void> {
+  if (!documentId || words.length === 0) throw new Error('usage: npm start -- rename <documentId> <new name>')
+  const auth = GoogleOAuthProvider.fromEnvironment()
+  const result = await renameDocument(auth, documentId, words.join(' '))
+  process.stdout.write(result.previous === result.title ? `already named "${result.title}"\n` : `renamed: "${result.previous}" → "${result.title}"\n`)
+}
+
 async function main(): Promise<void> {
   tolerateSlowConnections()
   const command = process.argv[2]
@@ -362,6 +371,9 @@ async function main(): Promise<void> {
       break
     case 'trash':
       await cmdTrash(args[0])
+      break
+    case 'rename':
+      await cmdRename(args[0], args.slice(1))
       break
     case 'status':
       process.stdout.write(

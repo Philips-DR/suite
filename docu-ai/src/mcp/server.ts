@@ -12,6 +12,7 @@ import {
   lintDocument,
   listDocuments,
   preview,
+  renameDocument,
   saveExport,
   trashDocument,
   type ThemeName,
@@ -233,6 +234,31 @@ export function createDocuAiServer(auth: AuthProvider, paths: ServerPaths = {}):
     async ({ documentId }) => {
       try {
         return ok(await trashDocument(auth, documentId))
+      } catch (error) {
+        return failed(error)
+      }
+    },
+  )
+
+  server.registerTool(
+    'rename',
+    {
+      title: 'Rename a built document',
+      description:
+        "Give a Google Doc docu-ai built a new name in Drive. Its content is not changed. Use it when the user asks, or " +
+        'to tell apart documents with the same name (a CV and a cover letter are both named after the sender unless ' +
+        'built with a title). Say which document it is by its current name and date before renaming. Only documents ' +
+        'docu-ai built can be renamed, and not one in the Trash.',
+      inputSchema: {
+        documentId: z.string().describe('The Google Docs document id, as returned by build or list.'),
+        name: z.string().describe('The new name, as it should read in Drive, for example "CV - ML Engineer".'),
+      },
+      // Not destructive: renaming it back undoes it, and the arguments name the new title in full.
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ documentId, name }) => {
+      try {
+        return ok(await renameDocument(auth, documentId, name))
       } catch (error) {
         return failed(error)
       }

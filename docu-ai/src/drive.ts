@@ -17,7 +17,7 @@ export interface DriveLike {
   files: {
     get(args: { fileId: string; fields: string }): Promise<{ data: DriveFile }>
     list(args: { q: string; fields: string; orderBy: string; pageSize: number; pageToken?: string }): Promise<{ data: { files?: DriveFile[]; nextPageToken?: string | null } }>
-    update(args: { fileId: string; requestBody: { trashed: boolean }; fields: string }): Promise<{ data: DriveFile }>
+    update(args: { fileId: string; requestBody: { trashed: boolean } | { name: string }; fields: string }): Promise<{ data: DriveFile }>
     export(
       args: { fileId: string; mimeType: string },
       options?: { responseType: 'arraybuffer' },
@@ -104,6 +104,40 @@ export async function trashDocumentWith(drive: DriveLike, documentId: string): P
     trashed: true,
     restore: 'It is in Drive\'s Trash for 30 days: open Trash in Google Drive and choose "Restore".',
   }
+}
+
+export interface RenameResult {
+  documentId: string
+  title: string
+  previous: string
+}
+
+const MAX_TITLE = 200
+// The marks that reverse how text reads, written as escapes (see exports.ts): a title that shows as one thing
+// and is another has no place in a list a person picks from.
+const REVERSING = /[‪-‮⁦-⁩]/
+
+/**
+ * Give a Google Doc a new name in Drive. Its content is not touched. A CV and a letter built from one person's
+ * markdown were both named after their first heading, the sender's name, and sat in Drive as seven documents
+ * called the same thing; this is how they get names that tell them apart. Refuses anything that is not a Google
+ * Doc, anything in the Trash, and a name with a control character or a reversing mark. A slash is allowed: Drive
+ * takes it, and an export makes its own safe file name from the title.
+ */
+export async function renameDocumentWith(drive: DriveLike, documentId: string, name: string): Promise<RenameResult> {
+  const title = name.trim()
+  if (!title) throw new Error('A document needs a name: the new name was empty.')
+  if (title.length > MAX_TITLE) throw new Error(`That name is ${title.length} characters; at most ${MAX_TITLE}.`)
+  for (const ch of title) {
+    const code = ch.codePointAt(0) ?? 0
+    if (code < 0x20 || code === 0x7f) throw new Error('A name cannot hold a control character, such as a line break or a tab.')
+  }
+  if (REVERSING.test(title)) throw new Error('A name cannot hold a mark that reverses how the text reads.')
+  const info = await documentInfoWith(drive, documentId)
+  if (info.trashed) throw new Error(`"${info.title}" is in the Trash: restore it in Google Drive before renaming it.`)
+  if (info.title === title) return { documentId, title, previous: info.title }
+  await drive.files.update({ fileId: documentId, requestBody: { name: title }, fields: 'id,name' })
+  return { documentId, title, previous: info.title }
 }
 
 export interface ListedDocument {
@@ -217,6 +251,10 @@ export async function documentInfo(auth: AuthProvider, documentId: string): Prom
 
 export async function trashDocument(auth: AuthProvider, documentId: string): Promise<TrashResult> {
   return trashDocumentWith(await driveFor(auth), documentId)
+}
+
+export async function renameDocument(auth: AuthProvider, documentId: string, name: string): Promise<RenameResult> {
+  return renameDocumentWith(await driveFor(auth), documentId, name)
 }
 
 const GB = 1024 ** 3

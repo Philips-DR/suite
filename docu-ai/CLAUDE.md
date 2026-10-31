@@ -22,10 +22,11 @@ two disagree, this file wins and `plan.md` should be corrected.
     npm start -- lint <documentId>    # re-run the residue lint against an already-built document
     npm start -- layout <documentId> [maxPages]   # page count + page-break warnings for a built document
     npm start -- trash <documentId>   # move a document docu-ai built to Drive's Trash (restorable for 30 days)
+    npm start -- rename <documentId> <new name>   # a new name in Drive for a document docu-ai built; content untouched
     npm start -- letter <dir> [out]   # a cover letter in the letter look (resume <dir> for a CV): one file, no cover; writes out.pdf AND out.docx, prints the page count
     npm start -- export <documentId> [out.pdf|out.docx]   # export a built document; the extension picks the format (no extension: PDF)
     # build, resume and letter also take  --title "..."  and  --replaces <documentId>  (see "Word, PDF and replacing" below)
-    npm run mcp                       # serve preview/build/layout/lint/info/trash/list/export/save_export over MCP on stdio
+    npm run mcp                       # serve preview/build/layout/lint/info/trash/rename/list/export/save_export over MCP on stdio
 
 Don't confuse the two "lint"s: `npm run lint` is ESLint checking source code quality; `npm start -- lint` is the
 CLI subcommand that reads a *built Google Doc* back and re-runs the markdown-residue lint against it.
@@ -67,7 +68,7 @@ The boundaries are the design. Violating one is the main way this project rots:
 ## Two front doors, one implementation
 
 `src/operations.ts` holds what docu-ai can be asked to do, as data in and data out: `preview`,
-`buildDocument`, `lintDocument`, `layoutDocument`, `documentInfo`, `trashDocument`. The CLI (`cli.ts`) formats those results for a person; the MCP
+`buildDocument`, `lintDocument`, `layoutDocument`, `documentInfo`, `trashDocument`, `renameDocument`. The CLI (`cli.ts`) formats those results for a person; the MCP
 server (`mcp/server.ts`) returns them as JSON to a model. **Neither door wraps the other.** A door
 that delegates to the other inherits its output format, its exit codes and its assumptions about who
 is reading, and the two drift the moment either is changed for its own audience. Nothing in
@@ -543,6 +544,23 @@ breaking the code in a copy:
 - **No folder, no save**, before Drive is asked anything. The folder is created on first use.
 - The escapes for the reversing marks are written as `\u202a`…, never as the characters themselves: a first
   version held the invisible characters in the source, and only a scan for them found it.
+
+## Renaming a built document: `rename` (2026-10-31)
+
+On 2026-10-31, 22 of the 65 documents docu-ai had built were called "Philip Baah Afriyie": a single file is titled with
+its first heading, and a CV's or a letter's first heading is the sender. The web app now always passes `title` (the
+upload's name, which the page shows and lets you change), and `rename` gives the ones already built a name of their own.
+
+- **It sets Drive's `name` and nothing else.** The content is not opened. For a single file the title is only the Drive
+  name anyway (`documents.create`); for a folder it is also on the cover, which a rename does not change.
+- **Refused before Drive is asked:** an empty name, more than 200 characters, a control character (a line break, a tab),
+  a reversing mark. A slash is allowed: Drive takes it, and `export` makes its own safe file name from the title.
+  **Refused after `info`:** anything not a Google Doc, anything in the Trash. The same name again asks Drive nothing.
+- **No approval preview, on purpose.** A button press for a tool with a preview needs a second, confirmed press (the
+  assistant's `/api/actions`), and renaming is undone by renaming back, with the new name in full in the arguments. So
+  `rename` declares none; in chat the gate still asks, showing the id and the new name. `mcp.test.ts` holds this.
+- **Run for real (2026-10-31), through the web app:** a throwaway CV built twice, the first binned from the page, the
+  second renamed and binned; Drive's own `info` then said both were in the Trash, the second under its new name.
 
 ## Definition of done for a feature
 

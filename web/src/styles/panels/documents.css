@@ -1,36 +1,69 @@
-.dropbox {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 28px 16px;
-  text-align: center;
-  background: var(--bg-2);
-  border: 1.5px dashed var(--line-strong);
-  border-radius: 14px;
-  transition: border-color var(--dur-2) var(--ease), background-color var(--dur-2) var(--ease);
-}
-.dropzone.over .dropbox { border-color: var(--brand); background: var(--brand-soft); }
-.dropbox-icon { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 16px; color: var(--brand); background: var(--brand-soft); }
-.dropbox .row.center { justify-content: center; margin-top: 6px; }
+/* ---- markdown waiting to be built: one line each, opened to build ---- */
+.doc-uploads { transition: border-color var(--dur-2) var(--ease), background-color var(--dur-2) var(--ease); }
+.dropzone.over .doc-uploads { border-color: var(--brand); background: var(--brand-soft); }
+.doc-uploads .card-head button, .doc-uploads .card-head label { flex: none; }
+.doc-up-list { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.doc-up { background: var(--surface-2); border: 1px solid var(--line); border-radius: 14px; }
+.doc-up-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px 14px; padding: 12px 14px; }
+.doc-up-icon { width: 40px; height: 40px; border-radius: 12px; color: var(--ink); }
+.doc-up-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.doc-up-title { font-size: var(--fs-md); overflow-wrap: anywhere; }
+.doc-up-toggle { min-height: 40px; }
+.doc-up-body { padding: 4px 14px 14px; border-top: 1px solid var(--line); container: docup / inline-size; }
+.doc-up-body[hidden] { display: none; }
+.doc-order { margin-top: 10px; }
 
-.batch .card-head { margin-bottom: 10px; }
+.doc-form { display: flex; flex-wrap: wrap; gap: 12px 18px; margin-top: 12px; }
+.doc-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.doc-field-name { flex: 1 1 100%; }
+.doc-field-name input { width: 100%; background: var(--surface); }
+.doc-label { font-size: var(--fs-sm); font-weight: 600; color: var(--ink-2); }
+.doc-form + .hint { margin-top: 10px; }
+.doc-actions { margin-top: 14px; }
+.doc-actions-end { padding-top: 10px; border-top: 1px solid var(--line); }
+
 .batch-preview { margin: 14px 0; }
-.batch-preview h3 { margin-bottom: 8px; }
 .batch-preview .hint { margin-top: 10px; }
 .chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
-.batch-actions { margin-top: 14px; }
-.built { display: flex; align-items: flex-start; gap: 12px; margin-top: 16px; padding: 12px 14px; background: var(--ok-soft); border-radius: 12px; animation: pop-in var(--dur-3) var(--ease); }
-.built-icon { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; color: #fff; background: var(--ok-fill); }
-.built a { display: inline-flex; align-items: center; gap: 6px; font-weight: 650; }
 
-/* ---- drive documents ---- */
-.drive-list { list-style: none; margin: 0; padding: 0; }
+@container docup (max-width: 479px) {
+  .doc-field, .doc-field .seg { width: 100%; }
+  .doc-field .seg button { flex: 1; padding: 0 8px; }
+  .doc-actions button { flex: 1 1 auto; min-height: 44px; }
+}
+
+/* ---- documents already built: the name and date, then what can be done with it ---- */
+.drive-shared { margin: 0 0 6px; }
+.drive-list { list-style: none; margin: 0; padding: 0; container: drivelist / inline-size; }
 .drive-doc { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .drive-doc:last-child { border-bottom: none; }
-.drive-doc-main { flex: 1 1 0; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
-.drive-doc-title { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.drive-doc-main { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.drive-doc-title { align-self: flex-start; display: inline; font-weight: 600; overflow-wrap: anywhere; }
+.drive-doc-title svg { display: inline; margin-left: 5px; vertical-align: -1px; }
 .drive-doc-actions { display: flex; gap: 6px; flex: none; }
 .drive-doc-actions button { font-size: var(--fs-sm); padding: 4px 10px; }
+.drive-doc .error { flex-basis: 100%; margin: 0; }
+.drive-rename { display: flex; flex-wrap: wrap; gap: 6px; }
+.drive-rename input { flex: 1 1 220px; min-width: 0; }
 .drive-pager { display: flex; align-items: center; justify-content: center; gap: 12px; padding-top: 12px; border-top: 1px solid var(--line); margin-top: 4px; }
 .drive-pager button { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-sm); padding: 4px 10px; }
+
+/* Under a wide card the name gets the row and the buttons go beneath it: four buttons beside a name left it a
+   word wide on a phone ("Philip B", with "6 d ago" on three lines). */
+@container drivelist (max-width: 699px) {
+  .drive-doc { flex-direction: column; align-items: stretch; }
+  .drive-doc-main { flex: none; }
+  .drive-doc-actions { flex-wrap: wrap; }
+  .drive-doc-actions button { flex: 1 1 auto; min-height: 44px; justify-content: center; }
+  .drive-rename input { flex-basis: 100%; }
+  .drive-rename button { flex: 1 1 0; min-height: 44px; }
+}
+
+@media (max-width: 639px) {
+  .doc-uploads .card-head { flex-wrap: wrap; }
+  .doc-uploads .card-head > .row { width: 100%; }
+  /* Side by side while both fit on one line each, else one under the other: never a label broken in two. */
+  .doc-uploads .card-head > .row > button { flex: 1 1 auto; min-height: 44px; white-space: nowrap; }
+  .doc-up-row { grid-template-columns: auto minmax(0, 1fr); }
+  .doc-up-toggle { grid-column: 1 / -1; min-height: 44px; }
+}

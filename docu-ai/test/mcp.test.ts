@@ -48,17 +48,26 @@ afterEach(async () => {
 })
 
 describe('the MCP front door', () => {
-  it('advertises exactly the nine operations, and no more', async () => {
+  it('advertises exactly the ten operations, and no more', async () => {
     const client = await connect()
     const names = (await client.listTools()).tools.map((t) => t.name).sort()
-    expect(names).toEqual(['build', 'export', 'info', 'layout', 'lint', 'list', 'preview', 'save_export', 'trash'])
+    expect(names).toEqual(['build', 'export', 'info', 'layout', 'lint', 'list', 'preview', 'rename', 'save_export', 'trash'])
   })
 
-  it('marks only build, save_export and trash as writes, and trash as destructive', async () => {
+  it('marks only build, rename, save_export and trash as writes, and only trash as destructive', async () => {
     const tools = (await (await connect()).listTools()).tools
     const writes = tools.filter((t) => t.annotations?.readOnlyHint !== true).map((t) => t.name).sort()
-    expect(writes).toEqual(['build', 'save_export', 'trash'])
-    expect(tools.find((t) => t.name === 'trash')?.annotations?.destructiveHint).toBe(true)
+    expect(writes).toEqual(['build', 'rename', 'save_export', 'trash'])
+    const destructive = tools.filter((t) => t.annotations?.destructiveHint === true).map((t) => t.name)
+    expect(destructive).toEqual(['trash'])
+  })
+
+  // A rename is undone by renaming back, and its arguments carry the new name in full, so a button press is
+  // its approval: no preview, which would make the web app ask twice for something that can be undone.
+  it('lets rename run on one press: no preview declared', async () => {
+    const rename = (await (await connect()).listTools()).tools.find((t) => t.name === 'rename')
+    expect((rename?._meta as { approval?: unknown } | undefined)?.approval).toBeUndefined()
+    expect(rename?.inputSchema.required?.sort()).toEqual(['documentId', 'name'])
   })
 
   // The assistant's gate shows what the named tool says instead of raw arguments, and refuses a

@@ -5,6 +5,7 @@ import {
   exportDocumentWith,
   formatForPath,
   listDocumentsWith,
+  renameDocumentWith,
   trashDocumentWith,
   type DriveFile,
   type DriveLike,
@@ -81,6 +82,46 @@ describe('trashDocumentWith', () => {
     const d = drive({ ...DOC, trashed: true })
     await expect(trashDocumentWith(d, 'abc')).rejects.toThrow(/already in the Trash/)
     expect(d.updates).toEqual([])
+  })
+})
+
+describe('renameDocumentWith', () => {
+  it('gives the Doc its new name in Drive, and nothing else', async () => {
+    const d = drive(DOC)
+    const result = await renameDocumentWith(d, 'abc', '  CV - ML Engineer ')
+    expect(d.updates).toEqual([{ fileId: 'abc', requestBody: { name: 'CV - ML Engineer' }, fields: 'id,name' }])
+    expect(result).toEqual({ documentId: 'abc', title: 'CV - ML Engineer', previous: 'Philip Baah Afriyie' })
+  })
+
+  it('keeps a slash, which Drive takes and an export makes safe', async () => {
+    const d = drive(DOC)
+    await renameDocumentWith(d, 'abc', 'CV / résumé')
+    expect(d.updates).toEqual([{ fileId: 'abc', requestBody: { name: 'CV / résumé' }, fields: 'id,name' }])
+  })
+
+  it('asks Drive nothing when the name is already the one asked for', async () => {
+    const d = drive(DOC)
+    expect(await renameDocumentWith(d, 'abc', 'Philip Baah Afriyie')).toMatchObject({ previous: 'Philip Baah Afriyie' })
+    expect(d.updates).toEqual([])
+  })
+
+  it.each([
+    ['empty', '   ', /empty/],
+    ['too long', 'x'.repeat(201), /at most 200/],
+    ['a line break', 'CV\nletter', /control character/],
+    ['a reversing mark', 'CV ‮gnp.exe', /reverses/],
+  ])('refuses a name that is %s, before asking Drive anything', async (_, name, message) => {
+    const d = drive(DOC)
+    await expect(renameDocumentWith(d, 'abc', name)).rejects.toThrow(message)
+    expect(d.updates).toEqual([])
+  })
+
+  it('does nothing to a file that is not a Google Doc, or to one in the Trash', async () => {
+    const pdf = drive({ ...DOC, mimeType: 'application/pdf' })
+    await expect(renameDocumentWith(pdf, 'abc', 'New')).rejects.toThrow(/not a Google Doc/)
+    const binned = drive({ ...DOC, trashed: true })
+    await expect(renameDocumentWith(binned, 'abc', 'New')).rejects.toThrow(/in the Trash/)
+    expect([...pdf.updates, ...binned.updates]).toEqual([])
   })
 })
 

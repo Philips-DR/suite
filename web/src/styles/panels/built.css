@@ -1,0 +1,10 @@
+/* ---- after docu-ai builds a Doc: the link and its pages, and an earlier build offered to the bin ---- */
+.built { display: flex; align-items: flex-start; gap: 12px; margin-top: 16px; padding: 12px 14px; background: var(--ok-soft); border-radius: 12px; animation: pop-in var(--dur-3) var(--ease); }
+.built.warn { background: var(--warn-soft); }
+.built-icon { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; color: #fff; background: var(--ok-fill); }
+.built.warn .built-icon { background: var(--warn-fill); }
+.built-text { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.built a { display: inline-flex; align-items: center; gap: 6px; font-weight: 650; overflow-wrap: anywhere; }
+.built-problems { margin: 2px 0 0; padding-left: 18px; }
+.built-earlier { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 12px; padding: 10px 14px; border: 1px dashed var(--line-strong); border-radius: 12px; }
+.built-earlier p { flex: 1 1 260px; margin: 0; }
