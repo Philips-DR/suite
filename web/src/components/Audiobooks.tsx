@@ -24,10 +24,11 @@ import { AudioPlayer } from '../ui/AudioPlayer'
 import { ConfirmDelete, sizeOf } from '../ui/ConfirmDelete'
 import { DropZone } from '../ui/DropZone'
 import {
-  IconAlert, IconAudiobooks, IconBack, IconCheck, IconClose, IconDocuments, IconDownload, IconFail, IconMeetings,
+  IconAlert, IconAudiobooks, IconBack, IconCheck, IconChevron, IconClose, IconDocuments, IconDownload, IconFail, IconMeetings,
   IconOk, IconPlay, IconRefresh, IconSpark, IconStop, IconTrash, IconUpload, IconZap,
 } from '../ui/icons'
 import { Empty } from '../ui/Empty'
+import { store } from '../player/storage'
 import { fileName, usePoll } from '../usePoll'
 import { PickFiles, UploadProgress } from './Upload'
 import '../styles/panels/audiobooks.css'
@@ -101,6 +102,8 @@ interface AudioBook {
   author?: string | null
   files: AudioEntry[]
 }
+
+const VOICES_OPEN = 'ab-voices-open'
 
 const KIND_LABEL: Record<BookJob['kind'], string> = {
   analyse: 'Reading the book',
@@ -767,11 +770,14 @@ function ChapterRow({ pdf, version, chapter, chosen, longest, book, reading, onT
   )
 }
 
-function Book({ pdf, readNow, voices, job, reloadJob, onBack, onDelete }: {
+function Book({ pdf, readNow, voices, samples, voicesLoaded, job, reloadJob, onBack, onDelete }: {
   pdf: string
   /** Just uploaded: start reading it as soon as it is open, if nothing else is running. */
   readNow: boolean
   voices: Voice[]
+  /** The voice samples made so far, for the Voices card under the chapters. */
+  samples: AudioEntry[]
+  voicesLoaded: boolean
   job: BookJob | null
   reloadJob: () => Promise<void>
   onBack: () => void
@@ -1025,6 +1031,9 @@ function Book({ pdf, readNow, voices, job, reloadJob, onBack, onDelete }: {
             </div>
           </div>
 
+          {/* Under the chapters, the width of the page: the voices are chosen for a book, so they live with it. */}
+          <Voices voices={voices} samples={samples} loaded={voicesLoaded} running={running} reloadJob={reloadJob} />
+
           <div className="grid-2 ab-pair">
             {skipped.length > 0 && (
               <ChartCard
@@ -1080,6 +1089,9 @@ function Voices({ voices, samples, loaded, running, reloadJob }: {
   const [uploading, setUploading] = useState<{ name: string; fraction: number } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // Folded by default, so the books come first; opened or folded, it stays so in this browser.
+  const [shown, setShown] = useState(() => store.read(VOICES_OPEN) === '1')
+  const show = (open: boolean) => { setShown(open); store.write(VOICES_OPEN, open ? '1' : '0') }
 
   const upload = async ([file]: File[]) => {
     if (!file) return
@@ -1117,11 +1129,22 @@ function Voices({ voices, samples, loaded, running, reloadJob }: {
       accepts={(f) => isAudio(f.name)}
       label="Drop a recording to clone"
       onRefuse={(names) => setError(`Not uploaded — a voice is cloned from an audio recording (${AUDIO_EXTS.join(' ')}): ${names.join(', ')}`)}
-      onFiles={(files) => { setAdding(true); void upload(files) }}
+      onFiles={(files) => { show(true); setAdding(true); void upload(files) }}
       disabled={uploading !== null}
     >
-      <div className="card ab-voices-card">
-        <CardHead icon={IconMeetings} tool="audiobook" title="Voices" sub="Cloned from a short recording, or built in." />
+      <div className={`card ab-voices-card ${shown ? '' : 'is-folded'}`}>
+        <CardHead
+          icon={IconMeetings}
+          tool="audiobook"
+          title="Voices"
+          sub={shown || !loaded ? 'Cloned from a short recording, or built in.'
+            : cloned.length ? `${cloned.length} of your own: ${cloned.map((v) => v.name).join(', ')}` : 'None of your own yet.'}
+        >
+          <button className="ghost ab-fold" aria-expanded={shown} aria-controls="ab-voices-body" onClick={() => show(!shown)}>
+            {shown ? 'Hide' : 'Show'}<IconChevron size={16} aria-hidden className="ab-fold-icon" />
+          </button>
+        </CardHead>
+        <div id="ab-voices-body" hidden={!shown}>
         {!loaded && <div className="skeleton ab-skel" aria-hidden />}
         {loaded && cloned.length === 0 && <p className="muted">No cloned voices yet.</p>}
         <ul className="ab-voices stagger">
@@ -1217,6 +1240,7 @@ function Voices({ voices, samples, loaded, running, reloadJob }: {
             {missing.length === 0 && running && <span className="muted small">Another job is running — one at a time.</span>}
           </div>
         </details>
+        </div>
         {error && <p className="error">{error}</p>}
       </div>
     </DropZone>
@@ -1301,22 +1325,15 @@ export function Audiobooks() {
           pdf={book}
           readNow={readNow}
           voices={voiceList.data?.voices ?? []}
+          samples={samples}
+          voicesLoaded={voiceList.data !== null}
           job={job}
           reloadJob={status.reload}
           onBack={close}
           onDelete={(title) => setDeleting(doomedFor(stem(book), title))}
         />
       ) : (
-        <div className="grid-split ab-lower">
-          <Library shelves={shelves} overviews={overviews} job={job} uploads={uploads} onOpen={open} onDelete={setDeleting} />
-          <Voices
-            voices={voiceList.data?.voices ?? []}
-            samples={samples}
-            loaded={voiceList.data !== null}
-            running={job?.state === 'running'}
-            reloadJob={status.reload}
-          />
-        </div>
+        <Library shelves={shelves} overviews={overviews} job={job} uploads={uploads} onOpen={open} onDelete={setDeleting} />
       )}
       {(status.error || voiceList.error || finished.error) && <p className="error">{status.error || voiceList.error || finished.error}</p>}
       {deleting !== null && (

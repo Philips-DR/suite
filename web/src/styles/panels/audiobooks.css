@@ -193,7 +193,11 @@
 
 /* ---- voices, and the rows of audio files ----------------------------------------- */
 
-.ab-lower > :only-child { grid-column: 1 / -1; }
+/* voices: under a book's chapters, folded to one line until asked for */
+.ab-voices-card.is-folded .card-head { margin-bottom: 0; }
+.ab-fold { min-height: 40px; gap: 6px; }
+.ab-fold-icon { transition: transform var(--dur-2) var(--ease); transform: rotate(90deg); }
+.ab-fold[aria-expanded='true'] .ab-fold-icon { transform: rotate(-90deg); }
 
 /* voices: a stacked row each, and a wide enough row puts the sample button beside the name */
 .ab-voices { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
